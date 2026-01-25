@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Language Selection Screen -->
+    <string name="choose_language">Choose your language</string>
+    <string name="choose_language_punjabi">ਆਪਣੀ ਭਾਸ਼ਾ ਚੁਣੋ</string>
+    <string name="search_language">Search language...</string>
+    <string name="continue_button">Continue</string>
+    
+    <!-- Languages -->
+    <string name="language_hindi">Hindi</string>
+    <string name="language_hindi_native">हिंदी</string>
+    <string name="language_punjabi">Punjabi</string>
+    <string name="language_punjabi_native">ਪੰਜਾਬੀ</string>
+    <string name="language_bengali">Bengali</string>
+    <string name="language_bengali_native">বাংলা</string>
+    <string name="language_tamil">Tamil</string>
+    <string name="language_tamil_native">தமிழ்</string>
+    <string name="language_telugu">Telugu</string>
+    <string name="language_telugu_native">తెలుగు</string>
+    <string name="language_marathi">Marathi</string>
+    <string name="language_marathi_native">मराठी</string>
+    <string name="language_gujarati">Gujarati</string>
+    <string name="language_gujarati_native">ગુજરાતી</string>
+    <string name="language_kannada">Kannada</string>
+    <string name="language_kannada_native">ಕನ್ನಡ</string>
+    <string name="language_malayalam">Malayalam</string>
+    <string name="language_malayalam_native">മലയാളം</string>
+    <string name="language_english">English</string>
+    <string name="language_english_native">English</string>
+    
+    <!-- Phone Auth Screens -->
+    <string name="enter_phone_number">Enter your phone number</string>
+    <string name="we_send_verification_code">We'll send you a verification code</string>
+    <string name="tap_to_speak">Tap to speak</string>
+    <string name="enter_phone_number_placeholder">Enter phone number</string>
+    <string name="get_otp">Get OTP</string>
+    <string name="enter_otp">Enter OTP</string>
+    <string name="code_sent_to">Code sent to %1$s</string>
+    <string name="enter_6_digit_code">Enter the 6 digit code</string>
+    <string name="didnt_receive_code">Didn't receive code? Resend</string>
+    <string name="verify_continue">Verify &amp; Continue</string>
+    <string name="what_should_we_call_you">What should we call you?</string>
+    <string name="you_can_say_or_type">You can say your name or type it</string>
+    <string name="tap_to_say_name">Tap to say your name</string>
+    <string name="your_name">Your name</string>
+    <string name="next">Next</string>
+    <string name="step_x_of_y">Step %1$d of %2$d</string>
+    
+    <!-- Errors -->
+    <string name="error_invalid_phone">Invalid phone number</string>
+    <string name="error_invalid_otp">Invalid OTP. Please enter 6 digits</string>
+    <string name="error_invalid_name">Name must be at least 2 characters</string>
+    <string name="error_network">Network error. Please try again</string>
+    <string name="error_auth_failed">Authentication failed. Please try again</string>
+</resources>

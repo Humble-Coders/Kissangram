@@ -1,0 +1,11 @@
+platform :ios, '14.0'
+
+target 'iosApp' do
+  use_frameworks! :linkage => :static
+
+  pod 'shared', :path => '../shared'
+
+  pod 'Firebase/Core'
+  pod 'Firebase/Firestore'
+  pod 'Firebase/Auth'
+end
