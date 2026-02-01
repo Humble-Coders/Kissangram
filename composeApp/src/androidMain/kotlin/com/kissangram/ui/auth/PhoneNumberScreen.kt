@@ -17,12 +17,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kissangram.ui.components.AutoSizeText
 import com.kissangram.ui.components.HoldToSpeakButton
+import com.kissangram.viewmodel.PhoneNumberViewModel
+import kotlin.math.min
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -49,6 +53,13 @@ fun PhoneNumberScreen(
     )
     
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val configuration = LocalConfiguration.current
+    val screenWidth = configuration.screenWidthDp.dp
+    
+    // Responsive scaling factors based on screen width (360dp as baseline)
+    val scaleFactor = min(screenWidth.value / 360f, 1.3f)
+    val padding = (27 * scaleFactor).dp
+    val spacing = (18 * scaleFactor).dp
     
     // Permission launcher
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -82,39 +93,46 @@ fun PhoneNumberScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFFF8F9F1))
-            .padding(27.dp)
+            .padding(padding)
     ) {
-        // Back Button
-        IconButton(
-            onClick = onBackClick,
-            modifier = Modifier
-                .size(54.dp)
-                .clip(CircleShape)
-                .background(Color.White)
+        // Header - Fixed at top
+        Column(
+            modifier = Modifier.fillMaxWidth()
         ) {
-            Icon(
-                imageVector = Icons.Default.ArrowBack,
-                contentDescription = "Back",
-                tint = Color(0xFF1B1B1B)
-            )
-        }
-        
-        Spacer(modifier = Modifier.height(27.dp))
-        
-        // Header
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = stringResource(Res.string.enter_phone_number),
-                fontSize = 31.5.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF1B1B1B),
-                lineHeight = 47.25.sp,
-                modifier = Modifier.weight(1f)
-            )
+            // Back Button
+            IconButton(
+                onClick = onBackClick,
+                modifier = Modifier
+                    .size((54 * scaleFactor).dp)
+                    .clip(CircleShape)
+                    .background(Color.White)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.ArrowBack,
+                    contentDescription = "Back",
+                    tint = Color(0xFF1B1B1B),
+                    modifier = Modifier.size((24 * scaleFactor).dp)
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(padding))
+            
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                AutoSizeText(
+                    text = stringResource(Res.string.enter_phone_number),
+                    fontSize = (31.5 * scaleFactor).sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF1B1B1B),
+                    lineHeight = (47.25 * scaleFactor).sp,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 2,
+                    minFontSizeScale = 0.6f
+                )
             
             // Tap to speak button (header)
             IconButton(
@@ -126,7 +144,7 @@ fun PhoneNumberScreen(
                     }
                 },
                 modifier = Modifier
-                    .size(36.dp)
+                    .size((36 * scaleFactor).dp)
                     .clip(CircleShape)
                     .background(if (uiState.isListening) Color(0xFFFFB703) else Color(0x33FFB703))
             ) {
@@ -134,21 +152,24 @@ fun PhoneNumberScreen(
                     imageVector = Icons.Default.Mic,
                     contentDescription = "Tap to speak",
                     tint = if (uiState.isListening) Color.White else Color(0xFFFFB703),
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size((20 * scaleFactor).dp)
                 )
             }
         }
         
-        Spacer(modifier = Modifier.height(9.dp))
+        Spacer(modifier = Modifier.height((9 * scaleFactor).dp))
         
-        Text(
+        AutoSizeText(
             text = stringResource(Res.string.we_send_verification_code),
-            fontSize = 17.1.sp,
+            fontSize = (17.1 * scaleFactor).sp,
             color = Color(0xFF6B6B6B),
-            lineHeight = 25.65.sp
+            lineHeight = (25.65 * scaleFactor).sp,
+            modifier = Modifier.fillMaxWidth(),
+            maxLines = 2,
+            minFontSizeScale = 0.7f
         )
         
-        Spacer(modifier = Modifier.height(18.dp))
+        Spacer(modifier = Modifier.height(spacing))
         
         // Hold to speak button
         HoldToSpeakButton(
@@ -160,27 +181,28 @@ fun PhoneNumberScreen(
             modifier = Modifier.fillMaxWidth()
         )
         
-        Spacer(modifier = Modifier.height(18.dp))
+        Spacer(modifier = Modifier.height(spacing))
         
         // Phone Input
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(18.dp),
+            shape = RoundedCornerShape((18 * scaleFactor).dp),
             color = Color.White,
-            shadowElevation = 2.dp
+            shadowElevation = (2 * scaleFactor).dp
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(18.dp),
+                    .padding((18 * scaleFactor).dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(9.dp)
+                horizontalArrangement = Arrangement.spacedBy((9 * scaleFactor).dp)
             ) {
-                Text(
+                AutoSizeText(
                     text = uiState.countryCode,
-                    fontSize = 20.25.sp,
+                    fontSize = (20.25 * scaleFactor).sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFF6B6B6B)
+                    color = Color(0xFF6B6B6B),
+                    minFontSizeScale = 0.7f
                 )
                 
                 TextField(
@@ -188,10 +210,11 @@ fun PhoneNumberScreen(
                     onValueChange = viewModel::updatePhoneNumber,
                     modifier = Modifier.weight(1f),
                     placeholder = {
-                        Text(
+                        AutoSizeText(
                             text = stringResource(Res.string.enter_phone_number_placeholder),
-                            fontSize = 22.5.sp,
-                            color = Color(0x801B1B1B)
+                            fontSize = (22.5 * scaleFactor).sp,
+                            color = Color(0x801B1B1B),
+                            minFontSizeScale = 0.7f
                         )
                     },
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
@@ -204,54 +227,59 @@ fun PhoneNumberScreen(
                         unfocusedIndicatorColor = Color.Transparent
                     ),
                     textStyle = androidx.compose.ui.text.TextStyle(
-                        fontSize = 22.5.sp,
+                        fontSize = (22.5 * scaleFactor).sp,
                         fontWeight = FontWeight.SemiBold
                     )
                 )
             }
         }
         
-        // Error message
-        uiState.error?.let { error ->
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = error,
-                color = MaterialTheme.colorScheme.error,
-                fontSize = 14.sp
-            )
-        }
-        
-        Spacer(modifier = Modifier.weight(1f))
-        
-        // Get OTP Button
-        Button(
-            onClick = {
-                viewModel.sendOtp(
-                    onSuccess = onOtpSent,
-                    onError = {}
+            // Error message
+            uiState.error?.let { error ->
+                Spacer(modifier = Modifier.height((8 * scaleFactor).dp))
+                AutoSizeText(
+                    text = error,
+                    color = MaterialTheme.colorScheme.error,
+                    fontSize = (14 * scaleFactor).sp,
+                    modifier = Modifier.fillMaxWidth(),
+                    maxLines = 2,
+                    minFontSizeScale = 0.7f
                 )
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(75.dp),
-            enabled = !uiState.isLoading && uiState.phoneNumber.length >= 10,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Color(0xFF2D6A4F)
-            ),
-            shape = RoundedCornerShape(18.dp)
-        ) {
-            if (uiState.isLoading) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(24.dp),
-                    color = Color.White
-                )
-            } else {
-                Text(
-                    text = stringResource(Res.string.get_otp),
-                    fontSize = 20.25.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color.White
-                )
+            }
+            
+            Spacer(modifier = Modifier.weight(1f))
+            
+            // Get OTP Button
+            Button(
+                onClick = {
+                    viewModel.sendOtp(
+                        onSuccess = onOtpSent,
+                        onError = {}
+                    )
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height((75 * scaleFactor).dp),
+                enabled = !uiState.isLoading && uiState.phoneNumber.length >= 10,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF2D6A4F)
+                ),
+                shape = RoundedCornerShape((18 * scaleFactor).dp)
+            ) {
+                if (uiState.isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size((24 * scaleFactor).dp),
+                        color = Color.White
+                    )
+                } else {
+                    AutoSizeText(
+                        text = stringResource(Res.string.get_otp),
+                        fontSize = (20.25 * scaleFactor).sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White,
+                        minFontSizeScale = 0.7f
+                    )
+                }
             }
         }
     }

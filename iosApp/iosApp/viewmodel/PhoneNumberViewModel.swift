@@ -11,14 +11,16 @@ class PhoneNumberViewModel: ObservableObject {
     @Published var isProcessing: Bool = false
     @Published var error: String?
     
+    private let preferencesRepository: PreferencesRepository
     private let authRepository: AuthRepository
     private let sendOtpUseCase: SendOtpUseCase
-    private let speechRecognizer: IOSSpeechRecognizerWrapper
+    private let speechRepository: IOSSpeechRepository
     
     init() {
-        self.authRepository = IOSAuthRepository()
+        self.preferencesRepository = IOSPreferencesRepository()
+        self.authRepository = IOSAuthRepository(preferencesRepository: preferencesRepository)
         self.sendOtpUseCase = SendOtpUseCase(authRepository: authRepository)
-        self.speechRecognizer = IOSSpeechRecognizerWrapper()
+        self.speechRepository = IOSSpeechRepository()
     }
     
     func startSpeechRecognition() async {
@@ -33,9 +35,9 @@ class PhoneNumberViewModel: ObservableObject {
         
         do {
             // Request permission if needed
-            if !speechRecognizer.hasPermission() {
-                let granted = try await speechRecognizer.requestPermission()
-                if !granted {
+            if !speechRepository.hasPermission() {
+                let granted = try await speechRepository.requestPermission()
+                if !granted.boolValue {
                     isListening = false
                     error = "Speech recognition permission is required"
                     return
@@ -45,7 +47,7 @@ class PhoneNumberViewModel: ObservableObject {
             // Start listening with continuous updates
             Task {
                 do {
-                    try await speechRecognizer.startListening { [weak self] recognizedText in
+                    try await speechRepository.startListeningWithUpdates { [weak self] recognizedText in
                         guard let self = self else { return }
                         // Extract digits from recognized text and update continuously
                         let digits = recognizedText.filter { $0.isNumber }
@@ -77,7 +79,7 @@ class PhoneNumberViewModel: ObservableObject {
         isListening = false
         isProcessing = true
         
-        let initialText = speechRecognizer.stopListening()
+        let initialText = speechRepository.stopListeningSync()
         // Extract digits from initial text (will be updated via callback if final result comes)
         let digits = initialText.filter { $0.isNumber }
         if !digits.isEmpty {
@@ -88,7 +90,7 @@ class PhoneNumberViewModel: ObservableObject {
         try? await Task.sleep(nanoseconds: 3_500_000_000) // 3.5 seconds
         
         // Get final accumulated text after waiting
-        let finalText = speechRecognizer.getAccumulatedText()
+        let finalText = speechRepository.getAccumulatedText()
         let finalDigits = finalText.filter { $0.isNumber }
         if !finalDigits.isEmpty {
             phoneNumber = finalDigits

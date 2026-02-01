@@ -10,14 +10,16 @@ class NameViewModel: ObservableObject {
     @Published var isProcessing: Bool = false
     @Published var error: String?
     
+    private let preferencesRepository: PreferencesRepository
     private let authRepository: AuthRepository
     private let updateUserProfileUseCase: UpdateUserProfileUseCase
-    private let speechRecognizer: IOSSpeechRecognizerWrapper
+    private let speechRepository: IOSSpeechRepository
     
     init() {
-        self.authRepository = IOSAuthRepository()
+        self.preferencesRepository = IOSPreferencesRepository()
+        self.authRepository = IOSAuthRepository(preferencesRepository: preferencesRepository)
         self.updateUserProfileUseCase = UpdateUserProfileUseCase(authRepository: authRepository)
-        self.speechRecognizer = IOSSpeechRecognizerWrapper()
+        self.speechRepository = IOSSpeechRepository()
     }
     
     func startSpeechRecognition() async {
@@ -32,9 +34,9 @@ class NameViewModel: ObservableObject {
         
         do {
             // Request permission if needed
-            if !speechRecognizer.hasPermission() {
-                let granted = try await speechRecognizer.requestPermission()
-                if !granted {
+            if !speechRepository.hasPermission() {
+                let granted = try await speechRepository.requestPermission()
+                if !granted.boolValue {
                     isListening = false
                     error = "Speech recognition permission is required"
                     return
@@ -44,7 +46,7 @@ class NameViewModel: ObservableObject {
             // Start listening with continuous updates
             Task {
                 do {
-                    try await speechRecognizer.startListening { [weak self] recognizedText in
+                    try await speechRepository.startListeningWithUpdates { [weak self] recognizedText in
                         guard let self = self else { return }
                         // Update name continuously
                         self.name = recognizedText.trimmingCharacters(in: CharacterSet.whitespaces)
@@ -73,7 +75,7 @@ class NameViewModel: ObservableObject {
         isListening = false
         isProcessing = true
         
-        let initialText = speechRecognizer.stopListening()
+        let initialText = speechRepository.stopListeningSync()
         // Update with initial text (will be updated via callback if final result comes)
         name = initialText.trimmingCharacters(in: CharacterSet.whitespaces)
         
@@ -81,7 +83,7 @@ class NameViewModel: ObservableObject {
         try? await Task.sleep(nanoseconds: 3_500_000_000) // 3.5 seconds
         
         // Get final accumulated text after waiting
-        let finalText = speechRecognizer.getAccumulatedText()
+        let finalText = speechRepository.getAccumulatedText()
         name = finalText.trimmingCharacters(in: CharacterSet.whitespaces)
         
         isProcessing = false

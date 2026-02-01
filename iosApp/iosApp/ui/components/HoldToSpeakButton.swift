@@ -12,6 +12,7 @@ struct HoldToSpeakButtonStyle {
     var textSize: CGFloat = 18
     var textFontWeight: Font.Weight = .semibold
     var horizontalPadding: CGFloat = 19
+    var verticalPadding: CGFloat = 0
     var spacing: CGFloat = 14
     var scaleAnimation: CGFloat = 1.1
     var backgroundColorIdle: Color = Color(hex: 0xF8F9F1)
@@ -34,6 +35,50 @@ struct HoldToSpeakButtonStyle {
  * Default style matching the phone number screen (stable version).
  */
 let defaultHoldToSpeakButtonStyle = HoldToSpeakButtonStyle()
+
+/**
+ * OTP screen style - horizontal layout with "Tap to speak" text.
+ */
+let otpScreenButtonStyle = HoldToSpeakButtonStyle(
+    buttonHeight: 83,
+    cornerRadius: 18,
+    iconSize: 45,
+    iconInnerSize: 20,
+    textSize: 18,
+    textFontWeight: .semibold,
+    horizontalPadding: 19,
+    verticalPadding: 0,
+    spacing: 14,
+    backgroundColorIdle: Color(hex: 0xF8F9F1),
+    backgroundColorListening: Color(hex: 0x2D6A4F).opacity(0.1),
+    borderColorIdle: Color(hex: 0x2D6A4F).opacity(0.2),
+    borderColorListening: Color(hex: 0x2D6A4F),
+    textColorIdle: Color(hex: 0x1B1B1B),
+    textColorListening: Color(hex: 0x2D6A4F),
+    layoutDirection: .horizontal
+)
+
+/**
+ * Name screen style - vertical layout with larger icon and "Tap to say your name" text.
+ */
+let nameScreenButtonStyle = HoldToSpeakButtonStyle(
+    buttonHeight: 198,
+    cornerRadius: 27,
+    iconSize: 80,
+    iconInnerSize: 45,
+    textSize: 16.875,
+    textFontWeight: .medium,
+    horizontalPadding: 0,
+    verticalPadding: 37,
+    spacing: 18,
+    backgroundColorIdle: Color(hex: 0x2D6A4F).opacity(0.05),
+    backgroundColorListening: Color(hex: 0x2D6A4F).opacity(0.1),
+    borderColorIdle: Color(hex: 0x2D6A4F).opacity(0.1),
+    borderColorListening: Color(hex: 0x2D6A4F),
+    textColorIdle: Color(hex: 0x2D6A4F),
+    textColorListening: Color(hex: 0x2D6A4F),
+    layoutDirection: .vertical
+)
 
 /**
  * Reusable hold-to-speak button component for speech recognition.
@@ -89,15 +134,16 @@ struct HoldToSpeakButton: View {
                     textView
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, style.horizontalPadding)
             case .vertical:
                 VStack(spacing: style.spacing) {
                     iconView
                     textView
                 }
                 .frame(maxWidth: .infinity)
+                .padding(.vertical, style.verticalPadding)
             }
         }
-        .padding(.horizontal, style.horizontalPadding)
         .frame(height: style.buttonHeight)
         .background(
             isProcessing || isListening ? style.backgroundColorListening : style.backgroundColorIdle

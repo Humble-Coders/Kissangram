@@ -1,6 +1,7 @@
 import SwiftUI
 import FirebaseCore
 import FirebaseAuth
+import FirebaseStorage
 import UserNotifications
 
 class AppDelegate: NSObject, UIApplicationDelegate {

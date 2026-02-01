@@ -9,11 +9,14 @@ class LanguageSelectionViewModel: ObservableObject {
     @Published var filteredLanguages: [Language]
     
     private let preferencesRepository: PreferencesRepository
+    private let getSelectedLanguageUseCase: GetSelectedLanguageUseCase
+    private let setSelectedLanguageUseCase: SetSelectedLanguageUseCase
     private let allLanguages: [Language]
     
     init() {
-        let factory = PreferencesRepositoryFactory()
-        self.preferencesRepository = factory.create()
+        self.preferencesRepository = IOSPreferencesRepository()
+        self.getSelectedLanguageUseCase = GetSelectedLanguageUseCase(preferencesRepository: preferencesRepository)
+        self.setSelectedLanguageUseCase = SetSelectedLanguageUseCase(preferencesRepository: preferencesRepository)
         self.allLanguages = Language.Companion.shared.SUPPORTED_LANGUAGES
         
         // Default to first language (Hindi)
@@ -23,11 +26,8 @@ class LanguageSelectionViewModel: ObservableObject {
     
     func loadSavedLanguage() async {
         do {
-            let savedCode = try await preferencesRepository.getSelectedLanguageCode()
-            if let code = savedCode,
-               let language = allLanguages.first(where: { $0.code == code }) {
-                selectedLanguage = language
-            }
+            let language = try await getSelectedLanguageUseCase.invoke()
+            selectedLanguage = language
         } catch {
             // Keep default language if loading fails
         }
@@ -52,7 +52,7 @@ class LanguageSelectionViewModel: ObservableObject {
     func continueWithSelection(onLanguageSelected: @escaping (String) -> Void) async {
         let code = selectedLanguage.code
         do {
-            try await preferencesRepository.setSelectedLanguageCode(code: code)
+            try await setSelectedLanguageUseCase.invoke(languageCode: code)
         } catch {
             // Continue even if save fails
         }

@@ -1,0 +1,397 @@
+# Kissangram Architecture Guide
+
+## Overview
+
+Kissangram is a Kotlin Multiplatform (KMP) app targeting Android and iOS using Clean Architecture. The app shares business logic across platforms while keeping UI and data layers platform-specific.
+
+## Core Principle
+
+> **Shared Module**: Interfaces, Use Cases, and Models only  
+> **Platform Modules**: Repository implementations, ViewModels, and UI
+
+---
+
+## Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      SHARED MODULE                               │
+│               (shared/src/commonMain/)                           │
+├─────────────────────────────────────────────────────────────────┤
+│  repository/     Repository interfaces (AuthRepository, etc.)   │
+│  usecase/        Use cases with business logic                   │
+│  model/          Data models (Language, UserRole, etc.)          │
+│                                                                   │
+│  ❌ NO implementations, NO ViewModels, NO platform code          │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────┐  ┌─────────────────────────────┐
+│         ANDROID APP             │  │          iOS APP            │
+│         (composeApp/)           │  │         (iosApp/)           │
+├─────────────────────────────────┤  ├─────────────────────────────┤
+│  repository/ (Kotlin)           │  │  repository/ (Swift)        │
+│   - AndroidAuthRepository       │  │   - IOSAuthRepository       │
+│   - AndroidPreferencesRepository│  │   - IOSPreferencesRepository│
+│   - AndroidSpeechRepository     │  │   - IOSSpeechRepository     │
+│                                 │  │                             │
+│  viewmodel/ (Kotlin)            │  │  viewmodel/ (Swift)         │
+│   - PhoneNumberViewModel        │  │   - PhoneNumberViewModel    │
+│   - OtpViewModel                │  │   - OtpViewModel            │
+│   - NameViewModel               │  │   - NameViewModel           │
+│   - etc.                        │  │   - etc.                    │
+│                                 │  │                             │
+│  ui/ (Jetpack Compose)          │  │  ui/ (SwiftUI)              │
+│   - PhoneNumberScreen           │  │   - PhoneNumberView         │
+│   - OtpScreen                   │  │   - OtpView                 │
+│   - etc.                        │  │   - etc.                    │
+└─────────────────────────────────┘  └─────────────────────────────┘
+```
+
+---
+
+## Dependency Flow
+
+```
+UI (Platform Native)
+  → ViewModel (Platform Native)
+    → UseCase (Shared)
+      → Repository Interface (Shared)
+        → Repository Implementation (Platform Native)
+          → Platform SDK (Firebase, etc.)
+```
+
+---
+
+## Directory Structure
+
+### Shared Module (`shared/src/commonMain/`)
+
+```
+shared/src/commonMain/kotlin/com/kissangram/
+├── repository/
+│   ├── AuthRepository.kt          # Interface
+│   ├── PreferencesRepository.kt   # Interface
+│   └── SpeechRepository.kt        # Interface
+├── usecase/
+│   ├── SendOtpUseCase.kt
+│   ├── VerifyOtpUseCase.kt
+│   ├── UpdateUserProfileUseCase.kt
+│   ├── GetSelectedLanguageUseCase.kt
+│   └── SetSelectedLanguageUseCase.kt
+└── model/
+    ├── Language.kt
+    └── UserRole.kt
+```
+
+### Android App (`composeApp/src/androidMain/`)
+
+```
+composeApp/src/androidMain/kotlin/com/kissangram/
+├── repository/
+│   ├── AndroidAuthRepository.kt
+│   ├── AndroidPreferencesRepository.kt
+│   └── AndroidSpeechRepository.kt
+├── viewmodel/
+│   ├── PhoneNumberViewModel.kt
+│   ├── OtpViewModel.kt
+│   ├── NameViewModel.kt
+│   ├── LanguageSelectionViewModel.kt
+│   ├── RoleSelectionViewModel.kt
+│   └── ExpertDocumentUploadViewModel.kt
+├── ui/
+│   ├── auth/
+│   │   ├── PhoneNumberScreen.kt
+│   │   ├── OtpScreen.kt
+│   │   ├── NameScreen.kt
+│   │   ├── RoleSelectionScreen.kt
+│   │   └── ExpertDocumentUploadScreen.kt
+│   ├── components/
+│   │   └── HoldToSpeakButton.kt
+│   └── languageselection/
+│       └── LanguageSelectionScreen.kt
+├── navigation/
+│   ├── NavController.kt
+│   └── NavigationState.kt
+├── App.kt
+└── MainActivity.kt
+```
+
+### iOS App (`iosApp/iosApp/`)
+
+```
+iosApp/iosApp/
+├── repository/
+│   ├── IOSAuthRepository.swift
+│   ├── IOSPreferencesRepository.swift
+│   └── IOSSpeechRepository.swift
+├── viewmodel/
+│   ├── PhoneNumberViewModel.swift
+│   ├── OtpViewModel.swift
+│   ├── NameViewModel.swift
+│   ├── LanguageSelectionViewModel.swift
+│   ├── RoleSelectionViewModel.swift
+│   └── ExpertDocumentUploadViewModel.swift
+├── ui/
+│   ├── PhoneNumberView.swift
+│   ├── OtpView.swift
+│   ├── NameView.swift
+│   ├── RoleSelectionView.swift
+│   ├── ExpertDocumentUploadView.swift
+│   ├── LanguageSelectionView.swift
+│   └── components/
+│       └── HoldToSpeakButton.swift
+├── navigation/
+│   └── NavigationState.swift
+├── iOSApp.swift
+└── ContentView.swift
+```
+
+---
+
+## Implementation Rules
+
+### Shared Module Rules (`shared/src/commonMain/`)
+
+✅ **Allowed:**
+- Kotlin data classes (models)
+- Repository interfaces (no implementations)
+- Use cases with business logic
+- Kotlin standard library
+- Multiplatform libraries (kotlinx.coroutines, etc.)
+
+❌ **Forbidden:**
+- Platform-specific imports (`android.*`, `platform.*`, `java.*`, etc.)
+- Repository implementations
+- ViewModels
+- UI code
+- Platform SDK calls
+
+### Repository Pattern
+
+1. **Define interface in shared:**
+```kotlin
+// shared/src/commonMain/kotlin/com/kissangram/repository/AuthRepository.kt
+interface AuthRepository {
+    @Throws(Exception::class)
+    suspend fun sendOtp(phoneNumber: String)
+    
+    @Throws(Exception::class)
+    suspend fun verifyOtp(otp: String)
+    
+    suspend fun getCurrentUserId(): String?
+}
+```
+
+2. **Implement in Android (Kotlin):**
+```kotlin
+// composeApp/src/androidMain/kotlin/com/kissangram/repository/AndroidAuthRepository.kt
+class AndroidAuthRepository(
+    private val preferencesRepository: PreferencesRepository
+) : AuthRepository {
+    private val firebaseAuth = FirebaseAuth.getInstance()
+    
+    override suspend fun sendOtp(phoneNumber: String) {
+        // Android Firebase implementation
+    }
+}
+```
+
+3. **Implement in iOS (Swift):**
+```swift
+// iosApp/iosApp/repository/IOSAuthRepository.swift
+final class IOSAuthRepository: AuthRepository {
+    private let auth = Auth.auth()
+    private let preferencesRepository: PreferencesRepository
+    
+    init(preferencesRepository: PreferencesRepository) {
+        self.preferencesRepository = preferencesRepository
+    }
+    
+    func sendOtp(phoneNumber: String) async throws {
+        // iOS Firebase implementation
+    }
+}
+```
+
+### Use Case Pattern
+
+All business logic goes in use cases (shared module):
+
+```kotlin
+// shared/src/commonMain/kotlin/com/kissangram/usecase/SendOtpUseCase.kt
+class SendOtpUseCase(
+    private val authRepository: AuthRepository
+) {
+    @Throws(Exception::class)
+    suspend operator fun invoke(phoneNumber: String) {
+        if (phoneNumber.isBlank() || phoneNumber.length < 10) {
+            throw IllegalArgumentException("Invalid phone number")
+        }
+        authRepository.sendOtp(phoneNumber)
+    }
+}
+```
+
+### ViewModel Pattern
+
+#### Android ViewModel:
+```kotlin
+class PhoneNumberViewModel(
+    application: Application,
+    activity: Activity? = null
+) : AndroidViewModel(application) {
+    
+    // 1. Create repositories
+    private val preferencesRepository = AndroidPreferencesRepository(application)
+    private val authRepository = AndroidAuthRepository(
+        context = application,
+        activity = activity,
+        preferencesRepository = preferencesRepository
+    )
+    
+    // 2. Create use cases
+    private val sendOtpUseCase = SendOtpUseCase(authRepository)
+    
+    // 3. Use in ViewModel functions
+    fun sendOtp(onSuccess: (String) -> Unit, onError: (String) -> Unit) {
+        viewModelScope.launch {
+            try {
+                sendOtpUseCase(fullPhoneNumber)
+                onSuccess(fullPhoneNumber)
+            } catch (e: Exception) {
+                onError(e.message ?: "Failed")
+            }
+        }
+    }
+}
+```
+
+#### iOS ViewModel:
+```swift
+@MainActor
+class PhoneNumberViewModel: ObservableObject {
+    @Published var phoneNumber: String = ""
+    @Published var isLoading: Bool = false
+    
+    // 1. Create repositories
+    private let preferencesRepository: PreferencesRepository
+    private let authRepository: AuthRepository
+    
+    // 2. Create use cases
+    private let sendOtpUseCase: SendOtpUseCase
+    
+    init() {
+        self.preferencesRepository = IOSPreferencesRepository()
+        self.authRepository = IOSAuthRepository(preferencesRepository: preferencesRepository)
+        self.sendOtpUseCase = SendOtpUseCase(authRepository: authRepository)
+    }
+    
+    // 3. Use in ViewModel functions
+    func sendOtp(onSuccess: @escaping (String) -> Void, onError: @escaping (String) -> Void) async {
+        do {
+            try await sendOtpUseCase.invoke(phoneNumber: fullPhoneNumber)
+            onSuccess(fullPhoneNumber)
+        } catch {
+            onError(error.localizedDescription)
+        }
+    }
+}
+```
+
+---
+
+## Critical Type Conversions (Swift ↔ Kotlin)
+
+When implementing Kotlin interfaces in Swift:
+
+```swift
+// Return KotlinBoolean for Kotlin Boolean return types
+func isUserAuthenticated() async throws -> KotlinBoolean {
+    return KotlinBoolean(value: auth.currentUser != nil)
+}
+
+// Usage in Swift
+let isAuth = try await authRepository.isUserAuthenticated()
+if isAuth.boolValue {
+    // User is authenticated
+}
+```
+
+---
+
+## Feature Implementation Template
+
+When adding any feature, follow this exact order:
+
+1. **Add/Update Model** (if needed) - `shared/src/commonMain/kotlin/com/kissangram/model/`
+2. **Add Repository Interface** - `shared/src/commonMain/kotlin/com/kissangram/repository/`
+3. **Create Use Case(s)** - `shared/src/commonMain/kotlin/com/kissangram/usecase/`
+4. **Implement Android Repository** - `composeApp/src/androidMain/kotlin/com/kissangram/repository/`
+5. **Implement iOS Repository** - `iosApp/iosApp/repository/` (Swift)
+6. **Create/Update Android ViewModel** - `composeApp/src/androidMain/kotlin/com/kissangram/viewmodel/`
+7. **Create/Update iOS ViewModel** - `iosApp/iosApp/viewmodel/` (Swift)
+8. **Update Android UI** - `composeApp/src/androidMain/kotlin/com/kissangram/ui/`
+9. **Update iOS UI** - `iosApp/iosApp/ui/` (Swift)
+
+---
+
+## Key Rules Summary
+
+1. **Shared module = interfaces + use cases + models ONLY**
+2. **Repository implementations are in platform modules, NOT shared**
+3. **iOS repositories are written in Swift, NOT Kotlin/Native**
+4. **Use cases contain all business logic and validation**
+5. **ViewModels instantiate repositories and use cases**
+6. **UI components are platform-native (Compose/SwiftUI)**
+7. **No expect/actual for repositories - just interfaces**
+
+---
+
+## Code Distribution Target
+
+- **Shared Module**: 70% (Interfaces, Use Cases, Models, Business Logic)
+- **Android Module**: 15% (Repository Implementation, ViewModel, UI)
+- **iOS Module**: 15% (Repository Implementation, ViewModel, UI)
+
+---
+
+## Planned Features
+
+### 1. Home Feed
+- **Models**: `Post`, `Comment`, `Like`
+- **Repository**: `FeedRepository`
+- **Use Cases**: `GetFeedUseCase`, `LikePostUseCase`, `CommentUseCase`
+
+### 2. Video Recording & Upload
+- **Models**: `Video`, `VideoMetadata`
+- **Repository**: `VideoRepository`
+- **Use Cases**: `UploadVideoUseCase`, `GetVideosUseCase`
+
+### 3. User Profile
+- **Models**: `UserProfile`, `UserStats`
+- **Repository**: `UserRepository`
+- **Use Cases**: `GetProfileUseCase`, `UpdateProfileUseCase`
+
+### 4. Chat/Messaging
+- **Models**: `Message`, `Conversation`
+- **Repository**: `ChatRepository`
+- **Use Cases**: `SendMessageUseCase`, `GetConversationsUseCase`
+
+### 5. Notifications
+- **Models**: `Notification`
+- **Repository**: `NotificationRepository`
+- **Platform-specific**: FCM for Android, APNs for iOS
+
+---
+
+## File Naming Conventions
+
+| Type | Android | iOS |
+|------|---------|-----|
+| Screen/View | `*Screen.kt` | `*View.swift` |
+| ViewModel | `*ViewModel.kt` | `*ViewModel.swift` |
+| Repository Interface | `*Repository.kt` (in shared) | - |
+| Android Repo Impl | `Android*Repository.kt` | - |
+| iOS Repo Impl | - | `IOS*Repository.swift` |
+| Use Case | `*UseCase.kt` | - |
+| Model | `*.kt` | - |

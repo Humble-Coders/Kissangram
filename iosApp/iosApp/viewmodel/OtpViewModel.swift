@@ -12,15 +12,17 @@ class OtpViewModel: ObservableObject {
     
     let phoneNumber: String
     
+    private let preferencesRepository: PreferencesRepository
     private let authRepository: AuthRepository
     private let verifyOtpUseCase: VerifyOtpUseCase
-    private let speechRecognizer: IOSSpeechRecognizerWrapper
+    private let speechRepository: IOSSpeechRepository
     
     init(phoneNumber: String) {
         self.phoneNumber = phoneNumber
-        self.authRepository = IOSAuthRepository()
+        self.preferencesRepository = IOSPreferencesRepository()
+        self.authRepository = IOSAuthRepository(preferencesRepository: preferencesRepository)
         self.verifyOtpUseCase = VerifyOtpUseCase(authRepository: authRepository)
-        self.speechRecognizer = IOSSpeechRecognizerWrapper()
+        self.speechRepository = IOSSpeechRepository()
     }
     
     func verifyOtp(onSuccess: @escaping () -> Void, onError: @escaping (String) -> Void) async {
@@ -60,9 +62,9 @@ class OtpViewModel: ObservableObject {
         
         do {
             // Request permission if needed
-            if !speechRecognizer.hasPermission() {
-                let granted = try await speechRecognizer.requestPermission()
-                if !granted {
+            if !speechRepository.hasPermission() {
+                let granted = try await speechRepository.requestPermission()
+                if !granted.boolValue {
                     isListening = false
                     error = "Speech recognition permission is required"
                     return
@@ -72,7 +74,7 @@ class OtpViewModel: ObservableObject {
             // Start listening with continuous updates
             Task {
                 do {
-                    try await speechRecognizer.startListening { [weak self] recognizedText in
+                    try await speechRepository.startListeningWithUpdates { [weak self] recognizedText in
                         guard let self = self else { return }
                         // Extract digits from recognized text and limit to 6 digits for OTP
                         let digits = String(recognizedText.filter { $0.isNumber }.prefix(6))
@@ -104,19 +106,23 @@ class OtpViewModel: ObservableObject {
         isListening = false
         isProcessing = true
         
-        do {
-            let finalText = try await speechRecognizer.stopListening()
-            // Extract digits and limit to 6 digits for OTP
-            let digits = String(finalText.filter { $0.isNumber }.prefix(6))
-            if !digits.isEmpty {
-                otp = digits
-            }
-            isProcessing = false
-        } catch let recognitionError {
-            if !recognitionError.localizedDescription.contains("cancelled") {
-                self.error = recognitionError.localizedDescription
-            }
-            isProcessing = false
+        let initialText = speechRepository.stopListeningSync()
+        // Extract digits and limit to 6 digits for OTP
+        let digits = String(initialText.filter { $0.isNumber }.prefix(6))
+        if !digits.isEmpty {
+            otp = digits
         }
+        
+        // Wait a bit for final results to come in (up to 3 seconds)
+        try? await Task.sleep(nanoseconds: 3_500_000_000) // 3.5 seconds
+        
+        // Get final accumulated text after waiting
+        let finalText = speechRepository.getAccumulatedText()
+        let finalDigits = String(finalText.filter { $0.isNumber }.prefix(6))
+        if !finalDigits.isEmpty {
+            otp = finalDigits
+        }
+        
+        isProcessing = false
     }
 }

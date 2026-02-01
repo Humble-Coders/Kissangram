@@ -35,6 +35,7 @@ data class HoldToSpeakButtonStyle(
     val textSize: androidx.compose.ui.unit.TextUnit = 18.sp,
     val textFontWeight: FontWeight = FontWeight.SemiBold,
     val horizontalPadding: androidx.compose.ui.unit.Dp = 19.dp,
+    val verticalPadding: androidx.compose.ui.unit.Dp = 0.dp,
     val spacing: androidx.compose.ui.unit.Dp = 14.dp,
     val scaleAnimation: Float = 1.1f,
     val backgroundColorIdle: Color = Color(0xFFF8F9F1),
@@ -57,6 +58,50 @@ data class HoldToSpeakButtonStyle(
  * Default style matching the phone number screen (stable version).
  */
 val DefaultHoldToSpeakButtonStyle = HoldToSpeakButtonStyle()
+
+/**
+ * OTP screen style - horizontal layout with "Tap to speak" text.
+ */
+val OtpScreenButtonStyle = HoldToSpeakButtonStyle(
+    buttonHeight = 83.dp,
+    cornerRadius = 18.dp,
+    iconSize = 45.dp,
+    iconInnerSize = 20.dp,
+    textSize = 18.sp,
+    textFontWeight = FontWeight.SemiBold,
+    horizontalPadding = 19.dp,
+    verticalPadding = 0.dp,
+    spacing = 14.dp,
+    backgroundColorIdle = Color(0xFFF8F9F1),
+    backgroundColorListening = Color(0x1A2D6A4F),
+    borderColorIdle = Color(0x332D6A4F),
+    borderColorListening = Color(0xFF2D6A4F),
+    textColorIdle = Color(0xFF1B1B1B),
+    textColorListening = Color(0xFF2D6A4F),
+    layoutDirection = HoldToSpeakButtonStyle.LayoutDirection.HORIZONTAL
+)
+
+/**
+ * Name screen style - vertical layout with larger icon and "Tap to say your name" text.
+ */
+val NameScreenButtonStyle = HoldToSpeakButtonStyle(
+    buttonHeight = 198.dp,
+    cornerRadius = 27.dp,
+    iconSize = 80.dp,
+    iconInnerSize = 45.dp,
+    textSize = 16.875.sp,
+    textFontWeight = FontWeight.Medium,
+    horizontalPadding = 0.dp,
+    verticalPadding = 37.dp,
+    spacing = 18.dp,
+    backgroundColorIdle = Color(0x0D2D6A4F), // rgba(45,106,79,0.05)
+    backgroundColorListening = Color(0x1A2D6A4F),
+    borderColorIdle = Color(0x1A2D6A4F), // rgba(45,106,79,0.1)
+    borderColorListening = Color(0xFF2D6A4F),
+    textColorIdle = Color(0xFF2D6A4F),
+    textColorListening = Color(0xFF2D6A4F),
+    layoutDirection = HoldToSpeakButtonStyle.LayoutDirection.VERTICAL
+)
 
 /**
  * Reusable hold-to-speak button component for speech recognition.
@@ -132,7 +177,8 @@ fun HoldToSpeakButton(
                 Row(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = style.horizontalPadding),
+                        .padding(horizontal = style.horizontalPadding)
+                        .padding(vertical = style.verticalPadding),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(style.spacing)
                 ) {
@@ -185,7 +231,8 @@ fun HoldToSpeakButton(
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = style.horizontalPadding),
+                        .padding(horizontal = style.horizontalPadding)
+                        .padding(vertical = style.verticalPadding),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {

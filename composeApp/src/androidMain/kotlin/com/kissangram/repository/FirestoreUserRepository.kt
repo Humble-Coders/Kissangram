@@ -1,0 +1,221 @@
+package com.kissangram.repository
+
+import android.util.Log
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
+import com.kissangram.model.User
+import com.kissangram.model.UserInfo
+import com.kissangram.model.UserRole
+import com.kissangram.model.VerificationStatus
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withTimeout
+import java.io.IOException
+
+/**
+ * Firestore implementation of UserRepository.
+ * Creates and reads user profile at /users/{userId} per FIRESTORE_SCHEMA.md.
+ */
+class FirestoreUserRepository(
+    private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance(
+        com.google.firebase.FirebaseApp.getInstance(),
+        DATABASE_NAME
+    ),
+    private val authRepository: com.kissangram.repository.AuthRepository
+) : com.kissangram.repository.UserRepository {
+
+    private val usersCollection
+        get() = firestore.collection("users")
+
+    override suspend fun createUserProfile(
+        userId: String,
+        phoneNumber: String,
+        name: String,
+        role: UserRole,
+        language: String,
+        verificationDocUrl: String?,
+        verificationStatus: VerificationStatus
+    ) {
+        Log.d(TAG, "createUserProfile ENTRY: userId=$userId")
+
+        val username = generateUsername(name, userId)
+        val searchKeywords = buildSearchKeywords(name, username)
+        val now = System.currentTimeMillis()
+
+        // Build data map with ONLY non-null values
+        val data = hashMapOf<String, Any>(
+            FIELD_ID to userId,
+            FIELD_PHONE_NUMBER to phoneNumber,
+            FIELD_NAME to name,
+            FIELD_USERNAME to username,
+            FIELD_ROLE to roleToFirestore(role),
+            FIELD_VERIFICATION_STATUS to verificationStatusToFirestore(verificationStatus),
+            FIELD_EXPERTISE to emptyList<String>(),
+            FIELD_FOLLOWERS_COUNT to 0L,
+            FIELD_FOLLOWING_COUNT to 0L,
+            FIELD_POSTS_COUNT to 0L,
+            FIELD_LANGUAGE to language,
+            FIELD_CREATED_AT to now,
+            FIELD_UPDATED_AT to now,
+            FIELD_LAST_ACTIVE_AT to now,
+            FIELD_SEARCH_KEYWORDS to searchKeywords,
+            FIELD_IS_ACTIVE to true
+        )
+        verificationDocUrl?.let { data[FIELD_VERIFICATION_DOC_URL] = it }
+
+        Log.d(TAG, "createUserProfile: Writing user document with ${data.size} fields (timeout 30s)")
+        
+        // Use longer timeout and let Firestore handle offline queueing with disk persistence
+        try {
+            withTimeout(30_000L) {
+                usersCollection.document(userId).set(data, SetOptions.merge()).await()
+            }
+            Log.d(TAG, "createUserProfile: SUCCESS - User profile created")
+        } catch (e: TimeoutCancellationException) {
+            Log.w(TAG, "createUserProfile: Firestore write timed out after 30s", e)
+            throw IOException("Request timed out. Check your connection and try again.", e)
+        } catch (e: Exception) {
+            Log.e(TAG, "createUserProfile: Firestore write FAILED", e)
+            throw IOException("Failed to create profile: ${e.message}", e)
+        }
+    }
+
+    override suspend fun getCurrentUser(): User? {
+        val userId = authRepository.getCurrentUserId() ?: return null
+        return getUser(userId)
+    }
+
+    override suspend fun getUser(userId: String): User? {
+        val doc = usersCollection.document(userId).get().await()
+        if (!doc.exists()) return null
+        return doc.toUser()
+    }
+
+    override suspend fun getUserInfo(userId: String): UserInfo? {
+        val user = getUser(userId) ?: return null
+        return UserInfo(
+            id = user.id,
+            name = user.name,
+            username = user.username,
+            profileImageUrl = user.profileImageUrl,
+            role = user.role,
+            verificationStatus = user.verificationStatus
+        )
+    }
+
+    override suspend fun updateProfile(
+        name: String?,
+        username: String?,
+        bio: String?,
+        profileImageUrl: String?
+    ) {
+        val userId = authRepository.getCurrentUserId()
+            ?: throw IllegalStateException("No authenticated user")
+        val updates = mutableMapOf<String, Any?>(FIELD_UPDATED_AT to System.currentTimeMillis())
+        name?.let { updates[FIELD_NAME] = it }
+        username?.let { updates[FIELD_USERNAME] = it }
+        bio?.let { updates[FIELD_BIO] = it }
+        profileImageUrl?.let { updates[FIELD_PROFILE_IMAGE_URL] = it }
+        if (updates.size > 1) {
+            usersCollection.document(userId).update(updates.filterValues { it != null }).await()
+        }
+    }
+
+    override suspend fun searchUsers(query: String, limit: Int): List<UserInfo> = emptyList()
+    override suspend fun isUsernameAvailable(username: String): Boolean = true
+    override suspend fun getFollowers(userId: String, page: Int, pageSize: Int): List<UserInfo> = emptyList()
+    override suspend fun getFollowing(userId: String, page: Int, pageSize: Int): List<UserInfo> = emptyList()
+
+    private fun generateUsername(name: String, userId: String): String {
+        val base = name.trim().lowercase().replace(Regex("[^a-z0-9]"), "_").take(20)
+        val suffix = userId.takeLast(6)
+        return "${base}_$suffix"
+    }
+
+    private fun buildSearchKeywords(name: String, username: String): List<String> {
+        val words = name.trim().lowercase().split(Regex("\\s+")).filter { it.length > 1 }
+        return (words + listOf(username)).distinct()
+    }
+
+    private fun roleToFirestore(role: UserRole): String = when (role) {
+        UserRole.FARMER -> "farmer"
+        UserRole.EXPERT -> "expert"
+        UserRole.AGRIPRENEUR -> "agripreneur"
+        UserRole.INPUT_SELLER -> "input_seller"
+        UserRole.AGRI_LOVER -> "agri_lover"
+    }
+
+    private fun verificationStatusToFirestore(s: VerificationStatus): String = when (s) {
+        VerificationStatus.UNVERIFIED -> "unverified"
+        VerificationStatus.PENDING -> "pending"
+        VerificationStatus.VERIFIED -> "verified"
+        VerificationStatus.REJECTED -> "rejected"
+    }
+
+    private fun com.google.firebase.firestore.DocumentSnapshot.toUser(): User {
+        val id = getString(FIELD_ID) ?: id
+        val roleStr = getString(FIELD_ROLE) ?: "farmer"
+        val statusStr = getString(FIELD_VERIFICATION_STATUS) ?: "unverified"
+        return User(
+            id = id,
+            phoneNumber = getString(FIELD_PHONE_NUMBER) ?: "",
+            name = getString(FIELD_NAME) ?: "",
+            username = getString(FIELD_USERNAME) ?: "",
+            profileImageUrl = getString(FIELD_PROFILE_IMAGE_URL),
+            bio = getString(FIELD_BIO),
+            role = firestoreToRole(roleStr),
+            verificationStatus = firestoreToVerificationStatus(statusStr),
+            location = null,
+            expertise = (get(FIELD_EXPERTISE) as? List<*>)?.mapNotNull { it as? String } ?: emptyList(),
+            followersCount = (getLong(FIELD_FOLLOWERS_COUNT) ?: 0L).toInt(),
+            followingCount = (getLong(FIELD_FOLLOWING_COUNT) ?: 0L).toInt(),
+            postsCount = (getLong(FIELD_POSTS_COUNT) ?: 0L).toInt(),
+            language = getString(FIELD_LANGUAGE) ?: "en",
+            createdAt = getLong(FIELD_CREATED_AT) ?: 0L,
+            lastActiveAt = getLong(FIELD_LAST_ACTIVE_AT)
+        )
+    }
+
+    private fun firestoreToRole(s: String): UserRole = when (s) {
+        "expert" -> UserRole.EXPERT
+        "agripreneur" -> UserRole.AGRIPRENEUR
+        "input_seller" -> UserRole.INPUT_SELLER
+        "agri_lover" -> UserRole.AGRI_LOVER
+        else -> UserRole.FARMER
+    }
+
+    private fun firestoreToVerificationStatus(s: String): VerificationStatus = when (s) {
+        "pending" -> VerificationStatus.PENDING
+        "verified" -> VerificationStatus.VERIFIED
+        "rejected" -> VerificationStatus.REJECTED
+        else -> VerificationStatus.UNVERIFIED
+    }
+
+    companion object {
+        private const val TAG = "FirestoreUserRepo"
+        private const val DATABASE_NAME = "kissangram"
+        private const val COLLECTION_USERS = "users"
+        private const val FIELD_ID = "id"
+        private const val FIELD_PHONE_NUMBER = "phoneNumber"
+        private const val FIELD_NAME = "name"
+        private const val FIELD_USERNAME = "username"
+        private const val FIELD_PROFILE_IMAGE_URL = "profileImageUrl"
+        private const val FIELD_BIO = "bio"
+        private const val FIELD_ROLE = "role"
+        private const val FIELD_VERIFICATION_STATUS = "verificationStatus"
+        private const val FIELD_VERIFICATION_DOC_URL = "verificationDocUrl"
+        private const val FIELD_VERIFICATION_SUBMITTED_AT = "verificationSubmittedAt"
+        private const val FIELD_VERIFIED_AT = "verifiedAt"
+        private const val FIELD_LOCATION = "location"
+        private const val FIELD_EXPERTISE = "expertise"
+        private const val FIELD_FOLLOWERS_COUNT = "followersCount"
+        private const val FIELD_FOLLOWING_COUNT = "followingCount"
+        private const val FIELD_POSTS_COUNT = "postsCount"
+        private const val FIELD_LANGUAGE = "language"
+        private const val FIELD_CREATED_AT = "createdAt"
+        private const val FIELD_UPDATED_AT = "updatedAt"
+        private const val FIELD_LAST_ACTIVE_AT = "lastActiveAt"
+        private const val FIELD_SEARCH_KEYWORDS = "searchKeywords"
+        private const val FIELD_IS_ACTIVE = "isActive"
+    }
+}

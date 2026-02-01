@@ -4,14 +4,20 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
-class NavController {
+class NavController(initialScreen: Screen = Screen.LanguageSelection) {
     private val backStack = mutableListOf<Screen>()
     
-    var currentScreen: Screen by mutableStateOf(Screen.LanguageSelection)
+    var currentScreen: Screen by mutableStateOf(initialScreen)
         private set
     
     fun navigateTo(screen: Screen) {
         backStack.add(currentScreen)
+        currentScreen = screen
+    }
+    
+    /** Replace entire back stack and set screen (e.g. restore to Home when session exists). */
+    fun replaceAllWith(screen: Screen) {
+        backStack.clear()
         currentScreen = screen
     }
     

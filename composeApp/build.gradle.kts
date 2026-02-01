@@ -21,6 +21,15 @@ kotlin {
             implementation(compose.preview)
             implementation(libs.androidx.activity.compose)
             implementation(libs.firebase.auth)
+            implementation(libs.firebase.storage)
+            implementation(libs.firebase.firestore)
+            implementation(libs.datastore.preferences)
+            
+            // Image loading
+            implementation("io.coil-kt:coil-compose:2.5.0")
+            
+            // Swipe to refresh
+            implementation("com.google.accompanist:accompanist-swiperefresh:0.32.0")
         }
         commonMain.dependencies {
             implementation(compose.runtime)
