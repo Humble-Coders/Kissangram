@@ -39,7 +39,7 @@ fun PhoneNumberScreen(
     onBackClick: () -> Unit,
     onOtpSent: (String) -> Unit
 ) {
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val context =LocalContext.current
     val application = context.applicationContext as android.app.Application
     val activity = context as? android.app.Activity
     

@@ -2,6 +2,7 @@ package com.kissangram.ui.profile
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
@@ -12,6 +13,7 @@ import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -37,126 +39,130 @@ import com.kissangram.viewmodel.ProfileViewModel
 private val ProfileBackground = Color(0xFFFBF8F0)
 private val ExpertGreen = Color(0xFF74C365)
 
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
     onBackClick: () -> Unit = {},
     onEditProfile: () -> Unit = {},
     onSignOut: () -> Unit = {},
+    reloadKey: Int = 0, // Key that changes to trigger reload after save
     viewModel: ProfileViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var showMenu by remember { mutableStateOf(false) }
+    
+    // Load profile when reloadKey changes (first display or after save)
+    LaunchedEffect(reloadKey) {
+        viewModel.loadProfile()
+    }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-
             .background(ProfileBackground)
     ) {
-        Scaffold(
-            containerColor = Color.Transparent , // Important: so Box background shows through
-
-
-            topBar = {
-                TopAppBar(
-                    title = {
-                        Text(
-                            "Profile",
-                            fontWeight = FontWeight.Bold,
-                            color = TextPrimary,
-                            fontFamily = androidx.compose.ui.text.font.FontFamily.Serif
+        Column(modifier = Modifier.fillMaxSize()) {
+            TopAppBar(
+                title = {
+                    Text(
+                        "Profile",
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Serif
+                    )
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBackClick) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = TextPrimary
                         )
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = onBackClick) {
+                    }
+                },
+                actions = {
+                    Box {
+                        IconButton(onClick = { showMenu = true }) {
                             Icon(
-                                Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Back",
+                                Icons.Outlined.MoreVert,
+                                contentDescription = "More",
                                 tint = TextPrimary
                             )
                         }
-                    },
-                    actions = {
-                        Box {
-                            IconButton(onClick = { showMenu = true }) {
-                                Icon(
-                                    Icons.Outlined.MoreVert,
-                                    contentDescription = "More",
-                                    tint = TextPrimary
-                                )
-                            }
-                            DropdownMenu(
-                                expanded = showMenu,
-                                onDismissRequest = { showMenu = false }
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("Sign out", color = Color(0xFFBC4749)) },
-                                    onClick = {
-                                        showMenu = false
-                                        viewModel.signOut(onSignOut)
-                                    }
-                                )
-                            }
+                        DropdownMenu(
+                            expanded = showMenu,
+                            onDismissRequest = { showMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Sign out", color = Color(0xFFBC4749)) },
+                                onClick = {
+                                    showMenu = false
+                                    viewModel.signOut(onSignOut)
+                                }
+                            )
                         }
-                    },
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = ProfileBackground
-                ),
-                windowInsets = WindowInsets(0, 0, 0, 0)
+                )
             )
-            },
-        ) { paddingValues ->
-        if (uiState.isLoading) {
+
+            /* ---------- CONTENT ---------- */
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(paddingValues),
-                contentAlignment = Alignment.Center
             ) {
-                CircularProgressIndicator(color = PrimaryGreen)
-            }
-        } else if (uiState.error != null) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(uiState.error!!, color = TextSecondary)
-                    Spacer(Modifier.height(16.dp))
-                    Button(
-                        onClick = { viewModel.loadProfile() },
-                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen)
-                    ) {
-                        Text("Retry")
+                when {
+                    uiState.isLoading -> {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(color = PrimaryGreen)
+                        }
+                    }
+
+                    uiState.error != null -> {
+                        Column(
+                            modifier = Modifier.align(Alignment.Center),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(uiState.error!!, color = TextSecondary)
+                            Spacer(Modifier.height(16.dp))
+                            Button(
+                                onClick = { viewModel.loadProfile() },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = PrimaryGreen
+                                )
+                            ) {
+                                Text("Retry")
+                            }
+                        }
+                    }
+
+                    else -> {
+                        uiState.user?.let { user ->
+                            ProfileContent(
+                                user = user,
+                                onEditProfile = onEditProfile,
+                                paddingValues = PaddingValues(0.dp) // no Scaffold now
+                            )
+                        } ?: run {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("No profile found", color = TextSecondary)
+                            }
+                        }
                     }
                 }
             }
-        } else {
-            uiState.user?.let { user ->
-                ProfileContent(
-                    user = user,
-                    onEditProfile = onEditProfile,
-                    paddingValues = paddingValues
-                )
-            } ?: run {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(paddingValues),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("No profile found", color = TextSecondary)
-                }
-            }
-        }
         }
     }
 }
-
 @Composable
 private fun ProfileContent(
     user: User,
@@ -168,51 +174,75 @@ private fun ProfileContent(
             .fillMaxSize()
             .padding(paddingValues)
             .padding(horizontal = 24.dp)
-            .navigationBarsPadding()   // ✅ ADD THIS
-
             .verticalScroll(rememberScrollState())
     ) {
-        Spacer(Modifier.height(24.dp))
-        // Avatar
+        Spacer(Modifier.height(16.dp))
+        // Avatar with gradient border
         Box(
             modifier = Modifier
-                .size(120.dp)
-                .align(Alignment.CenterHorizontally)
-                .clip(CircleShape)
-                .background(Brush.verticalGradient(listOf(PrimaryGreen, AccentYellow)))
-                .padding(3.dp),
+                .size(126.dp)
+                .align(Alignment.CenterHorizontally),
             contentAlignment = Alignment.Center
         ) {
-            if (user.profileImageUrl != null) {
-                AsyncImage(
-                    model = user.profileImageUrl,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize().clip(CircleShape),
-                    contentScale = ContentScale.Crop
-                )
-            } else {
-                Text(
-                    text = user.name.firstOrNull()?.uppercase() ?: "",
-                    color = Color.White,
-                    fontSize = 48.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
+            // Gradient border circle
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(CircleShape)
+                    .background(Brush.verticalGradient(listOf(PrimaryGreen, AccentYellow)))
+                    .padding(3.dp)
+            ) {
+                if (user.profileImageUrl != null) {
+                    AsyncImage(
+                        model = user.profileImageUrl,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(CircleShape),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(CircleShape)
+                            .background(PrimaryGreen),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = user.name.firstOrNull()?.uppercase() ?: "U",
+                            color = Color.White,
+                            fontSize = 48.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
             }
         }
+        
         Spacer(Modifier.height(16.dp))
+        
+        // Name
         Text(
             text = user.name,
             fontSize = 24.sp,
             fontWeight = FontWeight.Bold,
             color = TextPrimary,
-            modifier = Modifier.fillMaxWidth(),
-            maxLines = 1,
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.CenterHorizontally),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis
         )
+        
         Spacer(Modifier.height(8.dp))
+        
+        // Role Badge
         Surface(
             shape = RoundedCornerShape(16.dp),
-            color = ExpertGreen.copy(alpha = 0.15f)
+            color = ExpertGreen.copy(alpha = 0.15f),
+            modifier = Modifier.align(Alignment.CenterHorizontally)
         ) {
             Text(
                 text = roleLabel(user.role),
@@ -224,7 +254,12 @@ private fun ProfileContent(
         }
         user.location?.let { loc ->
             Spacer(Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+            ) {
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center) {
                 Icon(
                     imageVector = androidx.compose.material.icons.Icons.Outlined.LocationOn,
                     contentDescription = null,
@@ -233,10 +268,13 @@ private fun ProfileContent(
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    text = listOfNotNull(loc.district, loc.state, loc.country).joinToString(", ").ifEmpty { "—" },
+                    text = listOfNotNull(loc.village, loc.district, loc.state, loc.country).joinToString(", ")
+                        .ifEmpty { "—" },
                     fontSize = 14.sp,
-                    color = TextSecondary
-                )
+                    color = TextSecondary,
+
+                    )
+            }
             }
         }
         Spacer(Modifier.height(24.dp))
@@ -302,12 +340,4 @@ private fun StatItem(count: Int, label: String) {
             color = TextSecondary
         )
     }
-}
-
-private fun roleLabel(role: UserRole): String = when (role) {
-    UserRole.FARMER -> "Farmer"
-    UserRole.EXPERT -> "Expert"
-    UserRole.AGRIPRENEUR -> "Agripreneur"
-    UserRole.INPUT_SELLER -> "Input Seller"
-    UserRole.AGRI_LOVER -> "Agri Lover"
 }

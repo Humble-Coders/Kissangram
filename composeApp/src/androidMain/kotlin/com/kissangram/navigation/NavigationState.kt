@@ -23,4 +23,5 @@ sealed class Screen {
     data class Story(val userId: String) : Screen()
     object Notifications : Screen()
     object Messages : Screen()
+    object EditProfile : Screen()
 }

@@ -38,8 +38,7 @@ data class UserLocation(
     val district: String?,
     val state: String?,
     val country: String?,
-    val latitude: Double?,
-    val longitude: Double?
+    val village: String?
 )
 
 enum class VerificationStatus {

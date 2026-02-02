@@ -120,6 +120,68 @@ class FirestoreUserRepository(
             usersCollection.document(userId).update(updates.filterValues { it != null }).await()
         }
     }
+    
+    override suspend fun updateFullProfile(
+        name: String?,
+        bio: String?,
+        profileImageUrl: String?,
+        role: UserRole?,
+        state: String?,
+        district: String?,
+        village: String?,
+        crops: List<String>?
+    ) {
+        val userId = authRepository.getCurrentUserId()
+            ?: throw IllegalStateException("No authenticated user")
+        
+        Log.d(TAG, "updateFullProfile ENTRY: userId=$userId")
+        
+        val updates = mutableMapOf<String, Any>(FIELD_UPDATED_AT to System.currentTimeMillis())
+        
+        // Basic fields
+        name?.let { 
+            updates[FIELD_NAME] = it 
+            // Also update search keywords when name changes
+            val currentUsername = getUser(userId)?.username ?: ""
+            updates[FIELD_SEARCH_KEYWORDS] = buildSearchKeywords(it, currentUsername)
+        }
+        bio?.let { updates[FIELD_BIO] = it }
+        profileImageUrl?.let { updates[FIELD_PROFILE_IMAGE_URL] = it }
+        
+        // Role
+        role?.let { updates[FIELD_ROLE] = roleToFirestore(it) }
+        
+        // Location - build location map only if at least one location field is provided
+        if (state != null || district != null || village != null) {
+            val locationMap = mutableMapOf<String, Any>()
+            state?.let { locationMap["state"] = it }
+            district?.let { locationMap["district"] = it }
+            village?.let { locationMap["village"] = it }
+            locationMap["country"] = "India" // Default country
+            updates[FIELD_LOCATION] = locationMap
+        }
+        
+        // Crops - stored in expertise field per schema
+        crops?.let { updates[FIELD_EXPERTISE] = it }
+        
+        if (updates.size > 1) {
+            Log.d(TAG, "updateFullProfile: Updating ${updates.size} fields")
+            try {
+                withTimeout(30_000L) {
+                    usersCollection.document(userId).update(updates).await()
+                }
+                Log.d(TAG, "updateFullProfile: SUCCESS")
+            } catch (e: TimeoutCancellationException) {
+                Log.w(TAG, "updateFullProfile: Firestore write timed out", e)
+                throw IOException("Request timed out. Check your connection and try again.", e)
+            } catch (e: Exception) {
+                Log.e(TAG, "updateFullProfile: Firestore write FAILED", e)
+                throw IOException("Failed to update profile: ${e.message}", e)
+            }
+        } else {
+            Log.d(TAG, "updateFullProfile: No fields to update")
+        }
+    }
 
     override suspend fun searchUsers(query: String, limit: Int): List<UserInfo> = emptyList()
     override suspend fun isUsernameAvailable(username: String): Boolean = true
@@ -156,6 +218,19 @@ class FirestoreUserRepository(
         val id = getString(FIELD_ID) ?: id
         val roleStr = getString(FIELD_ROLE) ?: "farmer"
         val statusStr = getString(FIELD_VERIFICATION_STATUS) ?: "unverified"
+        
+        // Parse location map (only names, no geoPoint)
+        @Suppress("UNCHECKED_CAST")
+        val locationMap = get(FIELD_LOCATION) as? Map<String, Any?>
+        val userLocation = locationMap?.let {
+            com.kissangram.model.UserLocation(
+                district = it["district"] as? String,
+                state = it["state"] as? String,
+                country = it["country"] as? String,
+                village = it["village"] as? String
+            )
+        }
+        
         return User(
             id = id,
             phoneNumber = getString(FIELD_PHONE_NUMBER) ?: "",
@@ -165,7 +240,7 @@ class FirestoreUserRepository(
             bio = getString(FIELD_BIO),
             role = firestoreToRole(roleStr),
             verificationStatus = firestoreToVerificationStatus(statusStr),
-            location = null,
+            location = userLocation,
             expertise = (get(FIELD_EXPERTISE) as? List<*>)?.mapNotNull { it as? String } ?: emptyList(),
             followersCount = (getLong(FIELD_FOLLOWERS_COUNT) ?: 0L).toInt(),
             followingCount = (getLong(FIELD_FOLLOWING_COUNT) ?: 0L).toInt(),

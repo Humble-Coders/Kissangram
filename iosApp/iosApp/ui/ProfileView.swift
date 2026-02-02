@@ -11,6 +11,7 @@ struct ProfileView: View {
     var onBackClick: () -> Void = {}
     var onEditProfile: () -> Void = {}
     var onSignOut: () -> Void = {}
+    var reloadKey: Int = 0 // Key that changes to trigger reload after save
 
     var body: some View {
         ZStack {
@@ -79,6 +80,11 @@ struct ProfileView: View {
                 }
             }
         }
+        .task(id: reloadKey) {
+            // Load when reloadKey changes (first display or after save)
+            // This is similar to LaunchedEffect(reloadKey) in Android
+            viewModel.loadProfile()
+        }
     }
 }
 
@@ -138,7 +144,7 @@ struct ProfileContent: View {
                         Image(systemName: "location.fill")
                             .font(.system(size: 14))
                             .foregroundColor(.textSecondary)
-                        Text([loc.district, loc.state, loc.country].compactMap { $0 }.joined(separator: ", "))
+                        Text([loc.village, loc.district, loc.state, loc.country].compactMap { $0 }.joined(separator: ", "))
                             .font(.system(size: 14))
                             .foregroundColor(.textSecondary)
                     }

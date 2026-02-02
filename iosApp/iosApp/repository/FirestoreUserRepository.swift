@@ -105,6 +105,36 @@ final class FirestoreUserRepository: UserRepository {
             }
         }
     }
+    
+    func updateFullProfile(
+        name: String?,
+        bio: String?,
+        profileImageUrl: String?,
+        role: UserRole?,
+        state: String?,
+        district: String?,
+        village: String?,
+        crops: [String]?,
+        completionHandler: @escaping (Error?) -> Void
+    ) {
+        Task {
+            do {
+                try await updateFullProfileImpl(
+                    name: name,
+                    bio: bio,
+                    profileImageUrl: profileImageUrl,
+                    role: role,
+                    state: state,
+                    district: district,
+                    village: village,
+                    crops: crops
+                )
+                DispatchQueue.main.async { completionHandler(nil) }
+            } catch {
+                DispatchQueue.main.async { completionHandler(error) }
+            }
+        }
+    }
 
     // MARK: - Internal async implementation
 
@@ -190,6 +220,59 @@ final class FirestoreUserRepository: UserRepository {
             try await usersCollection.document(userId).updateData(updates)
         }
     }
+    
+    private func updateFullProfileImpl(
+        name: String?,
+        bio: String?,
+        profileImageUrl: String?,
+        role: UserRole?,
+        state: String?,
+        district: String?,
+        village: String?,
+        crops: [String]?
+    ) async throws {
+        guard let userId = try await authRepository.getCurrentUserId() else {
+            throw NSError(domain: "FirestoreUserRepository", code: 1, userInfo: [NSLocalizedDescriptionKey: "No authenticated user"])
+        }
+        
+        print("📝 FirestoreUserRepository: Updating full profile for user \(userId)")
+        
+        var updates: [String: Any] = [Self.fieldUpdatedAt: Int64(Date().timeIntervalSince1970 * 1000)]
+        
+        // Basic fields
+        if let name = name {
+            updates[Self.fieldName] = name
+            // Also update search keywords when name changes
+            if let user = try await getUserImpl(userId: userId) {
+                updates[Self.fieldSearchKeywords] = Self.buildSearchKeywords(name: name, username: user.username)
+            }
+        }
+        if let bio = bio { updates[Self.fieldBio] = bio }
+        if let profileImageUrl = profileImageUrl { updates[Self.fieldProfileImageUrl] = profileImageUrl }
+        
+        // Role
+        if let role = role { updates[Self.fieldRole] = Self.roleToFirestore(role) }
+        
+        // Location - build location map if at least one location field is provided
+        if state != nil || district != nil || village != nil {
+            var locationMap: [String: Any] = ["country": "India"]
+            if let state = state { locationMap["state"] = state }
+            if let district = district { locationMap["district"] = district }
+            if let village = village { locationMap["village"] = village }
+            updates[Self.fieldLocation] = locationMap
+        }
+        
+        // Crops - stored in expertise field per schema
+        if let crops = crops { updates[Self.fieldExpertise] = crops }
+        
+        if updates.count > 1 {
+            print("📝 FirestoreUserRepository: Updating \(updates.count) fields")
+            try await usersCollection.document(userId).updateData(updates)
+            print("✅ FirestoreUserRepository: Profile updated successfully")
+        } else {
+            print("⚠️ FirestoreUserRepository: No fields to update")
+        }
+    }
 
     // MARK: - Helpers
 
@@ -244,6 +327,17 @@ final class FirestoreUserRepository: UserRepository {
         let language = data[Self.fieldLanguage] as? String ?? "en"
         let createdAt = (data[Self.fieldCreatedAt] as? Int64) ?? 0
         let lastActiveAt = data[Self.fieldLastActiveAt] as? Int64
+        
+        // Parse location map (only names, no geoPoint)
+        var userLocation: UserLocation? = nil
+        if let locationMap = data[Self.fieldLocation] as? [String: Any] {
+            userLocation = UserLocation(
+                district: locationMap["district"] as? String,
+                state: locationMap["state"] as? String,
+                country: locationMap["country"] as? String,
+                village: locationMap["village"] as? String
+            )
+        }
 
         return User(
             id: id,
@@ -254,7 +348,7 @@ final class FirestoreUserRepository: UserRepository {
             bio: data[Self.fieldBio] as? String,
             role: firestoreToRole(roleStr),
             verificationStatus: firestoreToVerificationStatus(statusStr),
-            location: nil,
+            location: userLocation,
             expertise: expertise,
             followersCount: Int32(followersCount),
             followingCount: Int32(followingCount),

@@ -5,11 +5,14 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kissangram.ui.home.components.*
@@ -38,6 +41,16 @@ fun HomeScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val listState = rememberLazyListState()
+    
+    // Dev: Upload locations state
+    var showUploadDialog by remember { mutableStateOf(false) }
+    var uploadStatus by remember { mutableStateOf<String?>(null) }
+    var isUploading by remember { mutableStateOf(false) }
+    
+    // Dev: Upload crops state
+    var showCropsUploadDialog by remember { mutableStateOf(false) }
+    var cropsUploadStatus by remember { mutableStateOf<String?>(null) }
+    var isCropsUploading by remember { mutableStateOf(false) }
     
     // Load more when reaching end
     LaunchedEffect(listState) {
@@ -112,7 +125,7 @@ fun HomeScreen(
                         onStoryClick = onNavigateToStory
                     )
                 }
-                
+
                 // Posts
                 items(
                     items = uiState.posts,
@@ -128,7 +141,7 @@ fun HomeScreen(
                         onPostClick = { onNavigateToPostDetail(post.id) }
                     )
                 }
-                
+
                 // Loading more indicator
                 if (uiState.isLoadingMore) {
                     item {
@@ -145,15 +158,155 @@ fun HomeScreen(
                         }
                     }
                 }
-                
+
                 // End of feed
                 if (!uiState.hasMorePosts && uiState.posts.isNotEmpty()) {
                     item {
                         EndOfFeedSection()
                     }
                 }
+                
+                // DEV: Upload buttons section (remove after use)
+                item {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Dev Tools",
+                            fontWeight = FontWeight.Bold,
+                            color = TextSecondary
+                        )
+                        
+                        // Upload Locations Button
+                        Button(
+                            onClick = { showUploadDialog = true },
+                            enabled = !isUploading,
+                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CloudUpload,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(if (isUploading) "Uploading..." else "Upload Locations")
+                        }
+                        
+                        // Upload Crops Button
+                        Button(
+                            onClick = { showCropsUploadDialog = true },
+                            enabled = !isCropsUploading,
+                            colors = ButtonDefaults.buttonColors(containerColor = AccentYellow)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CloudUpload,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (isCropsUploading) "Uploading..." else "Upload Crops",
+                                color = TextPrimary
+                            )
+                        }
+                        
+                        // Status messages
+                        uploadStatus?.let {
+                            Text(
+                                text = it,
+                                color = if (it.contains("success", ignoreCase = true)) PrimaryGreen else ErrorRed,
+                                fontSize = MaterialTheme.typography.bodySmall.fontSize
+                            )
+                        }
+                        
+                        cropsUploadStatus?.let {
+                            Text(
+                                text = it,
+                                color = if (it.contains("success", ignoreCase = true)) PrimaryGreen else ErrorRed,
+                                fontSize = MaterialTheme.typography.bodySmall.fontSize
+                            )
+                        }
+                    }
+                }
+
+
             }
         }
         }
+
+        // Upload Locations Confirmation Dialog
+        if (showUploadDialog) {
+            AlertDialog(
+                onDismissRequest = { showUploadDialog = false },
+                title = { Text("Upload Locations") },
+                text = { Text("Upload all India states and districts data to Firestore? This is a one-time operation.") },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            showUploadDialog = false
+                            isUploading = true
+                            viewModel.uploadLocationsToFirestore(
+                                onSuccess = {
+                                    isUploading = false
+                                    uploadStatus = "Locations uploaded successfully!"
+                                },
+                                onError = { error ->
+                                    isUploading = false
+                                    uploadStatus = "Error: $error"
+                                }
+                            )
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen)
+                    ) {
+                        Text("Upload")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showUploadDialog = false }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
+        
+        // Upload Crops Confirmation Dialog
+        if (showCropsUploadDialog) {
+            AlertDialog(
+                onDismissRequest = { showCropsUploadDialog = false },
+                title = { Text("Upload Crops") },
+                text = { Text("Upload all crops data (categorized) to Firestore? This is a one-time operation.") },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            showCropsUploadDialog = false
+                            isCropsUploading = true
+                            viewModel.uploadCropsToFirestore(
+                                onSuccess = {
+                                    isCropsUploading = false
+                                    cropsUploadStatus = "Crops uploaded successfully!"
+                                },
+                                onError = { error ->
+                                    isCropsUploading = false
+                                    cropsUploadStatus = "Error: $error"
+                                }
+                            )
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = AccentYellow)
+                    ) {
+                        Text("Upload", color = TextPrimary)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showCropsUploadDialog = false }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
+
     }
 }

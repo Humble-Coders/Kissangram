@@ -2,11 +2,17 @@ import SwiftUI
 import FirebaseAuth
 import Shared
 
+// Import EditProfileView
+extension ContentView {
+    // EditProfileView is in the same module, so it's accessible
+}
+
 struct ContentView: View {
     @State private var currentScreen: Screen = .languageSelection
     @State private var navigationStack: [Screen] = []
     @State private var selectedNavItem: BottomNavItem = .home
     @State private var hasCheckedSession = false
+    @State private var profileReloadKey: Int = 0 // Key to trigger ProfileView reload after save
     
     private let prefs = IOSPreferencesRepository()
     
@@ -14,6 +20,8 @@ struct ContentView: View {
         switch currentScreen {
         case .home, .search, .createPost, .reels, .profile:
             return true
+        case .editProfile:
+            return false // Don't show bottom nav on edit profile
         default:
             return false
         }
@@ -57,7 +65,12 @@ struct ContentView: View {
                     )
                 }
             } else {
-                authFlowContent
+                // Show either auth flow or edit profile (which doesn't have bottom nav)
+                if case .editProfile = currentScreen {
+                    mainAppContent
+                } else {
+                    authFlowContent
+                }
             }
         }
         .animation(.easeInOut(duration: 0.2), value: hasCheckedSession)
@@ -154,12 +167,24 @@ struct ContentView: View {
         case .profile:
             ProfileView(
                 onBackClick: { navigateTo(.home); selectedNavItem = .home },
-                onEditProfile: { /* TODO */ },
+                onEditProfile: { navigateTo(.editProfile) },
                 onSignOut: {
                     currentScreen = .languageSelection
                     navigationStack = []
                     selectedNavItem = .home
-                }
+                },
+                reloadKey: profileReloadKey
+            )
+            
+        case .editProfile:
+            EditProfileView(
+                onBackClick: { navigateBack() },
+                onSaveClick: {
+                    // Increment reload key to trigger ProfileView reload
+                    profileReloadKey += 1
+                    navigateBack()
+                },
+                onNavigateToExpertDocument: { navigateTo(.expertDocumentUpload) }
             )
             
         default:

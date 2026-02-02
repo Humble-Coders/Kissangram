@@ -1,6 +1,5 @@
 package com.kissangram.ui.home.components
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -13,13 +12,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kissangram.ui.home.*
-import com.kissangram.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -30,7 +27,9 @@ fun HomeTopBar(
     TopAppBar(
         title = {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -43,11 +42,14 @@ fun HomeTopBar(
                     showBadge = true
                 )
                 
-                // Logo Image
-                Image(
-                    painter = painterResource(id = R.drawable.kissangram_logo),
-                    contentDescription = "Kissangram",
-                    modifier = Modifier.size(100.dp)
+                // Logo Text - Matching iOS style
+                Text(
+                    text = "Kissangram",
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Serif, // Georgia-like serif font
+                    color = PrimaryGreen,
+                    modifier = Modifier.padding(vertical = 4.dp)
                 )
                 
                 // Messages Button
@@ -62,8 +64,8 @@ fun HomeTopBar(
         },
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = BackgroundColor.copy(alpha = 0.95f)
-        ),
-        windowInsets = WindowInsets(0, 0, 0, 0)
+        )
+        // Removed windowInsets override to respect notch/status bar
     )
 }
 
@@ -75,7 +77,10 @@ private fun IconButtonWithBadge(
     badgeColor: Color,
     showBadge: Boolean
 ) {
-    Box {
+    Box(
+        modifier = Modifier.size(44.dp),
+        contentAlignment = Alignment.Center
+    ) {
         Surface(
             onClick = onClick,
             modifier = Modifier.size(40.dp),
@@ -83,12 +88,15 @@ private fun IconButtonWithBadge(
             color = Color.White,
             shadowElevation = 2.dp
         ) {
-            Box(contentAlignment = Alignment.Center) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
                 Icon(
                     imageVector = icon,
                     contentDescription = contentDescription,
                     tint = TextPrimary,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(22.dp)
                 )
             }
         }
@@ -96,9 +104,9 @@ private fun IconButtonWithBadge(
         if (showBadge) {
             Box(
                 modifier = Modifier
-                    .size(9.dp)
+                    .size(10.dp)
                     .align(Alignment.TopEnd)
-                    .offset(x = (-2).dp, y = 2.dp)
+                    .offset(x = (-1).dp, y = 1.dp)
                     .background(badgeColor, CircleShape)
             )
         }

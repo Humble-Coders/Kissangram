@@ -16,6 +16,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.Timestamp
+import com.kissangram.data.LocationData
+import com.kissangram.data.CropsData
 
 class HomeViewModel(
     application: Application
@@ -164,6 +168,85 @@ class HomeViewModel(
                     val revertedPosts = currentPosts.toMutableList()
                     _uiState.value = _uiState.value.copy(posts = revertedPosts)
                 }
+            }
+        }
+    }
+    
+    /**
+     * Upload India states and districts data to Firestore.
+     * This is a one-time operation for seeding reference data.
+     * Call this from a dev button, then remove the button after use.
+     */
+    fun uploadLocationsToFirestore(
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                val firestore = FirebaseFirestore.getInstance(
+        com.google.firebase.FirebaseApp.getInstance(),
+       "kissangram"
+    )
+                
+                val locationData = hashMapOf(
+                    "country" to "India",
+                    "statesAndDistricts" to LocationData.indiaStatesAndDistricts,
+                    "stateNames" to LocationData.stateNames,
+                    "version" to 1,
+                    "updatedAt" to Timestamp.now()
+                )
+                
+                firestore.collection("appConfig")
+                    .document("locations")
+                    .set(locationData)
+                    .addOnSuccessListener {
+                        onSuccess()
+                    }
+                    .addOnFailureListener { e ->
+                        onError(e.message ?: "Upload failed")
+                    }
+            } catch (e: Exception) {
+                onError(e.message ?: "Failed to upload locations")
+            }
+        }
+    }
+    
+    /**
+     * Upload crops data to Firestore.
+     * This is a one-time operation for seeding reference data.
+     * Call this from a dev button, then remove the button after use.
+     */
+    fun uploadCropsToFirestore(
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                val firestore = FirebaseFirestore.getInstance(
+                    com.google.firebase.FirebaseApp.getInstance(),
+                    "kissangram"
+                )
+                
+                val cropsData = hashMapOf(
+                    "categories" to CropsData.categories,
+                    "categoryNames" to CropsData.categoryNames,
+                    "allCrops" to CropsData.allCrops,
+                    "totalCrops" to CropsData.totalCrops,
+                    "version" to 1,
+                    "updatedAt" to Timestamp.now()
+                )
+                
+                firestore.collection("appConfig")
+                    .document("crops")
+                    .set(cropsData)
+                    .addOnSuccessListener {
+                        onSuccess()
+                    }
+                    .addOnFailureListener { e ->
+                        onError(e.message ?: "Upload failed")
+                    }
+            } catch (e: Exception) {
+                onError(e.message ?: "Failed to upload crops")
             }
         }
     }

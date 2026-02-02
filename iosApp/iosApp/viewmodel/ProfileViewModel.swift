@@ -12,10 +12,6 @@ class ProfileViewModel: ObservableObject {
     private lazy var authRepo = IOSAuthRepository(preferencesRepository: prefs)
     private lazy var userRepo = FirestoreUserRepository(authRepository: authRepo)
 
-    init() {
-        loadProfile()
-    }
-
     func loadProfile() {
         isLoading = true
         error = nil

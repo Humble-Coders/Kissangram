@@ -42,7 +42,7 @@ interface UserRepository {
     suspend fun getUserInfo(userId: String): UserInfo?
     
     /**
-     * Update current user's profile
+     * Update current user's profile with basic fields
      */
     @Throws(Exception::class)
     suspend fun updateProfile(
@@ -50,6 +50,25 @@ interface UserRepository {
         username: String? = null,
         bio: String? = null,
         profileImageUrl: String? = null
+    )
+    
+    /**
+     * Update current user's full profile including location, role, and crops
+     * Per FIRESTORE_SCHEMA.md:
+     * - location: { district, state, country }
+     * - role: farmer | expert | agripreneur | input_seller | agri_lover
+     * - expertise: List of crops (used as crops for all users, expertise for experts)
+     */
+    @Throws(Exception::class)
+    suspend fun updateFullProfile(
+        name: String? = null,
+        bio: String? = null,
+        profileImageUrl: String? = null,
+        role: com.kissangram.model.UserRole? = null,
+        state: String? = null,
+        district: String? = null,
+        village: String? = null,
+        crops: List<String>? = null
     )
     
     /**

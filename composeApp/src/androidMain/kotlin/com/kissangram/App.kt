@@ -1,5 +1,6 @@
 package com.kissangram
 
+import android.annotation.SuppressLint
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -26,10 +27,11 @@ import com.kissangram.ui.home.HomeScreen
 import com.kissangram.ui.home.components.BottomNavItem
 import com.kissangram.ui.home.components.KissangramBottomNavigation
 import com.kissangram.ui.languageselection.LanguageSelectionScreen
+import com.kissangram.ui.profile.EditProfileScreen
 import com.kissangram.ui.profile.ProfileScreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-
+@SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
 @Composable
 @Preview
 fun App() {
@@ -63,6 +65,7 @@ fun App() {
                 currentScreen is Screen.CreatePost ||
                 currentScreen is Screen.Reels ||
                 currentScreen is Screen.Profile
+        // Note: EditProfile is excluded - it doesn't show bottom nav
         
         val selectedNavItem = when (currentScreen) {
             is Screen.Home -> BottomNavItem.HOME
@@ -72,7 +75,7 @@ fun App() {
             is Screen.Profile -> BottomNavItem.PROFILE
             else -> BottomNavItem.HOME
         }
-        
+
         if (showBottomNav) {
             Scaffold(
                 bottomBar = {
@@ -89,13 +92,20 @@ fun App() {
                         }
                     )
                 }
-            ) { paddingValues ->
-                Box(modifier = Modifier.padding(paddingValues)) {
+            ) {
+                Box(modifier = Modifier.fillMaxSize()) {
                     MainAppContent(navController, currentScreen)
                 }
             }
-        } else {
-            AuthFlowContent(navController, currentScreen)
+        }
+
+        else {
+            // Show either auth flow or edit profile (which doesn't have bottom nav)
+            if (currentScreen is Screen.EditProfile) {
+                MainAppContent(navController, currentScreen)
+            } else {
+                AuthFlowContent(navController, currentScreen)
+            }
         }
     }
 }
@@ -170,6 +180,9 @@ private fun AuthFlowContent(navController: NavController, currentScreen: Screen)
 
 @Composable
 private fun MainAppContent(navController: NavController, currentScreen: Screen) {
+    // Track if profile should reload (after save from EditProfile)
+    var profileReloadKey by remember { mutableStateOf(0) }
+    
     when (currentScreen) {
         is Screen.Home -> {
             HomeScreen(
@@ -197,8 +210,21 @@ private fun MainAppContent(navController: NavController, currentScreen: Screen) 
         is Screen.Profile -> {
             ProfileScreen(
                 onBackClick = { navController.navigateTo(Screen.Home) },
-                onEditProfile = { /* TODO: Edit profile */ },
-                onSignOut = { navController.replaceAllWith(Screen.LanguageSelection) }
+                onEditProfile = { navController.navigateTo(Screen.EditProfile) },
+                onSignOut = { navController.replaceAllWith(Screen.LanguageSelection) },
+                reloadKey = profileReloadKey
+            )
+        }
+        
+        is Screen.EditProfile -> {
+            EditProfileScreen(
+                onBackClick = { navController.navigateBack() },
+                onSaveClick = {
+                    // Increment reload key to trigger ProfileScreen reload
+                    profileReloadKey++
+                    navController.navigateBack()
+                },
+                onNavigateToExpertDocument = { navController.navigateTo(Screen.ExpertDocumentUpload) }
             )
         }
         

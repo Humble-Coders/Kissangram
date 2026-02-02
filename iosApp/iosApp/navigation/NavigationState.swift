@@ -23,4 +23,5 @@ enum Screen: Equatable {
     case story(userId: String)
     case notifications
     case messages
+    case editProfile
 }
