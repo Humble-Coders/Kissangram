@@ -161,6 +161,7 @@ struct EditProfileView: View {
                                     get: { viewModel.name },
                                     set: { viewModel.updateName($0) }
                                 ),
+                                username: viewModel.username,
                                 bio: Binding(
                                     get: { viewModel.bio },
                                     set: { viewModel.updateBio($0) }
@@ -346,6 +347,7 @@ struct ProfileImageSection: View {
 
 struct BasicDetailsSection: View {
     @Binding var name: String
+    var username: String
     @Binding var bio: String
     @Binding var role: UserRole
     var onRoleChange: ((UserRole) -> Void)?
@@ -372,6 +374,38 @@ struct BasicDetailsSection: View {
                     .overlay(
                         RoundedRectangle(cornerRadius: 22)
                             .stroke(Color.black.opacity(0.1), lineWidth: 1.18)
+                    )
+            }
+            
+            // Username Field (Read-only, auto-generated)
+            VStack(alignment: .leading, spacing: 9) {
+                HStack {
+                    Text("Username")
+                        .font(.system(size: 14.625, weight: .semibold))
+                        .foregroundColor(.textSecondary)
+                    Spacer()
+                    HStack(spacing: 4) {
+                        Image(systemName: "info.circle")
+                            .font(.system(size: 12))
+                            .foregroundColor(.textSecondary)
+                        Text("Auto-generated")
+                            .font(.system(size: 11, weight: .regular))
+                            .italic()
+                            .foregroundColor(.textSecondary)
+                    }
+                }
+                
+                Text("@\(username)")
+                    .font(.system(size: 16.875))
+                    .foregroundColor(.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 13.5)
+                    .background(disabledInputBackground)
+                    .cornerRadius(22)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 22)
+                            .stroke(Color.black.opacity(0.05), lineWidth: 1.18)
                     )
             }
             

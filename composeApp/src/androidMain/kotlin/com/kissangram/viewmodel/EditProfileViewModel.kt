@@ -10,31 +10,38 @@ import com.kissangram.repository.AndroidAuthRepository
 import com.kissangram.repository.AndroidCropsRepository
 import com.kissangram.repository.AndroidLocationRepository
 import com.kissangram.repository.AndroidPreferencesRepository
+import com.kissangram.repository.AndroidStorageRepository
 import com.kissangram.repository.FirestoreUserRepository
 import com.kissangram.usecase.GetAllCropsUseCase
 import com.kissangram.usecase.GetCurrentUserUseCase
 import com.kissangram.usecase.GetDistrictsUseCase
 import com.kissangram.usecase.GetStatesUseCase
 import com.kissangram.usecase.UpdateProfileUseCase
+import com.kissangram.usecase.UploadProfileImageUseCase
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.io.InputStream
 
 class EditProfileViewModel(
     application: Application
 ) : AndroidViewModel(application) {
     
+    // Application context for reading image data
+    private val context = application.applicationContext
+    
     // Repositories
-    private val prefs = AndroidPreferencesRepository(application.applicationContext)
+    private val prefs = AndroidPreferencesRepository(context)
     private val authRepository = AndroidAuthRepository(
-        context = application.applicationContext,
+        context = context,
         activity = null,
         preferencesRepository = prefs
     )
     private val userRepository = FirestoreUserRepository(authRepository = authRepository)
     private val locationRepository = AndroidLocationRepository()
     private val cropsRepository = AndroidCropsRepository()
+    private val storageRepository = AndroidStorageRepository()
     
     // Use cases
     private val getCurrentUserUseCase = GetCurrentUserUseCase(userRepository)
@@ -42,6 +49,7 @@ class EditProfileViewModel(
     private val getStatesUseCase = GetStatesUseCase(locationRepository)
     private val getDistrictsUseCase = GetDistrictsUseCase(locationRepository)
     private val getAllCropsUseCase = GetAllCropsUseCase(cropsRepository)
+    private val uploadProfileImageUseCase = UploadProfileImageUseCase(storageRepository, authRepository)
     
     // UI State
     private val _uiState = MutableStateFlow(EditProfileUiState())
@@ -68,6 +76,7 @@ class EditProfileViewModel(
                     _uiState.value = _uiState.value.copy(
                         currentUser = user,
                         name = user.name,
+                        username = user.username,
                         bio = user.bio ?: "",
                         profileImageUrl = user.profileImageUrl,
                         selectedRole = user.role,
@@ -274,14 +283,35 @@ class EditProfileViewModel(
                 return@launch
             }
             
-            _uiState.value = state.copy(isSaving = true, saveError = null)
+            _uiState.value = state.copy(isSaving = true, saveError = null, isUploadingImage = state.selectedImageUri != null)
             
             try {
                 println("📝 EditProfileViewModel: Saving profile...")
                 
-                // TODO: Upload image to Firebase Storage if selectedImageUri is set
-                // For now, we'll skip image upload and use existing URL
-                val imageUrl = state.profileImageUrl
+                // Upload image to Firebase Storage if a new image was selected
+                var imageUrl = state.profileImageUrl
+                val selectedUri = state.selectedImageUri
+                
+                if (selectedUri != null) {
+                    println("📤 EditProfileViewModel: Uploading new profile image...")
+                    _uiState.value = _uiState.value.copy(isUploadingImage = true)
+                    
+                    try {
+                        // Read image data from Uri
+                        val imageData = readImageDataFromUri(selectedUri)
+                        if (imageData != null && imageData.isNotEmpty()) {
+                            imageUrl = uploadProfileImageUseCase(imageData)
+                            println("✅ EditProfileViewModel: Image uploaded, URL: $imageUrl")
+                        } else {
+                            println("⚠️ EditProfileViewModel: Could not read image data, using existing URL")
+                        }
+                    } catch (e: Exception) {
+                        println("❌ EditProfileViewModel: Image upload failed - ${e.message}")
+                        // Continue with existing URL if upload fails
+                    }
+                    
+                    _uiState.value = _uiState.value.copy(isUploadingImage = false)
+                }
                 
                 updateProfileUseCase(
                     name = state.name,
@@ -295,13 +325,19 @@ class EditProfileViewModel(
                 )
                 
                 println("✅ EditProfileViewModel: Profile saved successfully!")
-                _uiState.value = _uiState.value.copy(isSaving = false, saveSuccess = true)
+                _uiState.value = _uiState.value.copy(
+                    isSaving = false, 
+                    saveSuccess = true,
+                    profileImageUrl = imageUrl, // Update with new URL
+                    selectedImageUri = null // Clear selected image after upload
+                )
                 onSuccess()
                 
             } catch (e: IllegalArgumentException) {
                 println("❌ EditProfileViewModel: Validation error - ${e.message}")
                 _uiState.value = _uiState.value.copy(
                     isSaving = false,
+                    isUploadingImage = false,
                     saveError = e.message ?: "Validation failed"
                 )
                 onError(e.message ?: "Validation failed")
@@ -311,10 +347,25 @@ class EditProfileViewModel(
                 e.printStackTrace()
                 _uiState.value = _uiState.value.copy(
                     isSaving = false,
+                    isUploadingImage = false,
                     saveError = e.message ?: "Failed to save profile"
                 )
                 onError(e.message ?: "Failed to save profile")
             }
+        }
+    }
+    
+    /**
+     * Read image data from a Uri as ByteArray
+     */
+    private fun readImageDataFromUri(uri: Uri): ByteArray? {
+        return try {
+            context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                inputStream.readBytes()
+            }
+        } catch (e: Exception) {
+            println("❌ EditProfileViewModel: Error reading image from Uri - ${e.message}")
+            null
         }
     }
     
@@ -353,6 +404,7 @@ data class EditProfileUiState(
     
     // Editable fields
     val name: String = "",
+    val username: String = "",
     val bio: String = "",
     val profileImageUrl: String? = null,
     val selectedImageUri: Uri? = null,
@@ -375,6 +427,7 @@ data class EditProfileUiState(
     val isLoadingDistricts: Boolean = false,
     val isLoadingCrops: Boolean = false,
     val isSaving: Boolean = false,
+    val isUploadingImage: Boolean = false,
     
     // Errors
     val userError: String? = null,

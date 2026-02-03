@@ -130,14 +130,26 @@ struct ProfileContent: View {
                     .font(.system(size: 24, weight: .bold))
                     .foregroundColor(.textPrimary)
                     .lineLimit(1)
-
-                Text(roleLabel(user.role))
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.primaryGreen)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(expertGreen.opacity(0.15))
-                    .cornerRadius(16)
+                
+                Text("@\(user.username)")
+                    .font(.system(size: 16, weight: .regular))
+                    .foregroundColor(.textSecondary)
+                
+                HStack(spacing: 8) {
+                    // Role Badge
+                    Text(roleLabel(user.role))
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.primaryGreen)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(expertGreen.opacity(0.15))
+                        .cornerRadius(16)
+                    
+                    // Verification Status Badge (if not UNVERIFIED)
+                    if user.verificationStatus != .unverified {
+                        VerificationStatusBadge(verificationStatus: user.verificationStatus)
+                    }
+                }
 
                 if let loc = user.location {
                     HStack(spacing: 6) {
@@ -239,6 +251,46 @@ private func roleLabel(_ role: UserRole) -> String {
     case .inputSeller: return "Input Seller"
     case .agriLover: return "Agri Lover"
     default: return "Farmer"
+    }
+}
+
+struct VerificationStatusBadge: View {
+    let verificationStatus: VerificationStatus
+    
+    private let verifiedBlue = Color(red: 0.129, green: 0.588, blue: 0.953)
+    private let pendingOrange = Color(red: 1.0, green: 0.596, blue: 0.0)
+    private let rejectedRed = Color(red: 0.737, green: 0.278, blue: 0.286)
+    
+    var body: some View {
+        let (label, color, iconName) = statusInfo
+        
+        HStack(spacing: 6) {
+            Image(systemName: iconName)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(color)
+            Text(label)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(color)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(color.opacity(0.15))
+        .cornerRadius(16)
+    }
+    
+    private var statusInfo: (String, Color, String) {
+        switch verificationStatus {
+        case .verified:
+            return ("Verified", verifiedBlue, "checkmark.seal.fill")
+        case .pending:
+            return ("Pending", pendingOrange, "clock.fill")
+        case .rejected:
+            return ("Rejected", rejectedRed, "xmark.circle.fill")
+        case .unverified:
+            return ("Unverified", Color.textSecondary, "questionmark.circle")
+        default:
+            return ("Unverified", Color.textSecondary, "questionmark.circle")
+        }
     }
 }
 

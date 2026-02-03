@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.kissangram.model.User
 import com.kissangram.model.UserRole
+import com.kissangram.model.VerificationStatus
 import com.kissangram.ui.home.PrimaryGreen
 import com.kissangram.ui.home.AccentYellow
 import com.kissangram.ui.home.TextPrimary
@@ -35,9 +36,15 @@ import com.kissangram.ui.home.BackgroundColor
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kissangram.viewmodel.ProfileViewModel
+import androidx.compose.material.icons.filled.Verified
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Cancel
 
 private val ProfileBackground = Color(0xFFFBF8F0)
 private val ExpertGreen = Color(0xFF74C365)
+private val VerifiedBlue = Color(0xFF2196F3)
+private val PendingOrange = Color(0xFFFF9800)
+private val RejectedRed = Color(0xFFBC4749)
 
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -236,21 +243,49 @@ private fun ProfileContent(
             overflow = TextOverflow.Ellipsis
         )
         
+        Spacer(Modifier.height(4.dp))
+        
+        // Username
+        Text(
+            text = "@${user.username}",
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Normal,
+            color = TextSecondary,
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.CenterHorizontally),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+        
         Spacer(Modifier.height(8.dp))
         
-        // Role Badge
-        Surface(
-            shape = RoundedCornerShape(16.dp),
-            color = ExpertGreen.copy(alpha = 0.15f),
-            modifier = Modifier.align(Alignment.CenterHorizontally)
+        // Role and Verification Status Badges
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.CenterHorizontally),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = roleLabel(user.role),
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = PrimaryGreen
-            )
+            // Role Badge
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = ExpertGreen.copy(alpha = 0.15f)
+            ) {
+                Text(
+                    text = roleLabel(user.role),
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = PrimaryGreen
+                )
+            }
+            
+            // Verification Status Badge (if not UNVERIFIED)
+            if (user.verificationStatus != VerificationStatus.UNVERIFIED) {
+                Spacer(Modifier.width(8.dp))
+                VerificationStatusBadge(verificationStatus = user.verificationStatus)
+            }
         }
         user.location?.let { loc ->
             Spacer(Modifier.height(8.dp))
@@ -341,3 +376,66 @@ private fun StatItem(count: Int, label: String) {
         )
     }
 }
+
+@Composable
+private fun VerificationStatusBadge(verificationStatus: VerificationStatus) {
+    val statusInfo = when (verificationStatus) {
+        VerificationStatus.VERIFIED -> StatusInfo(
+            label = "Verified",
+            color = VerifiedBlue,
+            icon = Icons.Filled.Verified,
+            backgroundColor = VerifiedBlue.copy(alpha = 0.15f)
+        )
+        VerificationStatus.PENDING -> StatusInfo(
+            label = "Pending",
+            color = PendingOrange,
+            icon = Icons.Filled.Schedule,
+            backgroundColor = PendingOrange.copy(alpha = 0.15f)
+        )
+        VerificationStatus.REJECTED -> StatusInfo(
+            label = "Rejected",
+            color = RejectedRed,
+            icon = Icons.Filled.Cancel,
+            backgroundColor = RejectedRed.copy(alpha = 0.15f)
+        )
+        VerificationStatus.UNVERIFIED -> StatusInfo(
+            label = "Unverified",
+            color = TextSecondary,
+            icon = null,
+            backgroundColor = TextSecondary.copy(alpha = 0.15f)
+        )
+    }
+    
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = statusInfo.backgroundColor
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            statusInfo.icon?.let {
+                Icon(
+                    imageVector = it,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = statusInfo.color
+                )
+            }
+            Text(
+                text = statusInfo.label,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = statusInfo.color
+            )
+        }
+    }
+}
+
+private data class StatusInfo(
+    val label: String,
+    val color: Color,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector?,
+    val backgroundColor: Color
+)

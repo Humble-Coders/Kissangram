@@ -16,12 +16,14 @@ class EditProfileViewModel: ObservableObject {
     }()
     private let locationRepository = IOSLocationRepository()
     private let cropsRepository = IOSCropsRepository()
+    private let storageRepository = IOSStorageRepository()
     
     // Current user
     @Published var currentUser: User? = nil
     
     // Editable fields
     @Published var name: String = ""
+    @Published var username: String = ""
     @Published var bio: String = ""
     @Published var profileImageUrl: String? = nil
     @Published var selectedImageItem: PhotosPickerItem? = nil
@@ -45,6 +47,7 @@ class EditProfileViewModel: ObservableObject {
     @Published var isLoadingDistricts: Bool = false
     @Published var isLoadingCrops: Bool = false
     @Published var isSaving: Bool = false
+    @Published var isUploadingImage: Bool = false
     
     // Errors
     @Published var userError: String? = nil
@@ -81,6 +84,7 @@ class EditProfileViewModel: ObservableObject {
                 print("✅ EditProfileViewModel: Loaded user = \(user.name)")
                 self.currentUser = user
                 self.name = user.name
+                self.username = user.username
                 self.bio = user.bio ?? ""
                 self.profileImageUrl = user.profileImageUrl
                 self.selectedRole = user.role
@@ -241,14 +245,55 @@ class EditProfileViewModel: ObservableObject {
         }
         
         isSaving = true
+        isUploadingImage = selectedImageData != nil
         saveError = nil
         
         print("📝 EditProfileViewModel: Saving profile...")
         
-        // TODO: Upload image to Firebase Storage if selectedImageData is set
-        // For now, we'll skip image upload and use existing URL
-        let imageUrl = profileImageUrl
-        
+        Task {
+            do {
+                // Upload image to Firebase Storage if a new image was selected
+                var imageUrl = profileImageUrl
+                
+                if let imageData = selectedImageData {
+                    print("📤 EditProfileViewModel: Uploading new profile image...")
+                    isUploadingImage = true
+                    
+                    // Get current user ID for upload
+                    do {
+                        if let userId = try await authRepository.getCurrentUserId() {
+                            do {
+                                imageUrl = try await storageRepository.uploadProfileImage(userId: userId, imageData: imageData)
+                                print("✅ EditProfileViewModel: Image uploaded, URL: \(imageUrl ?? "nil")")
+                            } catch {
+                                print("❌ EditProfileViewModel: Image upload failed - \(error.localizedDescription)")
+                                // Continue with existing URL if upload fails
+                            }
+                        }
+                    } catch {
+                        print("❌ EditProfileViewModel: Failed to get user ID - \(error.localizedDescription)")
+                        // Continue with existing URL if getting user ID fails
+                    }
+                    
+                    isUploadingImage = false
+                }
+                
+                // Save profile to Firestore
+                await saveProfileToFirestore(imageUrl: imageUrl, onSuccess: onSuccess, onError: onError)
+                
+            } catch {
+                await MainActor.run {
+                    isSaving = false
+                    isUploadingImage = false
+                    saveError = error.localizedDescription
+                    onError(error.localizedDescription)
+                }
+            }
+        }
+    }
+    
+    /// Helper to save profile to Firestore
+    private func saveProfileToFirestore(imageUrl: String?, onSuccess: @escaping () -> Void, onError: @escaping (String) -> Void) async {
         userRepository.updateFullProfile(
             name: name.trimmingCharacters(in: .whitespaces),
             bio: bio.isEmpty ? nil : bio,
@@ -262,6 +307,7 @@ class EditProfileViewModel: ObservableObject {
             guard let self = self else { return }
             
             self.isSaving = false
+            self.isUploadingImage = false
             
             if let error = error {
                 print("❌ EditProfileViewModel: Save error - \(error.localizedDescription)")
@@ -269,6 +315,9 @@ class EditProfileViewModel: ObservableObject {
                 onError(error.localizedDescription)
             } else {
                 print("✅ EditProfileViewModel: Profile saved successfully!")
+                self.profileImageUrl = imageUrl // Update with new URL
+                self.selectedImageData = nil // Clear selected image after upload
+                self.selectedImageItem = nil
                 self.saveSuccess = true
                 onSuccess()
             }

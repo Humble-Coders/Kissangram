@@ -244,6 +244,7 @@ fun CropChip(
 fun BasicDetailsSection(
     name: TextFieldValue,
     onNameChange: (TextFieldValue) -> Unit,
+    username: String,
     bio: TextFieldValue,
     onBioChange: (TextFieldValue) -> Unit,
     role: UserRole,
@@ -291,6 +292,57 @@ fun BasicDetailsSection(
                     textStyle = MaterialTheme.typography.bodyLarge.copy(
                         fontSize = 16.sp,
                         color = TextPrimary
+                    )
+                )
+            }
+            
+            // Username Field (Read-only, auto-generated)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Username",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = TextSecondary
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = TextSecondary
+                        )
+                        Text(
+                            "Auto-generated",
+                            fontSize = 11.sp,
+                            fontStyle = FontStyle.Italic,
+                            color = TextSecondary
+                        )
+                    }
+                }
+                OutlinedTextField(
+                    value = "@$username",
+                    onValueChange = { },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    readOnly = true,
+                    enabled = false,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        disabledContainerColor = DisabledInputBackground,
+                        disabledBorderColor = Color.Black.copy(alpha = 0.05f),
+                        disabledTextColor = TextSecondary
+                    ),
+                    shape = RoundedCornerShape(22.dp),
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(
+                        fontSize = 16.sp,
+                        color = TextSecondary
                     )
                 )
             }
@@ -373,9 +425,7 @@ fun FilterableDropdownField(
 
     // Update search text when selected item changes
     LaunchedEffect(selectedItem) {
-        if (selectedItem != null) {
-            searchText = selectedItem
-        }
+        searchText = selectedItem ?: ""
     }
 
     val filteredItems = remember(items, searchText) {
@@ -1468,6 +1518,7 @@ fun EditProfileScreen(
                                 nameTextFieldValue = it
                                 viewModel.updateName(it.text) 
                             },
+                            username = uiState.username,
                             bio = bioTextFieldValue,
                             onBioChange = { 
                                 bioTextFieldValue = it
@@ -1509,46 +1560,176 @@ fun EditProfileScreen(
 
                 // Image Source Options Dialog
                 if (showImageSourceDialog) {
-                    AlertDialog(
-                        onDismissRequest = { showImageSourceDialog = false },
-                        title = { Text("Select Photo", fontWeight = FontWeight.Bold) },
-                        text = {
-                            Column {
-                                TextButton(
-                                    onClick = {
-                                        showImageSourceDialog = false
-                                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                            galleryLauncherTiramisu.launch(
-                                                androidx.activity.result.PickVisualMediaRequest(
-                                                    ActivityResultContracts.PickVisualMedia.ImageOnly
+                        AlertDialog(
+                            onDismissRequest = { showImageSourceDialog = false },
+                            shape = RoundedCornerShape(24.dp),
+                            containerColor = CardBackground,
+                            title = {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(64.dp)
+                                            .clip(CircleShape)
+                                            .background(PrimaryGreen.copy(alpha = 0.1f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.CameraAlt,
+                                            contentDescription = null,
+                                            tint = PrimaryGreen,
+                                            modifier = Modifier.size(32.dp)
+                                        )
+                                    }
+                                    Spacer(Modifier.height(16.dp))
+                                    Text(
+                                        "Select Photo",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 20.sp,
+                                        color = TextPrimary
+                                    )
+                                }
+                            },
+                            text = {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    // Gallery Option
+                                    Card(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                showImageSourceDialog = false
+                                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                                    galleryLauncherTiramisu.launch(
+                                                        androidx.activity.result.PickVisualMediaRequest(
+                                                            ActivityResultContracts.PickVisualMedia.ImageOnly
+                                                        )
+                                                    )
+                                                } else {
+                                                    galleryLauncherLegacy.launch("image/*")
+                                                }
+                                            },
+                                        shape = RoundedCornerShape(16.dp),
+                                        colors = CardDefaults.cardColors(
+                                            containerColor = InputBackground
+                                        ),
+                                        elevation = CardDefaults.cardElevation(0.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(20.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(48.dp)
+                                                    .clip(CircleShape)
+                                                    .background(PrimaryGreen.copy(alpha = 0.15f)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Search,
+                                                    contentDescription = null,
+                                                    tint = PrimaryGreen,
+                                                    modifier = Modifier.size(24.dp)
                                                 )
-                                            )
-                                        } else {
-                                            galleryLauncherLegacy.launch("image/*")
+                                            }
+                                            Column(
+                                                modifier = Modifier.weight(1f),
+                                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                Text(
+                                                    "Choose from Gallery",
+                                                    fontSize = 16.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = TextPrimary
+                                                )
+                                                Text(
+                                                    "Select photo from your device",
+                                                    fontSize = 13.sp,
+                                                    color = TextSecondary
+                                                )
+                                            }
                                         }
-                                    },
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text("Choose from Gallery", color = TextPrimary)
+                                    }
+
+                                    // Camera Option
+                                    Card(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                showImageSourceDialog = false
+                                                handleCameraClick()
+                                            },
+                                        shape = RoundedCornerShape(16.dp),
+                                        colors = CardDefaults.cardColors(
+                                            containerColor = InputBackground
+                                        ),
+                                        elevation = CardDefaults.cardElevation(0.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(20.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(48.dp)
+                                                    .clip(CircleShape)
+                                                    .background(PrimaryGreen.copy(alpha = 0.15f)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.CameraAlt,
+                                                    contentDescription = null,
+                                                    tint = PrimaryGreen,
+                                                    modifier = Modifier.size(24.dp)
+                                                )
+                                            }
+                                            Column(
+                                                modifier = Modifier.weight(1f),
+                                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                Text(
+                                                    "Take Photo",
+                                                    fontSize = 16.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = TextPrimary
+                                                )
+                                                Text(
+                                                    "Capture a new photo with camera",
+                                                    fontSize = 13.sp,
+                                                    color = TextSecondary
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
+                            },
+                            confirmButton = {},
+                            dismissButton = {
                                 TextButton(
-                                    onClick = {
-                                        showImageSourceDialog = false
-                                        handleCameraClick()
-                                    },
-                                    modifier = Modifier.fillMaxWidth()
+                                    onClick = { showImageSourceDialog = false },
+                                    modifier = Modifier.padding(bottom = 8.dp)
                                 ) {
-                                    Text("Take Photo", color = TextPrimary)
+                                    Text(
+                                        "Cancel",
+                                        color = TextSecondary,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
                                 }
                             }
-                        },
-                        confirmButton = {},
-                        dismissButton = {
-                            TextButton(onClick = { showImageSourceDialog = false }) {
-                                Text("Cancel", color = TextSecondary)
-                            }
-                        }
-                    )
+                        )
+
                 }
                 
                 // Unsaved Changes Confirmation Dialog
