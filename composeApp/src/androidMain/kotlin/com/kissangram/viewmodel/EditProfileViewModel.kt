@@ -1,5 +1,6 @@
 package com.kissangram.viewmodel
 
+import android.annotation.SuppressLint
 import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
@@ -29,6 +30,7 @@ class EditProfileViewModel(
 ) : AndroidViewModel(application) {
     
     // Application context for reading image data
+    @SuppressLint("StaticFieldLeak")
     private val context = application.applicationContext
     
     // Repositories

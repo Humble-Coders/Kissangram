@@ -53,6 +53,8 @@ struct ContentView: View {
                             get: { selectedNavItem },
                             set: { item in
                                 selectedNavItem = item
+                                // Clear navigation stack when using bottom nav
+                                navigationStack = []
                                 switch item {
                                 case .home: currentScreen = .home
                                 case .search: currentScreen = .search
@@ -159,7 +161,14 @@ struct ContentView: View {
             PlaceholderView(title: "Search")
             
         case .createPost:
-            PlaceholderView(title: "Create Post")
+            CreatePostView(
+                onBackClick: { navigateBack() },
+                onPostClick: { postInput in
+                    // TODO: Handle post creation with postInput
+                    // postInput contains: type, text, mediaItems, crops, hashtags, location, visibility, etc.
+                    navigateTo(.home)
+                }
+            )
             
         case .reels:
             PlaceholderView(title: "Reels")
@@ -210,6 +219,23 @@ struct ContentView: View {
     private func navigateBack() {
         if let previousScreen = navigationStack.popLast() {
             currentScreen = previousScreen
+            
+            // Update selected nav item based on the previous screen
+            switch previousScreen {
+            case .home: selectedNavItem = .home
+            case .search: selectedNavItem = .search
+            case .createPost: selectedNavItem = .post
+            case .reels: selectedNavItem = .reels
+            case .profile: selectedNavItem = .profile
+            default: break
+            }
+        } else {
+            // If stack is empty and we're on a main screen, navigate to home
+            // This handles the case when user clicks back from CreatePost after navigating via bottom nav
+            if case .createPost = currentScreen {
+                currentScreen = .home
+                selectedNavItem = .home
+            }
         }
     }
 }

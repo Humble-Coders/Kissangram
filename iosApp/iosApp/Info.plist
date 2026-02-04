@@ -16,11 +16,11 @@
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>We need access to speech recognition to allow you to speak your phone number and name instead of typing.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>We need access to your microphone to record your voice for speech recognition.</string>
+	<string>We need access to your microphone to record voice captions for your posts and for speech recognition features.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>We need access to your photo library to set your profile picture.</string>
+	<string>We need access to your photo library to select images and videos for your posts.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>We need access to your camera to take your profile picture.</string>
+	<string>We need access to your camera to take photos and record videos for your posts.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>We need permission to save photos to your library.</string>
 	<key>NSAppTransportSecurity</key>

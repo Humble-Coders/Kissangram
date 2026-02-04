@@ -29,6 +29,7 @@ import com.kissangram.ui.home.components.KissangramBottomNavigation
 import com.kissangram.ui.languageselection.LanguageSelectionScreen
 import com.kissangram.ui.profile.EditProfileScreen
 import com.kissangram.ui.profile.ProfileScreen
+import com.kissangram.ui.createpost.CreatePostScreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
@@ -200,7 +201,14 @@ private fun MainAppContent(navController: NavController, currentScreen: Screen) 
         }
         
         is Screen.CreatePost -> {
-            PlaceholderScreen("Create Post")
+            CreatePostScreen(
+                onBackClick = { navController.navigateBack() },
+                onPostClick = { postInput ->
+                    // TODO: Handle post creation with postInput
+                    // postInput contains: type, text, mediaItems, crops, hashtags, location, visibility, etc.
+                    navController.navigateTo(Screen.Home)
+                }
+            )
         }
         
         is Screen.Reels -> {
