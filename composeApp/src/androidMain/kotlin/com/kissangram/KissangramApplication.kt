@@ -51,9 +51,9 @@ class KissangramApplication : Application() {
         try {
             val config = HashMap<String, String>()
             // Get these from: https://console.cloudinary.com/settings/api-keys
-            config["cloud_name"] = "ddjgu0mng"
-            config["api_key"] = "358269548668498"
-            config["api_secret"] = "GfgbZyDrqjwwaKVmiP8UaYtQQfU"
+            config["cloud_name"] = "enter"
+            config["api_key"] = "ebter"
+            config["api_secret"] = "enter"
             
             MediaManager.init(this, config)
             Log.d(TAG, "Cloudinary initialized successfully")
