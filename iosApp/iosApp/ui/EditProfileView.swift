@@ -8,12 +8,6 @@ private let cardBackground = Color.white
 private let inputBackground = Color(red: 0.973, green: 0.976, blue: 0.945)
 private let disabledInputBackground = Color(red: 0.898, green: 0.902, blue: 0.859).opacity(0.3)
 
-// Dummy data for crops
-private let availableCrops = [
-    "Wheat", "Rice", "Sugarcane", "Cotton", "Maize", "Soybean",
-    "Pulses", "Mustard", "Potato", "Tomato", "Onion", "Chili",
-    "Bajra", "Jowar"
-]
 
 // Note: State and District data is now fetched from Firestore via EditProfileViewModel
 

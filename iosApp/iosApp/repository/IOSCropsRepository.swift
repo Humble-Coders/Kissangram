@@ -1,9 +1,10 @@
 import Foundation
 import FirebaseFirestore
+import Shared
 
 /// iOS implementation of CropsRepository.
 /// Fetches crops data from Firestore appConfig/crops document.
-final class IOSCropsRepository {
+final class IOSCropsRepository: CropsRepository {
     
     private let firestore = Firestore.firestore(database: "kissangram")
     

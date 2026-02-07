@@ -41,9 +41,9 @@ class EditProfileViewModel(
         preferencesRepository = prefs
     )
     private val userRepository = FirestoreUserRepository(authRepository = authRepository)
-    private val locationRepository = AndroidLocationRepository()
+    private val locationRepository = AndroidLocationRepository(context)
     private val cropsRepository = AndroidCropsRepository()
-    private val storageRepository = AndroidStorageRepository()
+    private val storageRepository = AndroidStorageRepository(application)
     
     // Use cases
     private val getCurrentUserUseCase = GetCurrentUserUseCase(userRepository)

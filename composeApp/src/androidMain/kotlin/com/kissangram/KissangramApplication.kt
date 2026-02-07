@@ -2,6 +2,7 @@ package com.kissangram
 
 import android.app.Application
 import android.util.Log
+import com.cloudinary.android.MediaManager
 import com.google.firebase.FirebaseApp
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.CoroutineScope
@@ -9,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeout
+import java.util.HashMap
 
 /**
  * Application entry point. Disables Firestore disk persistence so writes go to the server
@@ -18,6 +20,10 @@ class KissangramApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        
+        // Initialize Cloudinary
+        initCloudinary()
+        
         Log.d(TAG, "onCreate: Initializing Firestore")
         try {
             // Log Firebase project info
@@ -38,6 +44,21 @@ class KissangramApplication : Application() {
             }
         } catch (e: Exception) {
             Log.e(TAG, "onCreate: Failed to initialize Firestore", e)
+        }
+    }
+    
+    private fun initCloudinary() {
+        try {
+            val config = HashMap<String, String>()
+            // Get these from: https://console.cloudinary.com/settings/api-keys
+            config["cloud_name"] = "ddjgu0mng"
+            config["api_key"] = "358269548668498"
+            config["api_secret"] = "GfgbZyDrqjwwaKVmiP8UaYtQQfU"
+            
+            MediaManager.init(this, config)
+            Log.d(TAG, "Cloudinary initialized successfully")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to initialize Cloudinary. Please add your credentials in KissangramApplication.kt", e)
         }
     }
     

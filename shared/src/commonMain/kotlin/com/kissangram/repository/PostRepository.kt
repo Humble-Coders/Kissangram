@@ -66,4 +66,12 @@ interface PostRepository {
      */
     @Throws(Exception::class)
     suspend fun getPostsByHashtag(hashtag: String, page: Int, pageSize: Int): List<Post>
+    
+    /**
+     * Create a new post in Firestore.
+     * @param postData Map of post fields to be written to Firestore
+     * @return The created Post object
+     */
+    @Throws(Exception::class)
+    suspend fun createPost(postData: Map<String, Any?>): Post
 }

@@ -4,7 +4,6 @@ import Shared
 
 /// Firestore implementation of UserRepository.
 /// Creates and reads user profile at /users/{userId} per FIRESTORE_SCHEMA.md.
-/// Protocol uses completion handlers (Kotlin/Native export); we wrap async work.
 final class FirestoreUserRepository: UserRepository {
     // Use named database "kissangram" instead of "(default)"
     private let firestore = Firestore.firestore(database: "kissangram")
@@ -18,127 +17,9 @@ final class FirestoreUserRepository: UserRepository {
         self.authRepository = authRepository
     }
 
-    // MARK: - UserRepository (completion-handler API from Shared framework)
+    // MARK: - UserRepository
 
     func createUserProfile(
-        userId: String,
-        phoneNumber: String,
-        name: String,
-        role: UserRole,
-        language: String,
-        verificationDocUrl: String?,
-        verificationStatus: VerificationStatus,
-        completionHandler: @escaping (Error?) -> Void
-    ) {
-        Task {
-            do {
-                try await createUserProfileImpl(userId: userId, phoneNumber: phoneNumber, name: name, role: role, language: language, verificationDocUrl: verificationDocUrl, verificationStatus: verificationStatus)
-                DispatchQueue.main.async { completionHandler(nil) }
-            } catch {
-                DispatchQueue.main.async { completionHandler(error) }
-            }
-        }
-    }
-
-    func getCurrentUser(completionHandler: @escaping (User?, Error?) -> Void) {
-        Task {
-            do {
-                let user = try await getCurrentUserImpl()
-                DispatchQueue.main.async { completionHandler(user, nil) }
-            } catch {
-                DispatchQueue.main.async { completionHandler(nil, error) }
-            }
-        }
-    }
-
-    func getFollowers(userId: String, page: Int32, pageSize: Int32, completionHandler: @escaping ([UserInfo]?, Error?) -> Void) {
-        DispatchQueue.main.async { completionHandler([], nil) }
-    }
-
-    func getFollowing(userId: String, page: Int32, pageSize: Int32, completionHandler: @escaping ([UserInfo]?, Error?) -> Void) {
-        DispatchQueue.main.async { completionHandler([], nil) }
-    }
-
-    func getUser(userId: String, completionHandler: @escaping (User?, Error?) -> Void) {
-        Task {
-            do {
-                let user = try await getUserImpl(userId: userId)
-                DispatchQueue.main.async { completionHandler(user, nil) }
-            } catch {
-                DispatchQueue.main.async { completionHandler(nil, error) }
-            }
-        }
-    }
-
-    func getUserInfo(userId: String, completionHandler: @escaping (UserInfo?, Error?) -> Void) {
-        Task {
-            do {
-                let info = try await getUserInfoImpl(userId: userId)
-                DispatchQueue.main.async { completionHandler(info, nil) }
-            } catch {
-                DispatchQueue.main.async { completionHandler(nil, error) }
-            }
-        }
-    }
-
-    func isUsernameAvailable(username: String, completionHandler: @escaping (KotlinBoolean?, Error?) -> Void) {
-        DispatchQueue.main.async { completionHandler(KotlinBoolean(value: true), nil) }
-    }
-
-    func searchUsers(query: String, limit: Int32, completionHandler: @escaping ([UserInfo]?, Error?) -> Void) {
-        DispatchQueue.main.async { completionHandler([], nil) }
-    }
-
-    func updateProfile(
-        name: String?,
-        username: String?,
-        bio: String?,
-        profileImageUrl: String?,
-        completionHandler: @escaping (Error?) -> Void
-    ) {
-        Task {
-            do {
-                try await updateProfileImpl(name: name, username: username, bio: bio, profileImageUrl: profileImageUrl)
-                DispatchQueue.main.async { completionHandler(nil) }
-            } catch {
-                DispatchQueue.main.async { completionHandler(error) }
-            }
-        }
-    }
-    
-    func updateFullProfile(
-        name: String?,
-        bio: String?,
-        profileImageUrl: String?,
-        role: UserRole?,
-        state: String?,
-        district: String?,
-        village: String?,
-        crops: [String]?,
-        completionHandler: @escaping (Error?) -> Void
-    ) {
-        Task {
-            do {
-                try await updateFullProfileImpl(
-                    name: name,
-                    bio: bio,
-                    profileImageUrl: profileImageUrl,
-                    role: role,
-                    state: state,
-                    district: district,
-                    village: village,
-                    crops: crops
-                )
-                DispatchQueue.main.async { completionHandler(nil) }
-            } catch {
-                DispatchQueue.main.async { completionHandler(error) }
-            }
-        }
-    }
-
-    // MARK: - Internal async implementation
-
-    private func createUserProfileImpl(
         userId: String,
         phoneNumber: String,
         name: String,
@@ -179,19 +60,29 @@ final class FirestoreUserRepository: UserRepository {
         try await usersCollection.document(userId).setData(data, merge: true)
     }
 
-    private func getCurrentUserImpl() async throws -> User? {
+    func getCurrentUser() async throws -> User? {
         guard let userId = try await authRepository.getCurrentUserId() else { return nil }
-        return try await getUserImpl(userId: userId)
+        return try await getUser(userId: userId)
     }
 
-    private func getUserImpl(userId: String) async throws -> User? {
+    func getFollowers(userId: String, page: Int32, pageSize: Int32) async throws -> [UserInfo] {
+        // TODO: Implement get followers
+        return []
+    }
+
+    func getFollowing(userId: String, page: Int32, pageSize: Int32) async throws -> [UserInfo] {
+        // TODO: Implement get following
+        return []
+    }
+
+    func getUser(userId: String) async throws -> User? {
         let snapshot = try await usersCollection.document(userId).getDocument()
         guard snapshot.exists, let data = snapshot.data() else { return nil }
         return Self.documentToUser(id: userId, data: data)
     }
 
-    private func getUserInfoImpl(userId: String) async throws -> UserInfo? {
-        guard let user = try await getUserImpl(userId: userId) else { return nil }
+    func getUserInfo(userId: String) async throws -> UserInfo? {
+        guard let user = try await getUser(userId: userId) else { return nil }
         return UserInfo(
             id: user.id,
             name: user.name,
@@ -202,7 +93,17 @@ final class FirestoreUserRepository: UserRepository {
         )
     }
 
-    private func updateProfileImpl(
+    func isUsernameAvailable(username: String) async throws -> KotlinBoolean {
+        // TODO: Implement username availability check
+        return KotlinBoolean(value: true)
+    }
+
+    func searchUsers(query: String, limit: Int32) async throws -> [UserInfo] {
+        // TODO: Implement user search
+        return []
+    }
+
+    func updateProfile(
         name: String?,
         username: String?,
         bio: String?,
@@ -221,7 +122,7 @@ final class FirestoreUserRepository: UserRepository {
         }
     }
     
-    private func updateFullProfileImpl(
+    func updateFullProfile(
         name: String?,
         bio: String?,
         profileImageUrl: String?,
@@ -235,15 +136,13 @@ final class FirestoreUserRepository: UserRepository {
             throw NSError(domain: "FirestoreUserRepository", code: 1, userInfo: [NSLocalizedDescriptionKey: "No authenticated user"])
         }
         
-        print("📝 FirestoreUserRepository: Updating full profile for user \(userId)")
-        
         var updates: [String: Any] = [Self.fieldUpdatedAt: Int64(Date().timeIntervalSince1970 * 1000)]
         
         // Basic fields
         if let name = name {
             updates[Self.fieldName] = name
             // Also update search keywords when name changes
-            if let user = try await getUserImpl(userId: userId) {
+            if let user = try await getUser(userId: userId) {
                 updates[Self.fieldSearchKeywords] = Self.buildSearchKeywords(name: name, username: user.username)
             }
         }
@@ -266,11 +165,7 @@ final class FirestoreUserRepository: UserRepository {
         if let crops = crops { updates[Self.fieldExpertise] = crops }
         
         if updates.count > 1 {
-            print("📝 FirestoreUserRepository: Updating \(updates.count) fields")
             try await usersCollection.document(userId).updateData(updates)
-            print("✅ FirestoreUserRepository: Profile updated successfully")
-        } else {
-            print("⚠️ FirestoreUserRepository: No fields to update")
         }
     }
 

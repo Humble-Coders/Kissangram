@@ -11,11 +11,11 @@ data class CreatePostInput(
     // Content
     val text: String = "",
     
-    // Media (local URIs before upload)
+    // Media (file data before upload)
     val mediaItems: List<MediaItem> = emptyList(),
     
-    // Voice Caption (local URI before upload)
-    val voiceCaptionUri: String? = null,
+    // Voice Caption (audio data before upload)
+    val voiceCaptionData: ByteArray? = null,
     val voiceCaptionDurationSeconds: Int = 0,
     
     // Crops & Hashtags
@@ -36,10 +36,31 @@ data class CreatePostInput(
  * Media item for create post (before upload)
  */
 data class MediaItem(
-    val localUri: String,
+    val mediaData: ByteArray,
     val type: MediaType,
-    val thumbnailUri: String? = null
-)
+    val thumbnailData: ByteArray? = null
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is MediaItem) return false
+        
+        if (!mediaData.contentEquals(other.mediaData)) return false
+        if (type != other.type) return false
+        if (thumbnailData != null) {
+            if (other.thumbnailData == null) return false
+            if (!thumbnailData.contentEquals(other.thumbnailData)) return false
+        } else if (other.thumbnailData != null) return false
+        
+        return true
+    }
+    
+    override fun hashCode(): Int {
+        var result = mediaData.contentHashCode()
+        result = 31 * result + type.hashCode()
+        result = 31 * result + (thumbnailData?.contentHashCode() ?: 0)
+        return result
+    }
+}
 
 /**
  * Location for create post

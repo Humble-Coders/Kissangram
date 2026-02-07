@@ -12,14 +12,8 @@ final class IOSAuthRepository: AuthRepository {
     }
     
     func sendOtp(phoneNumber: String) async throws {
-        print("[IOSAuthRepository] Starting sendOtp for phone: \(phoneNumber)")
-        
         return try await withCheckedThrowingContinuation { continuation in
             PhoneAuthProvider.provider().verifyPhoneNumber(phoneNumber, uiDelegate: nil) { [weak self] verificationID, error in
-                print("[IOSAuthRepository] verifyPhoneNumber callback called")
-                print("[IOSAuthRepository] verificationID: \(verificationID != nil)")
-                print("[IOSAuthRepository] error: \(error?.localizedDescription ?? "none")")
-                
                 if let error = error {
                     continuation.resume(throwing: error)
                     return
@@ -27,19 +21,15 @@ final class IOSAuthRepository: AuthRepository {
                 
                 // Store verification ID in preferences so it persists across navigation
                 if let verificationID = verificationID {
-                    print("[IOSAuthRepository] Storing verification ID asynchronously")
                     Task {
                         do {
                             try await self?.preferencesRepository.setVerificationId(id: verificationID)
-                            print("[IOSAuthRepository] Verification ID stored successfully")
                         } catch {
-                            print("[IOSAuthRepository] Failed to store verification ID: \(error.localizedDescription)")
                             // If storage fails, continue anyway
                         }
                     }
                 }
                 
-                print("[IOSAuthRepository] Resuming continuation with success")
                 continuation.resume(returning: ())
             }
         }

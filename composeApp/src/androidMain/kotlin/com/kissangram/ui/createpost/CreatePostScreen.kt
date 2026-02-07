@@ -18,6 +18,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -43,10 +44,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -65,6 +68,8 @@ import com.kissangram.ui.home.TextSecondary
 import com.kissangram.viewmodel.CreatePostViewModel
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.kissangram.viewmodel.CreatePostUiState
+import com.kissangram.ui.components.FilterableDropdownField
 
 // MARK: - Helper Functions
 private fun createImageUri(context: Context): Uri {
@@ -93,31 +98,7 @@ private fun createVideoUri(context: Context): Uri {
     )
 }
 
-private fun buildPostInput(
-    postType: PostType,
-    caption: String,
-    mediaItems: List<MediaItem>,
-    voiceCaptionUri: String?,
-    voiceCaptionDuration: Int,
-    selectedCrops: Set<String>,
-    hashtags: List<String>,
-    location: CreatePostLocation?,
-    visibility: PostVisibility,
-    targetExpertise: Set<String>
-): CreatePostInput {
-    return CreatePostInput(
-        type = postType,
-        text = caption,
-        mediaItems = mediaItems,
-        voiceCaptionUri = voiceCaptionUri,
-        voiceCaptionDurationSeconds = voiceCaptionDuration,
-        crops = selectedCrops.toList(),
-        hashtags = hashtags,
-        location = location,
-        visibility = visibility,
-        targetExpertise = if (postType == PostType.QUESTION) targetExpertise.toList() else emptyList()
-    )
-}
+// buildPostInput is now handled by ViewModel.buildPostInput() which converts URIs to ByteArray
 
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -131,12 +112,10 @@ fun CreatePostScreen(
     val uiState by viewModel.uiState.collectAsState()
     
     // State (keeping local state for non-voice related items for now)
-    var postType by remember { mutableStateOf(PostType.NORMAL) }
-    var caption by remember { mutableStateOf("") }
-    var mediaItems by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
+    // postType, caption, and mediaItems are now managed by ViewModel (uiState)
     // selectedCrops is now managed by ViewModel (uiState.selectedCrops)
+    // location is now managed by ViewModel (uiState.location)
     var visibility by remember { mutableStateOf(PostVisibility.PUBLIC) }
-    var location by remember { mutableStateOf<CreatePostLocation?>(null) }
     var hashtags by remember { mutableStateOf<List<String>>(emptyList()) }
     var hashtagInput by remember { mutableStateOf("") }
     
@@ -150,10 +129,7 @@ fun CreatePostScreen(
     val focusManager = LocalFocusManager.current
     
     // Post is enabled when there's media OR text (for questions, text alone is enough)
-    val isPostEnabled = when (postType) {
-        PostType.QUESTION -> caption.isNotBlank()
-        PostType.NORMAL -> mediaItems.isNotEmpty() && caption.isNotBlank()
-    }
+    val isPostEnabled = uiState.isPostEnabled
     
     // Audio recording permission launcher
     val audioPermissionLauncher = rememberLauncherForActivityResult(
@@ -162,10 +138,24 @@ fun CreatePostScreen(
         viewModel.onAudioPermissionResult(isGranted)
     }
     
+    // Location permission launcher
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        viewModel.onLocationPermissionResult(isGranted)
+    }
+    
     // Handle audio permission request from ViewModel
     LaunchedEffect(uiState.needsAudioPermission) {
         if (uiState.needsAudioPermission) {
             audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+    
+    // Handle location permission request from ViewModel
+    LaunchedEffect(uiState.needsLocationPermission) {
+        if (uiState.needsLocationPermission) {
+            locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
         }
     }
     
@@ -183,10 +173,7 @@ fun CreatePostScreen(
     ) { success ->
         if (success) {
             cameraImageUri?.let { uri ->
-                mediaItems = mediaItems + MediaItem(
-                    localUri = uri.toString(),
-                    type = MediaType.IMAGE
-                )
+                viewModel.addMediaItem(uri, MediaType.IMAGE)
             }
         }
     }
@@ -197,10 +184,7 @@ fun CreatePostScreen(
     ) { success ->
         if (success) {
             cameraVideoUri?.let { uri ->
-                mediaItems = mediaItems + MediaItem(
-                    localUri = uri.toString(),
-                    type = MediaType.VIDEO
-                )
+                viewModel.addMediaItem(uri, MediaType.VIDEO)
             }
         }
     }
@@ -219,10 +203,7 @@ fun CreatePostScreen(
                 else -> MediaType.IMAGE // Default to image
             }
             
-            mediaItems = mediaItems + MediaItem(
-                localUri = it.toString(),
-                type = mediaType
-            )
+            viewModel.addMediaItem(it, mediaType)
         }
     }
     
@@ -238,10 +219,7 @@ fun CreatePostScreen(
                 else -> MediaType.IMAGE
             }
             
-            mediaItems = mediaItems + MediaItem(
-                localUri = it.toString(),
-                type = mediaType
-            )
+            viewModel.addMediaItem(it, mediaType)
         }
     }
     
@@ -299,56 +277,60 @@ fun CreatePostScreen(
     }
     
     
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(BackgroundColor)
     ) {
-        // Top Bar
-        TopAppBar(
-            title = {
-                Text(
-                    text = "Create Post",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = TextPrimary
-                )
-            },
-            navigationIcon = {
-                IconButton(onClick = onBackClick) {
-                    Icon(
-                        imageVector = Icons.Default.ArrowBack,
-                        contentDescription = "Back",
-                        tint = TextPrimary
-                    )
-                }
-            },
-            colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = BackgroundColor
-            ),
-            modifier = Modifier.border(
-                width = 1.dp,
-                color = Color.Black.copy(alpha = 0.05f),
-                shape = RoundedCornerShape(0.dp)
-            )
-        )
-        
-        // Content
         Column(
-            modifier = Modifier
-                .weight(1f)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 18.dp)
-                .padding(top = 18.dp)
+            modifier = Modifier.fillMaxSize()
         ) {
+            // Top Bar
+            TopAppBar(
+                title = {
+                    Text(
+                        text = "Create Post",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextPrimary
+                    )
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBackClick) {
+                        Icon(
+                            imageVector = Icons.Default.ArrowBack,
+                            contentDescription = "Back",
+                            tint = TextPrimary
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = BackgroundColor
+                ),
+                modifier = Modifier.border(
+                    width = 1.dp,
+                    color = Color.Black.copy(alpha = 0.05f),
+                    shape = RoundedCornerShape(0.dp)
+                )
+            )
+            
+            // Content
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 18.dp)
+                    .padding(top = 18.dp)
+                    .padding(bottom = 120.dp) // Space for bottom button
+            ) {
             // Post Type Toggle
             PostTypeToggle(
-                selectedType = postType,
-                onTypeSelected = { postType = it }
+                selectedType = uiState.postType,
+                onTypeSelected = { viewModel.setPostType(it) }
             )
-            
+
             Spacer(modifier = Modifier.height(18.dp))
-            
+
             // Media Selection Buttons
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -368,6 +350,7 @@ fun CreatePostScreen(
                                 cameraImageUri = uri
                                 cameraLauncher.launch(uri)
                             }
+
                             else -> {
                                 cameraImageUri = createImageUri(context)
                                 cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
@@ -392,6 +375,7 @@ fun CreatePostScreen(
                                         )
                                     )
                                 }
+
                                 else -> {
                                     readMediaImagesPermissionLauncher.launch(Manifest.permission.READ_MEDIA_IMAGES)
                                 }
@@ -404,6 +388,7 @@ fun CreatePostScreen(
                                 ) == PackageManager.PERMISSION_GRANTED -> {
                                     galleryLauncherLegacy.launch("image/*")
                                 }
+
                                 else -> {
                                     readStoragePermissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
                                 }
@@ -425,6 +410,7 @@ fun CreatePostScreen(
                                 cameraVideoUri = uri
                                 videoLauncher.launch(uri)
                             }
+
                             else -> {
                                 cameraVideoUri = createVideoUri(context)
                                 videoPermissionLauncher.launch(Manifest.permission.CAMERA)
@@ -433,30 +419,30 @@ fun CreatePostScreen(
                     }
                 )
             }
-            
+
             // Media Preview (if any media selected)
-            if (mediaItems.isNotEmpty()) {
+            if (uiState.mediaItemUris.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(18.dp))
                 MediaPreviewSection(
-                    mediaItems = mediaItems,
-                    onRemoveMedia = { item ->
-                        mediaItems = mediaItems - item
+                    mediaItemUris = uiState.mediaItemUris,
+                    onRemoveMedia = { index ->
+                        viewModel.removeMediaItemByIndex(index)
                     }
                 )
             }
-            
+
             Spacer(modifier = Modifier.height(18.dp))
-            
+
             // Caption Text Area
             OutlinedTextField(
-                value = caption,
-                onValueChange = { caption = it },
+                value = uiState.caption,
+                onValueChange = { viewModel.setCaption(it) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(140.dp),
                 placeholder = {
                     Text(
-                        text = if (postType == PostType.QUESTION) "Ask your question..." else "Enter caption",
+                        text = if (uiState.postType == PostType.QUESTION) "Ask your question..." else "Enter caption",
                         color = TextPrimary.copy(alpha = 0.5f),
                         fontSize = 16.875.sp
                     )
@@ -474,9 +460,9 @@ fun CreatePostScreen(
                 ),
                 maxLines = 5
             )
-            
+
             Spacer(modifier = Modifier.height(18.dp))
-            
+
             // Voice Caption Button
             VoiceCaptionSection(
                 voiceCaptionUri = uiState.voiceCaptionUri,
@@ -484,7 +470,7 @@ fun CreatePostScreen(
                 isRecording = uiState.isRecordingVoice,
                 isPlaying = uiState.isPlayingVoice,
                 playbackProgress = uiState.playbackProgress,
-                onRecordClick = { 
+                onRecordClick = {
                     viewModel.toggleVoiceRecording()
                 },
                 onPlayClick = {
@@ -494,9 +480,9 @@ fun CreatePostScreen(
                     viewModel.removeVoiceCaption()
                 }
             )
-            
+
             Spacer(modifier = Modifier.height(18.dp))
-            
+
             // Hashtags Section
             HashtagsSection(
                 hashtags = hashtags,
@@ -513,9 +499,9 @@ fun CreatePostScreen(
                     hashtags = hashtags - tag
                 }
             )
-            
+
             Spacer(modifier = Modifier.height(18.dp))
-            
+
             // Crop Selection
             CropSelectionSection(
                 allCrops = uiState.allCrops,
@@ -530,9 +516,9 @@ fun CreatePostScreen(
                 onCropSelected = { viewModel.toggleCrop(it) },
                 onToggleShowAll = { viewModel.toggleShowAllCrops() }
             )
-            
+
             // Question-specific: Target Expertise (only for questions)
-            if (postType == PostType.QUESTION) {
+            if (uiState.postType == PostType.QUESTION) {
                 Spacer(modifier = Modifier.height(18.dp))
                 TargetExpertiseSection(
                     selectedExpertise = targetExpertise,
@@ -545,72 +531,108 @@ fun CreatePostScreen(
                     }
                 )
             }
-            
+
             Spacer(modifier = Modifier.height(18.dp))
-            
+
             // Visibility Selection
             VisibilitySelectionSection(
                 selectedVisibility = visibility,
                 onVisibilitySelected = { visibility = it }
             )
-            
+
             Spacer(modifier = Modifier.height(18.dp))
-            
+
             // Location Button
             LocationButton(
-                location = location?.name,
-                onLocationClick = { /* TODO: Open location picker */ }
+                location = uiState.location?.name,
+                onLocationClick = { 
+                    viewModel.showLocationSheet()
+                },
+                onRemoveLocation = {
+                    viewModel.removeLocation()
+                }
             )
-            
-            Spacer(modifier = Modifier.height(18.dp))
+
+            Spacer(modifier = Modifier.height(68
+                .dp))
+
+            }
         }
         
-        // Bottom Post Button
+        // Bottom Post Button - Fixed at bottom
         Surface(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(18.dp),
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth(),
             color = BackgroundColor,
-            border = BorderStroke(
-                width = 1.18.dp,
-                color = Color.Black.copy(alpha = 0.05f)
-            )
+            shadowElevation = 8.dp
         ) {
-            Button(
-                onClick = {
-                    onPostClick(
-                        buildPostInput(
-                            postType = postType,
-                            caption = caption,
-                            mediaItems = mediaItems,
-                            voiceCaptionUri = uiState.voiceCaptionUri,
-                            voiceCaptionDuration = uiState.voiceCaptionDuration,
-                            selectedCrops = uiState.selectedCrops.toSet(),
-                            hashtags = hashtags,
-                            location = location,
-                            visibility = visibility,
-                            targetExpertise = targetExpertise
-                        )
-                    )
-                },
-                enabled = isPostEnabled,
+            val navigationBarPadding = WindowInsets.navigationBars.asPaddingValues()
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(65.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isPostEnabled) PrimaryGreen else Color(0xFFE5E5E5),
-                    contentColor = if (isPostEnabled) Color.White else Color(0xFF9B9B9B),
-                    disabledContainerColor = Color(0xFFE5E5E5),
-                    disabledContentColor = Color(0xFF9B9B9B)
-                ),
-                shape = RoundedCornerShape(18.dp)
+                    .padding(horizontal = 18.dp)
+                    .padding(top = 12.dp)
+                    .padding(bottom = navigationBarPadding.calculateBottomPadding()+ 72.dp ) // System nav + custom bottom nav bar
             ) {
-                Text(
-                    text = if (postType == PostType.QUESTION) "Ask Question" else "Post",
-                    fontSize = 19.125.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
+                Button(
+                    onClick = {
+                        viewModel.createPost(
+                            onSuccess = {
+                                // Navigate back on success
+                                onBackClick()
+                            },
+                            onError = { error ->
+                                // Error is already shown in UI state, but we can show a snackbar here if needed
+                            }
+                        )
+                    },
+                    enabled = isPostEnabled && !uiState.isCreatingPost,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(65.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isPostEnabled) PrimaryGreen else Color(0xFFE5E5E5),
+                        contentColor = if (isPostEnabled) Color.White else Color(0xFF9B9B9B),
+                        disabledContainerColor = Color(0xFFE5E5E5),
+                        disabledContentColor = Color(0xFF9B9B9B)
+                    ),
+                    shape = RoundedCornerShape(18.dp)
+                ) {
+                    if (uiState.isCreatingPost) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            color = Color.White,
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Posting...",
+                            fontSize = 19.125.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    } else {
+                        Text(
+                            text = if (uiState.postType == PostType.QUESTION) "Ask Question" else "Post",
+                            fontSize = 19.125.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
             }
+        }
+        
+        // Location Selection Bottom Sheet
+        if (uiState.showLocationSheet) {
+            LocationSelectionBottomSheet(
+                uiState = uiState,
+                onDismiss = { viewModel.hideLocationSheet() },
+                onUseCurrentLocation = { viewModel.useCurrentLocation() },
+                onStateSelected = { viewModel.selectState(it) },
+                onDistrictSelected = { viewModel.selectDistrict(it) },
+                onVillageChange = { viewModel.setVillageName(it) },
+                onSave = { viewModel.saveManualLocation() }
+            )
         }
     }
 }
@@ -726,12 +748,12 @@ private fun MediaSelectionButton(
 // MARK: - Media Preview Section
 @Composable
 private fun MediaPreviewSection(
-    mediaItems: List<MediaItem>,
-    onRemoveMedia: (MediaItem) -> Unit
+    mediaItemUris: List<Pair<String, MediaType>>,
+    onRemoveMedia: (Int) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
         Text(
-            text = "Selected Media (${mediaItems.size})",
+            text = "Selected Media (${mediaItemUris.size})",
             fontSize = 14.625.sp,
             fontWeight = FontWeight.Medium,
             color = TextSecondary
@@ -740,7 +762,7 @@ private fun MediaPreviewSection(
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(9.dp)
         ) {
-            items(mediaItems) { item ->
+            itemsIndexed(mediaItemUris) { index, (uriString, type) ->
                 Box(
                     modifier = Modifier
                         .size(90.dp)
@@ -748,14 +770,14 @@ private fun MediaPreviewSection(
                         .background(Color.Gray.copy(alpha = 0.2f))
                 ) {
                     AsyncImage(
-                        model = item.localUri,
+                        model = uriString,
                         contentDescription = "Media",
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop
                     )
                     
                     // Video indicator
-                    if (item.type == MediaType.VIDEO) {
+                    if (type == MediaType.VIDEO) {
                         Box(
                             modifier = Modifier
                                 .align(Alignment.Center)
@@ -777,7 +799,7 @@ private fun MediaPreviewSection(
                     
                     // Remove button
                     IconButton(
-                        onClick = { onRemoveMedia(item) },
+                        onClick = { onRemoveMedia(index) },
                         modifier = Modifier
                             .align(Alignment.TopEnd)
                             .size(24.dp)
@@ -1419,7 +1441,8 @@ private fun VisibilityButton(
 @Composable
 private fun LocationButton(
     location: String?,
-    onLocationClick: () -> Unit
+    onLocationClick: () -> Unit,
+    onRemoveLocation: () -> Unit = {}
 ) {
     Column(
         verticalArrangement = Arrangement.spacedBy(13.5.dp)
@@ -1434,23 +1457,25 @@ private fun LocationButton(
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(74.dp)
-                .clickable(onClick = onLocationClick),
+                .height(74.dp),
             shape = RoundedCornerShape(18.dp),
-            color = BackgroundColor,
+            color = if (location != null) PrimaryGreen.copy(alpha = 0.1f) else BackgroundColor,
             border = BorderStroke(
                 width = 1.18.dp,
-                color = PrimaryGreen.copy(alpha = 0.08f)
+                color = if (location != null) PrimaryGreen.copy(alpha = 0.3f) else PrimaryGreen.copy(alpha = 0.08f)
             )
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 19.dp),
+                    .padding(horizontal = 14.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable(onClick = onLocationClick),
                     horizontalArrangement = Arrangement.spacedBy(13.5.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -1458,7 +1483,7 @@ private fun LocationButton(
                         modifier = Modifier
                             .size(40.5.dp)
                             .background(
-                                color = PrimaryGreen.copy(alpha = 0.08f),
+                                color = if (location != null) PrimaryGreen else PrimaryGreen.copy(alpha = 0.08f),
                                 shape = CircleShape
                             ),
                         contentAlignment = Alignment.Center
@@ -1467,23 +1492,357 @@ private fun LocationButton(
                             imageVector = Icons.Default.LocationOn,
                             contentDescription = "Location",
                             modifier = Modifier.size(20.25.dp),
-                            tint = PrimaryGreen
+                            tint = if (location != null) Color.White else PrimaryGreen
                         )
                     }
                     Text(
                         text = location ?: "Select location",
                         fontSize = 16.875.sp,
                         fontWeight = FontWeight.Medium,
-                        color = if (location != null) TextPrimary else TextPrimary.copy(alpha = 0.5f)
+                        color = if (location != null) TextPrimary else TextPrimary.copy(alpha = 0.5f),
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                     )
                 }
-                Icon(
-                    imageVector = Icons.Default.ChevronRight,
-                    contentDescription = "Navigate",
-                    modifier = Modifier.size(22.5.dp),
-                    tint = TextSecondary
-                )
+                if (location != null) {
+                    IconButton(onClick = onRemoveLocation) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Remove",
+                            tint = TextSecondary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.ChevronRight,
+                        contentDescription = "Navigate",
+                        modifier = Modifier.size(22.5.dp),
+                        tint = TextSecondary
+                    )
+                }
             }
         }
     }
 }
+
+// MARK: - Location Selection Bottom Sheet
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LocationSelectionBottomSheet(
+    uiState: CreatePostUiState,
+    onDismiss: () -> Unit,
+    onUseCurrentLocation: () -> Unit,
+    onStateSelected: (String) -> Unit,
+    onDistrictSelected: (String) -> Unit,
+    onVillageChange: (String) -> Unit,
+    onSave: () -> Unit
+) {
+    var selectedTab by remember { mutableStateOf(0) } // 0 = Current Location, 1 = Manual
+    
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = BackgroundColor,
+        dragHandle = {
+            Box(
+                modifier = Modifier
+                    .width(40.dp)
+                    .height(4.dp)
+                    .padding(vertical = 12.dp)
+                    .background(
+                        color = Color.Black.copy(alpha = 0.2f),
+                        shape = RoundedCornerShape(2.dp)
+                    )
+            )
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp)
+                .padding(bottom = 32.dp)
+        ) {
+            Spacer(modifier = Modifier.height(18.dp))
+            // Title
+            Text(
+                text = "Add Location",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary,
+                modifier = Modifier.padding(bottom = 20.dp)
+            )
+            
+            // Tab Selection
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 20.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                TabButton(
+                    label = "Current Location",
+                    isSelected = selectedTab == 0,
+                    modifier = Modifier.weight(1f),
+                    onClick = { selectedTab = 0 }
+                )
+                TabButton(
+                    label = "Manual",
+                    isSelected = selectedTab == 1,
+                    modifier = Modifier.weight(1f),
+                    onClick = { selectedTab = 1 }
+                )
+            }
+            
+            // Content based on selected tab
+            when (selectedTab) {
+                0 -> {
+                    // Current Location Tab
+                    CurrentLocationTab(
+                        isLoading = uiState.isLoadingLocation,
+                        error = uiState.locationError,
+                        onUseCurrentLocation = onUseCurrentLocation
+                    )
+                }
+                1 -> {
+                    // Manual Selection Tab
+                    ManualLocationTab(
+                        states = uiState.states,
+                        selectedState = uiState.selectedState,
+                        districts = uiState.districts,
+                        selectedDistrict = uiState.selectedDistrict,
+                        village = uiState.villageName,
+                        isLoadingStates = uiState.isLoadingStates,
+                        isLoadingDistricts = uiState.isLoadingDistricts,
+                        error = uiState.locationError,
+                        onStateSelected = onStateSelected,
+                        onDistrictSelected = onDistrictSelected,
+                        onVillageChange = onVillageChange,
+                        onSave = onSave
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TabButton(
+    label: String,
+    isSelected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = modifier
+            .height(48.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(14.dp),
+        color = if (isSelected) PrimaryGreen else BackgroundColor,
+        border = if (isSelected) null else BorderStroke(
+            width = 1.18.dp,
+            color = PrimaryGreen.copy(alpha = 0.13f)
+        )
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = label,
+                fontSize = 14.625.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = if (isSelected) Color.White else TextPrimary
+            )
+        }
+    }
+}
+
+@Composable
+private fun CurrentLocationTab(
+    isLoading: Boolean,
+    error: String?,
+    onUseCurrentLocation: () -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        if (error != null) {
+            Text(
+                text = error,
+                fontSize = 14.sp,
+                color = Color(0xFFFF6B6B),
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+        }
+        
+        Button(
+            onClick = onUseCurrentLocation,
+            enabled = !isLoading,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = PrimaryGreen,
+                disabledContainerColor = PrimaryGreen.copy(alpha = 0.5f)
+            ),
+            shape = RoundedCornerShape(18.dp)
+        ) {
+            if (isLoading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(24.dp),
+                    color = Color.White,
+                    strokeWidth = 2.dp
+                )
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    text = "Detecting location...",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Default.LocationOn,
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                    tint = Color.White
+                )
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    text = "Use Current Location",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White
+                )
+            }
+        }
+        
+        Text(
+            text = "We'll use your GPS to find your location",
+            fontSize = 13.sp,
+            color = TextSecondary,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+    }
+}
+
+@Composable
+private fun ManualLocationTab(
+    states: List<String>,
+    selectedState: String?,
+    districts: List<String>,
+    selectedDistrict: String?,
+    village: String,
+    isLoadingStates: Boolean,
+    isLoadingDistricts: Boolean,
+    error: String?,
+    onStateSelected: (String) -> Unit,
+    onDistrictSelected: (String) -> Unit,
+    onVillageChange: (String) -> Unit,
+    onSave: () -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        if (error != null) {
+            Text(
+                text = error,
+                fontSize = 14.sp,
+                color = Color(0xFFFF6B6B)
+            )
+        }
+        
+        // State Dropdown
+        FilterableDropdownField(
+            label = "State",
+            items = states,
+            selectedItem = selectedState,
+            onItemSelected = onStateSelected,
+            isLoading = isLoadingStates,
+            enabled = !isLoadingStates,
+            placeholder = "Select State",
+            modifier = Modifier.fillMaxWidth()
+        )
+        
+        // District Dropdown
+        FilterableDropdownField(
+            label = "District",
+            items = districts,
+            selectedItem = selectedDistrict,
+            onItemSelected = onDistrictSelected,
+            isLoading = isLoadingDistricts,
+            enabled = selectedState != null && !isLoadingDistricts,
+            placeholder = if (selectedState == null) "Select state first" else "Select District",
+            modifier = Modifier.fillMaxWidth()
+        )
+        
+        // Village (Optional)
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = "Village",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = TextSecondary
+                )
+                Text(
+                    text = "(Optional)",
+                    fontSize = 12.sp,
+                    color = TextSecondary.copy(alpha = 0.6f),
+                    fontStyle = FontStyle.Italic
+                )
+            }
+            OutlinedTextField(
+                value = village,
+                onValueChange = onVillageChange,
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = {
+                    Text(
+                        "Enter village name",
+                        color = TextPrimary.copy(alpha = 0.5f)
+                    )
+                },
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = BackgroundColor,
+                    unfocusedContainerColor = BackgroundColor,
+                    focusedBorderColor = PrimaryGreen,
+                    unfocusedBorderColor = Color.Black.copy(alpha = 0.1f)
+                ),
+                shape = RoundedCornerShape(22.dp),
+                textStyle = MaterialTheme.typography.bodyLarge.copy(
+                    fontSize = 16.sp,
+                    color = TextPrimary
+                )
+            )
+        }
+        
+        // Save Button
+        Button(
+            onClick = onSave,
+            enabled = selectedState != null && selectedDistrict != null,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = PrimaryGreen,
+                disabledContainerColor = PrimaryGreen.copy(alpha = 0.5f)
+            ),
+            shape = RoundedCornerShape(18.dp)
+        ) {
+            Text(
+                text = "Save Location",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White
+            )
+        }
+    }
+}
+

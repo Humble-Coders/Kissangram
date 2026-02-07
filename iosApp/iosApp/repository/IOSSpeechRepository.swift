@@ -107,7 +107,6 @@ final class IOSSpeechRepository: SpeechRepository {
                 if nsError.code == 216 { // SFSpeechRecognizerErrorCode.cancelled
                     return
                 }
-                print("[IOSSpeechRepository] Error: \(error.localizedDescription)")
                 
                 // If we should stop and got an error, stop now
                 if self.shouldStopAfterCurrent {
@@ -131,7 +130,6 @@ final class IOSSpeechRepository: SpeechRepository {
                 
                 // If this is a final result and we should stop, stop now
                 if result.isFinal && self.shouldStopAfterCurrent {
-                    print("[IOSSpeechRepository] Final result received, stopping")
                     Task { @MainActor in
                         self.actuallyStopListening()
                     }
@@ -143,8 +141,6 @@ final class IOSSpeechRepository: SpeechRepository {
     }
     
     func stopListening() async throws {
-        print("[IOSSpeechRepository] Requesting stop - will finish current recognition")
-        
         // Set flag to stop after current recognition finishes
         shouldStopAfterCurrent = true
         
@@ -155,7 +151,6 @@ final class IOSSpeechRepository: SpeechRepository {
         stopTimeoutTask = Task {
             try? await Task.sleep(nanoseconds: 3_000_000_000) // 3 seconds
             if shouldStopAfterCurrent {
-                print("[IOSSpeechRepository] Timeout reached, forcing stop")
                 await MainActor.run {
                     actuallyStopListening()
                 }
@@ -164,7 +159,6 @@ final class IOSSpeechRepository: SpeechRepository {
     }
     
     private func actuallyStopListening() {
-        print("[IOSSpeechRepository] Actually stopping listening")
         shouldStopAfterCurrent = false
         stopTimeoutTask?.cancel()
         stopTimeoutTask = nil
@@ -198,8 +192,6 @@ final class IOSSpeechRepository: SpeechRepository {
     }
     
     func stopListeningSync() -> String {
-        print("[IOSSpeechRepository] Requesting stop - will finish current recognition")
-        
         // Set flag to stop after current recognition finishes
         shouldStopAfterCurrent = true
         
@@ -210,7 +202,6 @@ final class IOSSpeechRepository: SpeechRepository {
         stopTimeoutTask = Task {
             try? await Task.sleep(nanoseconds: 3_000_000_000) // 3 seconds
             if shouldStopAfterCurrent {
-                print("[IOSSpeechRepository] Timeout reached, forcing stop")
                 await MainActor.run {
                     actuallyStopListening()
                 }

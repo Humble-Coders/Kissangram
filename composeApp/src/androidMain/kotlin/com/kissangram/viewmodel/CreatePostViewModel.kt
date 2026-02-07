@@ -1,10 +1,13 @@
 package com.kissangram.viewmodel
 
+import android.annotation.SuppressLint
 import android.app.Application
+import android.content.ContentResolver
 import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.kissangram.model.CreatePostInput
@@ -13,13 +16,22 @@ import com.kissangram.model.MediaItem
 import com.kissangram.model.MediaType
 import com.kissangram.model.PostType
 import com.kissangram.model.PostVisibility
+import com.kissangram.repository.AndroidAuthRepository
 import com.kissangram.repository.AndroidCropsRepository
+import com.kissangram.repository.AndroidLocationRepository
+import com.kissangram.repository.AndroidStorageRepository
 import com.kissangram.repository.AndroidVoiceRecordingRepository
+import com.kissangram.repository.FirestorePostRepository
+import com.kissangram.repository.FirestoreUserRepository
+import com.kissangram.usecase.CreatePostUseCase
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.File
+import java.io.FileInputStream
+import java.io.InputStream
 
 /**
  * UI State for Create Post screen
@@ -27,7 +39,8 @@ import kotlinx.coroutines.launch
 data class CreatePostUiState(
     val postType: PostType = PostType.NORMAL,
     val caption: String = "",
-    val mediaItems: List<MediaItem> = emptyList(),
+    val mediaItems: List<MediaItem> = emptyList(), // For display - will be converted to ByteArray in buildPostInput
+    val mediaItemUris: List<Pair<String, MediaType>> = emptyList(), // Store URIs separately
     val selectedCrops: List<String> = emptyList(),
     val visibility: PostVisibility = PostVisibility.PUBLIC,
     val location: CreatePostLocation? = null,
@@ -53,9 +66,28 @@ data class CreatePostUiState(
     
     // Permission state
     val needsAudioPermission: Boolean = false,
+    val needsLocationPermission: Boolean = false,
+    
+    // Location state
+    val isLoadingLocation: Boolean = false,
+    val locationError: String? = null,
+    
+    // Location selection state
+    val showLocationSheet: Boolean = false,
+    val selectedState: String? = null,
+    val selectedDistrict: String? = null,
+    val villageName: String = "",
+    val states: List<String> = emptyList(),
+    val districts: List<String> = emptyList(),
+    val isLoadingStates: Boolean = false,
+    val isLoadingDistricts: Boolean = false,
     
     // Validation
     val isPostEnabled: Boolean = false,
+    
+    // Post creation state
+    val isCreatingPost: Boolean = false,
+    val postCreationError: String? = null,
     
     // Error state
     val errorMessage: String? = null
@@ -96,6 +128,25 @@ class CreatePostViewModel(
     
     private val voiceRecordingRepository = AndroidVoiceRecordingRepository(application)
     private val cropsRepository = AndroidCropsRepository()
+    private val locationRepository = AndroidLocationRepository(application)
+    
+    // Repositories for post creation
+    private val storageRepository = AndroidStorageRepository(application)
+    private val postRepository = FirestorePostRepository()
+    private val authRepository = AndroidAuthRepository(
+        context = application,
+        activity = null,
+        preferencesRepository = com.kissangram.repository.AndroidPreferencesRepository(application)
+    )
+    private val userRepository = FirestoreUserRepository(authRepository = authRepository)
+    
+    // Use case for creating posts
+    private val createPostUseCase = CreatePostUseCase(
+        storageRepository = storageRepository,
+        postRepository = postRepository,
+        authRepository = authRepository,
+        userRepository = userRepository
+    )
     
     private val _uiState = MutableStateFlow(CreatePostUiState())
     val uiState: StateFlow<CreatePostUiState> = _uiState.asStateFlow()
@@ -149,6 +200,249 @@ class CreatePostViewModel(
         _uiState.update { it.copy(showAllCrops = !it.showAllCrops) }
     }
     
+    // MARK: - Location
+    
+    fun showLocationSheet() {
+        _uiState.update { it.copy(showLocationSheet = true) }
+        loadStates()
+    }
+    
+    fun hideLocationSheet() {
+        _uiState.update { 
+            it.copy(
+                showLocationSheet = false,
+                locationError = null
+            ) 
+        }
+    }
+    
+    private fun loadStates() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoadingStates = true) }
+            try {
+                val states = locationRepository.getStates()
+                _uiState.update { 
+                    it.copy(
+                        states = states,
+                        isLoadingStates = false
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update { 
+                    it.copy(
+                        isLoadingStates = false,
+                        locationError = "Failed to load states: ${e.message}"
+                    )
+                }
+            }
+        }
+    }
+    
+    fun selectState(state: String) {
+        _uiState.update { 
+            it.copy(
+                selectedState = state,
+                selectedDistrict = null,
+                districts = emptyList()
+            )
+        }
+        loadDistricts(state)
+    }
+    
+    private fun loadDistricts(state: String) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoadingDistricts = true) }
+            try {
+                val districts = locationRepository.getDistricts(state)
+                _uiState.update { 
+                    it.copy(
+                        districts = districts,
+                        isLoadingDistricts = false
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update { 
+                    it.copy(
+                        isLoadingDistricts = false,
+                        locationError = "Failed to load districts: ${e.message}"
+                    )
+                }
+            }
+        }
+    }
+    
+    fun selectDistrict(district: String) {
+        _uiState.update { it.copy(selectedDistrict = district) }
+    }
+    
+    fun setVillageName(village: String) {
+        _uiState.update { it.copy(villageName = village) }
+    }
+    
+    fun useCurrentLocation() {
+        viewModelScope.launch {
+            if (!locationRepository.hasLocationPermission()) {
+                _uiState.update { it.copy(needsLocationPermission = true) }
+                return@launch
+            }
+            
+            _uiState.update { 
+                it.copy(
+                    isLoadingLocation = true,
+                    locationError = null
+                )
+            }
+            
+            try {
+                // Get GPS coordinates
+                // Permission is checked above, suppress lint warning
+                @SuppressLint("MissingPermission")
+                val coordinates = locationRepository.getCurrentLocation()
+                if (coordinates == null) {
+                    _uiState.update { 
+                        it.copy(
+                            isLoadingLocation = false,
+                            locationError = "Unable to get current location. Please try again."
+                        )
+                    }
+                    return@launch
+                }
+                
+                // Reverse geocode to get location name
+                val locationName = locationRepository.reverseGeocode(
+                    coordinates.latitude,
+                    coordinates.longitude
+                )
+                
+                if (locationName != null) {
+                    // Log coordinates for debugging
+                    Log.d("CreatePostViewModel", "Current Location Selected:")
+                    Log.d("CreatePostViewModel", "  Name: $locationName")
+                    Log.d("CreatePostViewModel", "  Latitude: ${coordinates.latitude}")
+                    Log.d("CreatePostViewModel", "  Longitude: ${coordinates.longitude}")
+                    
+                    _uiState.update { 
+                        it.copy(
+                            location = CreatePostLocation(
+                                name = locationName,
+                                latitude = coordinates.latitude,
+                                longitude = coordinates.longitude
+                            ),
+                            isLoadingLocation = false,
+                            showLocationSheet = false,
+                            locationError = null
+                        )
+                    }
+                } else {
+                    _uiState.update { 
+                        it.copy(
+                            isLoadingLocation = false,
+                            locationError = "Unable to get location name. Please try manual selection."
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                _uiState.update { 
+                    it.copy(
+                        isLoadingLocation = false,
+                        locationError = "Failed to get location: ${e.message}"
+                    )
+                }
+            }
+        }
+    }
+    
+    fun saveManualLocation() {
+        viewModelScope.launch {
+            val state = _uiState.value.selectedState
+            val district = _uiState.value.selectedDistrict
+            val village = _uiState.value.villageName.trim()
+            
+            if (district == null || state == null) {
+                _uiState.update { 
+                    it.copy(
+                        locationError = "Please select state and district"
+                    )
+                }
+                return@launch
+            }
+            
+            // Build location name
+            val locationName = when {
+                village.isNotEmpty() -> "$village, $district, $state"
+                else -> "$district, $state"
+            }
+            
+            _uiState.update { 
+                it.copy(
+                    isLoadingLocation = true,
+                    locationError = null
+                )
+            }
+            
+            try {
+                // Forward geocode to get coordinates
+                val coordinates = locationRepository.forwardGeocode(locationName)
+                
+                // Log coordinates for debugging
+                if (coordinates != null) {
+                    Log.d("CreatePostViewModel", "Manual Location Selected:")
+                    Log.d("CreatePostViewModel", "  Name: $locationName")
+                    Log.d("CreatePostViewModel", "  Latitude: ${coordinates.latitude}")
+                    Log.d("CreatePostViewModel", "  Longitude: ${coordinates.longitude}")
+                } else {
+                    Log.w("CreatePostViewModel", "Manual Location Selected but geocoding failed:")
+                    Log.w("CreatePostViewModel", "  Name: $locationName")
+                    Log.w("CreatePostViewModel", "  Coordinates: null")
+                }
+                
+                _uiState.update { 
+                    it.copy(
+                        location = CreatePostLocation(
+                            name = locationName,
+                            latitude = coordinates?.latitude,
+                            longitude = coordinates?.longitude
+                        ),
+                        isLoadingLocation = false,
+                        showLocationSheet = false,
+                        locationError = null
+                    )
+                }
+            } catch (e: Exception) {
+                // Even if geocoding fails, save the location name
+                _uiState.update { 
+                    it.copy(
+                        location = CreatePostLocation(
+                            name = locationName,
+                            latitude = null,
+                            longitude = null
+                        ),
+                        isLoadingLocation = false,
+                        showLocationSheet = false,
+                        locationError = null
+                    )
+                }
+            }
+        }
+    }
+    
+    fun removeLocation() {
+        _uiState.update { 
+            it.copy(
+                location = null,
+                selectedState = null,
+                selectedDistrict = null,
+                villageName = ""
+            )
+        }
+    }
+    
+    fun onLocationPermissionResult(granted: Boolean) {
+        _uiState.update { it.copy(needsLocationPermission = false) }
+        if (granted) {
+            useCurrentLocation()
+        }
+    }
 
     // MARK: - Post Type
     
@@ -169,18 +463,46 @@ class CreatePostViewModel(
     // MARK: - Media Items
     
     fun addMediaItem(uri: Uri, type: MediaType) {
-        val newItem = MediaItem(
-            localUri = uri.toString(),
-            type = type
+        val uriString = uri.toString()
+        // Create a placeholder MediaItem for UI display (with empty ByteArray)
+        val placeholderItem = MediaItem(
+            mediaData = ByteArray(0), // Placeholder for UI
+            type = type,
+            thumbnailData = null
         )
         _uiState.update { state ->
-            state.copy(mediaItems = state.mediaItems + newItem).updateValidation()
+            state.copy(
+                mediaItems = state.mediaItems + placeholderItem,
+                mediaItemUris = state.mediaItemUris + (uriString to type)
+            ).updateValidation()
         }
     }
     
     fun removeMediaItem(item: MediaItem) {
+        // Find the index of the item by comparing type (since ByteArray comparison might not work for placeholders)
         _uiState.update { state ->
-            state.copy(mediaItems = state.mediaItems - item).updateValidation()
+            val index = state.mediaItems.indexOfFirst { it.type == item.type }
+            if (index >= 0 && index < state.mediaItemUris.size) {
+                state.copy(
+                    mediaItems = state.mediaItems.filterIndexed { i, _ -> i != index },
+                    mediaItemUris = state.mediaItemUris.filterIndexed { i, _ -> i != index }
+                ).updateValidation()
+            } else {
+                state
+            }
+        }
+    }
+    
+    fun removeMediaItemByIndex(index: Int) {
+        _uiState.update { state ->
+            if (index >= 0 && index < state.mediaItems.size && index < state.mediaItemUris.size) {
+                state.copy(
+                    mediaItems = state.mediaItems.filterIndexed { i, _ -> i != index },
+                    mediaItemUris = state.mediaItemUris.filterIndexed { i, _ -> i != index }
+                ).updateValidation()
+            } else {
+                state
+            }
         }
     }
     
@@ -293,7 +615,7 @@ class CreatePostViewModel(
                 _uiState.update { 
                     it.copy(
                         isRecordingVoice = false,
-                        voiceCaptionUri = filePath,
+                        voiceCaptionUri = filePath?.takeIf { it.isNotBlank() },
                         voiceCaptionDuration = duration,
                         recordingDuration = 0,
                         errorMessage = null
@@ -303,6 +625,7 @@ class CreatePostViewModel(
                 _uiState.update { 
                     it.copy(
                         isRecordingVoice = false,
+                        voiceCaptionUri = null,
                         errorMessage = "Failed to stop recording: ${e.message}"
                     )
                 }
@@ -444,13 +767,44 @@ class CreatePostViewModel(
     
     // MARK: - Build Post Input
     
-    fun buildPostInput(): CreatePostInput {
+    private suspend fun uriToByteArray(uriString: String): ByteArray {
+        val uri = Uri.parse(uriString)
+        return when (uri.scheme) {
+            "file" -> {
+                val file = File(uri.path ?: "")
+                FileInputStream(file).use { it.readBytes() }
+            }
+            "content" -> {
+                getApplication<Application>().contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    ?: throw IllegalArgumentException("Cannot read content URI: $uriString")
+            }
+            else -> throw IllegalArgumentException("Unsupported URI scheme: ${uri.scheme}")
+        }
+    }
+    
+    suspend fun buildPostInput(): CreatePostInput {
         val state = _uiState.value
+        
+        // Convert URIs to ByteArray for media items
+        val mediaItemsWithData = state.mediaItemUris.mapIndexed { index, (uriString, type) ->
+            val mediaData = uriToByteArray(uriString)
+            // For videos, we might need thumbnail data - for now, set to null
+            // TODO: Extract thumbnail if needed
+            MediaItem(
+                mediaData = mediaData,
+                type = type,
+                thumbnailData = null
+            )
+        }
+        
+        // Convert voice caption URI to ByteArray if present
+        val voiceCaptionData = state.voiceCaptionUri?.let { uriToByteArray(it) }
+        
         return CreatePostInput(
             type = state.postType,
             text = state.caption,
-            mediaItems = state.mediaItems,
-            voiceCaptionUri = state.voiceCaptionUri,
+            mediaItems = mediaItemsWithData,
+            voiceCaptionData = voiceCaptionData,
             voiceCaptionDurationSeconds = state.voiceCaptionDuration,
             crops = state.selectedCrops,
             hashtags = state.hashtags,
@@ -458,6 +812,47 @@ class CreatePostViewModel(
             visibility = state.visibility,
             targetExpertise = if (state.postType == PostType.QUESTION) state.targetExpertise else emptyList()
         )
+    }
+    
+    // MARK: - Create Post
+    
+    fun createPost(
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isCreatingPost = true, postCreationError = null) }
+            
+            try {
+                val input = buildPostInput()
+                Log.d(TAG, "createPost: Starting post creation with ${input.mediaItems.size} media items")
+                
+                val post = createPostUseCase(input)
+                
+                Log.d(TAG, "createPost: SUCCESS - Post created with ID: ${post.id}")
+                
+                _uiState.update { 
+                    it.copy(
+                        isCreatingPost = false,
+                        postCreationError = null
+                    )
+                }
+                
+                onSuccess()
+            } catch (e: Exception) {
+                Log.e(TAG, "createPost: FAILED", e)
+                val errorMessage = e.message ?: "Failed to create post"
+                
+                _uiState.update { 
+                    it.copy(
+                        isCreatingPost = false,
+                        postCreationError = errorMessage
+                    )
+                }
+                
+                onError(errorMessage)
+            }
+        }
     }
     
     // MARK: - Clear Error
@@ -489,5 +884,9 @@ class CreatePostViewModel(
             PostType.NORMAL -> mediaItems.isNotEmpty() && caption.isNotBlank()
         }
         return copy(isPostEnabled = isEnabled)
+    }
+    
+    companion object {
+        private const val TAG = "CreatePostViewModel"
     }
 }

@@ -21,6 +21,8 @@
 	<string>We need access to your photo library to select images and videos for your posts.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>We need access to your camera to take photos and record videos for your posts.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>We need access to your location to add location information to your posts.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>We need permission to save photos to your library.</string>
 	<key>NSAppTransportSecurity</key>

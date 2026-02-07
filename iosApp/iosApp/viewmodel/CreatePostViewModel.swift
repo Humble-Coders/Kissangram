@@ -43,6 +43,23 @@ class CreatePostViewModel: ObservableObject {
     // Permission state
     @Published var needsAudioPermission: Bool = false
     @Published var showPermissionDeniedAlert: Bool = false
+    @Published var needsLocationPermission: Bool = false
+    
+    // Post creation state
+    @Published var isCreatingPost: Bool = false
+    @Published var postCreationError: String? = nil
+    
+    // Location selection state
+    @Published var showLocationSheet: Bool = false
+    @Published var selectedState: String? = nil
+    @Published var selectedDistrict: String? = nil
+    @Published var villageName: String = ""
+    @Published var allStates: [String] = []
+    @Published var districtsForSelectedState: [String] = []
+    @Published var isLoadingStates: Bool = false
+    @Published var isLoadingDistricts: Bool = false
+    @Published var isLoadingLocation: Bool = false
+    @Published var locationError: String? = nil
     
     // Error state
     @Published var errorMessage: String? = nil
@@ -90,6 +107,29 @@ class CreatePostViewModel: ObservableObject {
     
     private let voiceRecordingRepository = IOSVoiceRecordingRepository()
     private let cropsRepository = IOSCropsRepository()
+    private let locationRepository = IOSLocationRepository()
+    
+    // Repositories for post creation
+    private let storageRepository = IOSStorageRepository()
+    private let postRepository = FirestorePostRepository()
+    private let preferencesRepository = IOSPreferencesRepository()
+    private lazy var authRepository: AuthRepository = {
+        IOSAuthRepository(preferencesRepository: preferencesRepository)
+    }()
+    private lazy var userRepository: UserRepository = {
+        FirestoreUserRepository(authRepository: authRepository)
+    }()
+    
+    // Use case for creating posts
+    private lazy var createPostUseCase: CreatePostUseCase = {
+        CreatePostUseCase(
+            storageRepository: storageRepository,
+            postRepository: postRepository,
+            authRepository: authRepository,
+            userRepository: userRepository
+        )
+    }()
+    
     private var currentVoiceCaptionPath: String?
     
     // Audio playback
@@ -162,8 +202,37 @@ class CreatePostViewModel: ObservableObject {
     // MARK: - Media Items
     
     func addMediaItem(localUri: String, type: MediaItem.MediaType) {
+        // Store URI for now - will convert to ByteArray when creating post
         let item = MediaItem(localUri: localUri, type: type)
         mediaItems.append(item)
+    }
+    
+    nonisolated private func filePathToKotlinByteArray(filePath: String) throws -> KotlinByteArray {
+        let url: URL
+        if filePath.hasPrefix("file://") {
+            guard let fileURL = URL(string: filePath) else {
+                throw NSError(domain: "CreatePostViewModel", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid file URI: \(filePath)"])
+            }
+            url = fileURL
+        } else {
+            url = URL(fileURLWithPath: filePath)
+        }
+        
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw NSError(domain: "CreatePostViewModel", code: 404, userInfo: [NSLocalizedDescriptionKey: "File does not exist: \(filePath)"])
+        }
+        
+        let data = try Data(contentsOf: url)
+        
+        // Convert Data to KotlinByteArray
+        let kotlinByteArray = KotlinByteArray(size: Int32(data.count))
+        data.withUnsafeBytes { bytes in
+            for (i, b) in bytes.enumerated() {
+                kotlinByteArray.set(index: Int32(i), value: Int8(bitPattern: b))
+            }
+        }
+        
+        return kotlinByteArray
     }
     
     func removeMediaItem(_ item: MediaItem) {
@@ -191,6 +260,212 @@ class CreatePostViewModel: ObservableObject {
         locationName = nil
         locationLatitude = nil
         locationLongitude = nil
+    }
+    
+    func showLocationSelectionSheet() {
+        showLocationSheet = true
+        loadStatesAndDistricts()
+    }
+    
+    func hideLocationSelectionSheet() {
+        showLocationSheet = false
+    }
+    
+    func loadStatesAndDistricts() {
+        isLoadingStates = true
+        Task {
+            do {
+                let states = try await locationRepository.getStates()
+                await MainActor.run {
+                    self.allStates = states.sorted()
+                    self.isLoadingStates = false
+                }
+            } catch {
+                await MainActor.run {
+                    self.isLoadingStates = false
+                    self.locationError = "Failed to load states: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+    
+    func selectState(_ state: String) {
+        selectedState = state
+        selectedDistrict = nil // Reset district when state changes
+        districtsForSelectedState = []
+        loadDistricts(for: state)
+    }
+    
+    func selectDistrict(_ district: String) {
+        selectedDistrict = district
+    }
+    
+    func setVillageName(_ name: String) {
+        villageName = name
+    }
+    
+    private func loadDistricts(for state: String) {
+        isLoadingDistricts = true
+        Task {
+            do {
+                let districts = try await locationRepository.getDistricts(state: state)
+                await MainActor.run {
+                    self.districtsForSelectedState = districts.sorted()
+                    self.isLoadingDistricts = false
+                }
+            } catch {
+                await MainActor.run {
+                    self.isLoadingDistricts = false
+                    self.locationError = "Failed to load districts: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+    
+    func useCurrentLocation() {
+        Task {
+            // Check permission
+            if !locationRepository.hasLocationPermission() {
+                do {
+                    let granted = try await locationRepository.requestLocationPermission()
+                    if !granted.boolValue {
+                        await MainActor.run {
+                            needsLocationPermission = true
+                            locationError = "Location permission is required to use current location"
+                        }
+                        return
+                    }
+                } catch {
+                    await MainActor.run {
+                        isLoadingLocation = false
+                        locationError = "Failed to request location permission: \(error.localizedDescription)"
+                    }
+                    return
+                }
+            }
+            
+            await MainActor.run {
+                isLoadingLocation = true
+                locationError = nil
+            }
+            
+            do {
+                // Get GPS coordinates
+                guard let coordinates = try await locationRepository.getCurrentLocation() else {
+                    await MainActor.run {
+                        isLoadingLocation = false
+                        locationError = "Unable to get current location. Please try again."
+                    }
+                    return
+                }
+                
+                // Reverse geocode to get location name
+                let locationName = try await locationRepository.reverseGeocode(
+                    latitude: coordinates.latitude,
+                    longitude: coordinates.longitude
+                )
+                
+                if let name = locationName {
+                    // Log coordinates for debugging
+                    print("CreatePostViewModel: Current Location Selected:")
+                    print("  Name: \(name)")
+                    print("  Latitude: \(coordinates.latitude)")
+                    print("  Longitude: \(coordinates.longitude)")
+                    
+                    await MainActor.run {
+                        self.locationName = name
+                        self.locationLatitude = coordinates.latitude
+                        self.locationLongitude = coordinates.longitude
+                        self.isLoadingLocation = false
+                        self.showLocationSheet = false
+                        self.locationError = nil
+                    }
+                } else {
+                    await MainActor.run {
+                        isLoadingLocation = false
+                        locationError = "Unable to get location name. Please try manual selection."
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    isLoadingLocation = false
+                    locationError = "Failed to get location: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+    
+    func saveManualLocation() {
+        guard let state = selectedState, let district = selectedDistrict else {
+            locationError = "Please select state and district"
+            return
+        }
+        
+        let village = villageName.trimmingCharacters(in: .whitespaces)
+        
+        // Build location name
+        let locationName: String
+        if !village.isEmpty {
+            locationName = "\(village), \(district), \(state)"
+        } else {
+            locationName = "\(district), \(state)"
+        }
+        
+        isLoadingLocation = true
+        locationError = nil
+        
+        Task {
+            do {
+                // Forward geocode to get coordinates
+                let coordinates = try await locationRepository.forwardGeocode(locationName: locationName)
+                
+                // Log coordinates for debugging
+                if let coords = coordinates {
+                    print("CreatePostViewModel: Manual Location Selected:")
+                    print("  Name: \(locationName)")
+                    print("  Latitude: \(coords.latitude)")
+                    print("  Longitude: \(coords.longitude)")
+                } else {
+                    print("CreatePostViewModel: Manual Location Selected but geocoding failed:")
+                    print("  Name: \(locationName)")
+                    print("  Coordinates: nil")
+                }
+                
+                await MainActor.run {
+                    self.locationName = locationName
+                    self.locationLatitude = coordinates?.latitude
+                    self.locationLongitude = coordinates?.longitude
+                    self.isLoadingLocation = false
+                    self.showLocationSheet = false
+                    self.locationError = nil
+                }
+            } catch {
+                // Even if geocoding fails, save the location name
+                await MainActor.run {
+                    self.locationName = locationName
+                    self.locationLatitude = nil
+                    self.locationLongitude = nil
+                    self.isLoadingLocation = false
+                    self.showLocationSheet = false
+                    self.locationError = nil
+                }
+            }
+        }
+    }
+    
+    func removeLocation() {
+        locationName = nil
+        locationLatitude = nil
+        locationLongitude = nil
+    }
+    
+    func onLocationPermissionResult(_ granted: Bool) {
+        needsLocationPermission = false
+        if granted {
+            useCurrentLocation()
+        } else {
+            locationError = "Location permission is required to use current location"
+        }
     }
     
     // MARK: - Hashtags
@@ -419,6 +694,101 @@ class CreatePostViewModel: ObservableObject {
             visibility: visibility,
             targetExpertise: postType == .question ? Array(targetExpertise) : []
         )
+    }
+    
+    // MARK: - Create Post
+    
+    func createPost(
+        onSuccess: @escaping () -> Void,
+        onError: @escaping (String) -> Void
+    ) {
+        isCreatingPost = true
+        postCreationError = nil
+        
+        Task {
+            do {
+                // Build Kotlin CreatePostInput from Swift state
+                let location: CreatePostLocation? = {
+                    guard let name = locationName else { return nil }
+                    return CreatePostLocation(
+                        name: name,
+                        latitude: locationLatitude != nil ? KotlinDouble(value: locationLatitude!) : nil,
+                        longitude: locationLongitude != nil ? KotlinDouble(value: locationLongitude!) : nil
+                    )
+                }()
+                
+                // Convert Swift MediaItems to Kotlin MediaItems with ByteArray
+                let kotlinMediaItems = try await withThrowingTaskGroup(of: Shared.MediaItem.self) { group in
+                    var items: [Shared.MediaItem] = []
+                    
+                    for item in mediaItems {
+                        group.addTask {
+                            let mediaData = try self.filePathToKotlinByteArray(filePath: item.localUri)
+                            let thumbnailData = try item.thumbnailUri.map { try self.filePathToKotlinByteArray(filePath: $0) }
+                            
+                            return Shared.MediaItem(
+                                mediaData: mediaData,
+                                type: item.type == .image ? .image : .video,
+                                thumbnailData: thumbnailData
+                            )
+                        }
+                    }
+                    
+                    for try await item in group {
+                        items.append(item)
+                    }
+                    
+                    return items
+                }
+                
+                // Convert voice caption URI to ByteArray if present
+                let voiceCaptionData = try voiceCaptionUri.map { try filePathToKotlinByteArray(filePath: $0) }
+                
+                // Convert PostType
+                let kotlinPostType: Shared.PostType = postType == .normal ? .normal : .question
+                
+                // Convert PostVisibility (Swift enum to Kotlin enum)
+                let kotlinVisibility: Shared.PostVisibility = visibility == .public ? .public_ : .followers
+                
+                // Build Kotlin CreatePostInput
+                let kotlinInput = Shared.CreatePostInput(
+                    type: kotlinPostType,
+                    text: caption,
+                    mediaItems: kotlinMediaItems,
+                    voiceCaptionData: voiceCaptionData,
+                    voiceCaptionDurationSeconds: Int32(voiceCaptionDuration),
+                    crops: Array(selectedCrops),
+                    hashtags: hashtags,
+                    location: location,
+                    visibility: kotlinVisibility,
+                    targetExpertise: postType == .question ? Array(targetExpertise) : []
+                )
+                
+                print("CreatePostViewModel: Starting post creation with \(kotlinMediaItems.count) media items")
+                
+                // Call use case
+                let post = try await createPostUseCase.invoke(input: kotlinInput)
+                
+                print("CreatePostViewModel: SUCCESS - Post created with ID: \(post.id)")
+                
+                await MainActor.run {
+                    isCreatingPost = false
+                    postCreationError = nil
+                }
+                
+                onSuccess()
+            } catch {
+                print("CreatePostViewModel: FAILED - \(error.localizedDescription)")
+                let errorMessage = (error as NSError).localizedDescription
+                
+                await MainActor.run {
+                    isCreatingPost = false
+                    postCreationError = errorMessage
+                }
+                
+                onError(errorMessage)
+            }
+        }
     }
     
     // MARK: - Clear Error

@@ -42,7 +42,6 @@ final class IOSVoiceRecordingRepository: VoiceRecordingRepository {
     
     func startRecording(outputFilePath: String) async throws {
         if isCurrentlyRecording {
-            print("[IOSVoiceRecording] Already recording, ignoring start request")
             return
         }
         
@@ -109,10 +108,7 @@ final class IOSVoiceRecordingRepository: VoiceRecordingRepository {
             // Start duration update timer
             startDurationUpdates()
             
-            print("[IOSVoiceRecording] Recording started: \(outputFilePath)")
-            
         } catch {
-            print("[IOSVoiceRecording] Failed to start recording: \(error.localizedDescription)")
             cleanupRecorder()
             throw NSError(
                 domain: "VoiceRecordingRepository",
@@ -124,7 +120,6 @@ final class IOSVoiceRecordingRepository: VoiceRecordingRepository {
     
     func stopRecording() async throws -> KotlinInt {
         if !isCurrentlyRecording {
-            print("[IOSVoiceRecording] Not recording, nothing to stop")
             return KotlinInt(value: 0)
         }
         
@@ -136,10 +131,8 @@ final class IOSVoiceRecordingRepository: VoiceRecordingRepository {
         do {
             try AVAudioSession.sharedInstance().setActive(false)
         } catch {
-            print("[IOSVoiceRecording] Error deactivating audio session: \(error.localizedDescription)")
+            // Ignore deactivation errors
         }
-        
-        print("[IOSVoiceRecording] Recording stopped, duration: \(duration) seconds")
         
         cleanupRecorder()
         return KotlinInt(value: Int32(duration))
@@ -150,17 +143,14 @@ final class IOSVoiceRecordingRepository: VoiceRecordingRepository {
             return
         }
         
-        print("[IOSVoiceRecording] Cancelling recording")
-        
         audioRecorder?.stop()
         
         // Delete the file
         if let path = currentFilePath {
             do {
                 try FileManager.default.removeItem(atPath: path)
-                print("[IOSVoiceRecording] Deleted cancelled recording: \(path)")
             } catch {
-                print("[IOSVoiceRecording] Error deleting cancelled recording: \(error.localizedDescription)")
+                // Ignore deletion errors
             }
         }
         
@@ -168,7 +158,7 @@ final class IOSVoiceRecordingRepository: VoiceRecordingRepository {
         do {
             try AVAudioSession.sharedInstance().setActive(false)
         } catch {
-            print("[IOSVoiceRecording] Error deactivating audio session: \(error.localizedDescription)")
+            // Ignore deactivation errors
         }
         
         cleanupRecorder()
@@ -190,10 +180,9 @@ final class IOSVoiceRecordingRepository: VoiceRecordingRepository {
         do {
             if FileManager.default.fileExists(atPath: filePath) {
                 try FileManager.default.removeItem(atPath: filePath)
-                print("[IOSVoiceRecording] Deleted recording: \(filePath)")
             }
         } catch {
-            print("[IOSVoiceRecording] Error deleting recording: \(error.localizedDescription)")
+            // Ignore deletion errors
         }
     }
     
@@ -205,7 +194,6 @@ final class IOSVoiceRecordingRepository: VoiceRecordingRepository {
             let seconds = CMTimeGetSeconds(duration)
             return KotlinInt(value: Int32(seconds.isNaN ? 0 : seconds))
         } catch {
-            print("[IOSVoiceRecording] Error getting audio duration: \(error.localizedDescription)")
             return KotlinInt(value: 0)
         }
     }

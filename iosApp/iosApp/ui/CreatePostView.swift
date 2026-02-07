@@ -20,7 +20,6 @@ struct MediaItem: Identifiable {
     let localUri: String
     let type: MediaType
     var thumbnailUri: String? = nil
-    
     enum MediaType {
         case image
         case video
@@ -54,7 +53,7 @@ struct CreatePostView: View {
     @State private var mediaItems: [MediaItem] = []
     // selectedCrops is now managed by ViewModel (viewModel.selectedCrops)
     @State private var visibility: PostVisibility = .public
-    @State private var locationName: String? = nil
+    // locationName is now managed by ViewModel (viewModel.locationName)
     @State private var hashtags: [String] = []
     @State private var hashtagInput: String = ""
     
@@ -69,6 +68,7 @@ struct CreatePostView: View {
     @State private var imagePickerSourceType: UIImagePickerController.SourceType = .camera
     @State private var selectedPhotos: [PhotosPickerItem] = []
     @State private var showCameraUnavailableAlert = false
+    
     
     var onBackClick: () -> Void = {}
     var onPostClick: (CreatePostInput) -> Void = { _ in }
@@ -91,7 +91,9 @@ struct CreatePostView: View {
             voiceCaptionDurationSeconds: viewModel.voiceCaptionDuration,
             crops: Array(viewModel.selectedCrops),
             hashtags: hashtags,
-            locationName: locationName,
+            locationName: viewModel.locationName,
+            locationLatitude: viewModel.locationLatitude,
+            locationLongitude: viewModel.locationLongitude,
             visibility: visibility,
             targetExpertise: postType == .question ? Array(targetExpertise) : []
         )
@@ -122,6 +124,12 @@ struct CreatePostView: View {
             maxSelectionCount: 10,
             matching: .any(of: [.images, .videos])
         )
+        .sheet(isPresented: Binding(
+            get: { viewModel.showLocationSheet },
+            set: { if !$0 { viewModel.hideLocationSelectionSheet() } }
+        )) {
+            LocationSelectionSheet(viewModel: viewModel)
+        }
         .onChange(of: selectedPhotos) { newItems in
             Task {
                 for item in newItems {
@@ -195,7 +203,15 @@ struct CreatePostView: View {
                 
                 VisibilitySelectionSection(selectedVisibility: $visibility)
                 
-                LocationButton(location: $locationName, onLocationClick: {})
+                LocationButton(
+                    location: viewModel.locationName,
+                    onLocationClick: {
+                        viewModel.showLocationSelectionSheet()
+                    },
+                    onRemoveLocation: {
+                        viewModel.clearLocation()
+                    }
+                )
             }
             .padding(.horizontal, 18)
         }
@@ -305,16 +321,42 @@ struct CreatePostView: View {
             Divider()
                 .background(Color.black.opacity(0.05))
             
-            Button(action: { onPostClick(buildPostInput()) }) {
-                Text(postType == .question ? "Ask Question" : "Post")
-                    .font(.system(size: 19.125, weight: .semibold))
-                    .foregroundColor(isPostEnabled ? .white : Color(red: 0.608, green: 0.608, blue: 0.608))
+            Button(action: {
+                viewModel.createPost(
+                    onSuccess: {
+                        // Navigate back on success
+                        onBackClick()
+                    },
+                    onError: { error in
+                        // Error is already shown in UI state, but we can show an alert here if needed
+                        print("Failed to create post: \(error)")
+                    }
+                )
+            }) {
+                if viewModel.isCreatingPost {
+                    HStack {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            .scaleEffect(0.8)
+                        Text("Posting...")
+                            .font(.system(size: 19.125, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
                     .frame(maxWidth: .infinity)
                     .frame(height: 65)
-                    .background(isPostEnabled ? Color.primaryGreen : Color(red: 0.898, green: 0.898, blue: 0.898))
+                    .background(Color.primaryGreen)
                     .cornerRadius(18)
+                } else {
+                    Text(postType == .question ? "Ask Question" : "Post")
+                        .font(.system(size: 19.125, weight: .semibold))
+                        .foregroundColor(isPostEnabled ? .white : Color(red: 0.608, green: 0.608, blue: 0.608))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 65)
+                        .background(isPostEnabled ? Color.primaryGreen : Color(red: 0.898, green: 0.898, blue: 0.898))
+                        .cornerRadius(18)
+                }
             }
-            .disabled(!isPostEnabled)
+            .disabled(!isPostEnabled || viewModel.isCreatingPost)
             .padding(.horizontal, 18)
             .padding(.top, 19)
         }
@@ -1036,8 +1078,9 @@ struct VisibilityButton: View {
 
 // MARK: - Location Button
 struct LocationButton: View {
-    @Binding var location: String?
+    let location: String?
     let onLocationClick: () -> Void
+    let onRemoveLocation: () -> Void
     
     var body: some View {
         VStack(alignment: .leading, spacing: 13.5) {
@@ -1049,12 +1092,12 @@ struct LocationButton: View {
                 HStack {
                     HStack(spacing: 13.5) {
                         Circle()
-                            .fill(Color.primaryGreen.opacity(0.08))
+                            .fill(location != nil ? Color.primaryGreen : Color.primaryGreen.opacity(0.08))
                             .frame(width: 40.5, height: 40.5)
                             .overlay(
                                 Image(systemName: "location.fill")
                                     .font(.system(size: 20.25))
-                                    .foregroundColor(.primaryGreen)
+                                    .foregroundColor(location != nil ? .white : .primaryGreen)
                             )
                         
                         Text(location ?? "Select location")
@@ -1064,9 +1107,17 @@ struct LocationButton: View {
                     
                     Spacer()
                     
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 22.5))
-                        .foregroundColor(.textSecondary)
+                    if location != nil {
+                        Button(action: onRemoveLocation) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 20))
+                                .foregroundColor(.textSecondary)
+                        }
+                    } else {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 22.5))
+                            .foregroundColor(.textSecondary)
+                    }
                 }
                 .padding(.horizontal, 19)
                 .frame(height: 74)
@@ -1119,6 +1170,7 @@ struct MediaPicker: UIViewControllerRepresentable {
         
         // Only set video settings if video is available
         if picker.mediaTypes.contains(UTType.movie.identifier) {
+            picker.cameraCaptureMode = .video
             picker.videoQuality = .typeHigh
             picker.videoMaximumDuration = 60 // 60 seconds max
         }
@@ -1169,6 +1221,315 @@ struct MediaPicker: UIViewControllerRepresentable {
         
         func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
             picker.dismiss(animated: true)
+        }
+    }
+}
+
+// MARK: - Location Selection Sheet
+struct LocationSelectionSheet: View {
+    @ObservedObject var viewModel: CreatePostViewModel
+    @Environment(\.dismiss) var dismiss
+    @State private var selectedTab: LocationTab = .current
+    
+    enum LocationTab {
+        case current
+        case manual
+    }
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 0) {
+                // Tab Selector
+                HStack(spacing: 0) {
+                    TabButton(
+                        title: "Current Location",
+                        isSelected: selectedTab == .current,
+                        action: { selectedTab = .current }
+                    )
+                    TabButton(
+                        title: "Manual",
+                        isSelected: selectedTab == .manual,
+                        action: { selectedTab = .manual }
+                    )
+                }
+                .padding(.horizontal, 18)
+                .padding(.top, 16)
+                
+                // Content
+                if selectedTab == .current {
+                    CurrentLocationTab(viewModel: viewModel, onDismiss: { dismiss() })
+                } else {
+                    ManualLocationTab(viewModel: viewModel, onDismiss: { dismiss() })
+                }
+            }
+            .navigationTitle("Add Location")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct TabButton: View {
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 8) {
+                Text(title)
+                    .font(.system(size: 16, weight: isSelected ? .semibold : .regular))
+                    .foregroundColor(isSelected ? .primaryGreen : .textSecondary)
+                
+                Rectangle()
+                    .fill(isSelected ? Color.primaryGreen : Color.clear)
+                    .frame(height: 2)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+struct CurrentLocationTab: View {
+    @ObservedObject var viewModel: CreatePostViewModel
+    let onDismiss: () -> Void
+    
+    var body: some View {
+        VStack(spacing: 24) {
+            Spacer()
+            
+            if let error = viewModel.locationError {
+                Text(error)
+                    .font(.system(size: 14))
+                    .foregroundColor(.red)
+                    .padding(.horizontal, 18)
+                    .padding(.bottom, 8)
+            }
+            
+            Image(systemName: "location.fill")
+                .font(.system(size: 64))
+                .foregroundColor(.primaryGreen)
+            
+            Text("Use Current Location")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundColor(.textPrimary)
+            
+            Text("We'll use your GPS to find your location")
+                .font(.system(size: 13))
+                .foregroundColor(.textSecondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+            
+            Button(action: {
+                viewModel.useCurrentLocation()
+                // The ViewModel will set showLocationSheet = false when location is set
+            }) {
+                HStack {
+                    if viewModel.isLoadingLocation {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            .scaleEffect(0.8)
+                        Text("Detecting location...")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.white)
+                    } else {
+                        Image(systemName: "location.fill")
+                            .font(.system(size: 24))
+                        Text("Use Current Location")
+                            .font(.system(size: 16, weight: .semibold))
+                    }
+                }
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 56)
+                .background(Color.primaryGreen)
+                .cornerRadius(18)
+            }
+            .disabled(viewModel.isLoadingLocation)
+            .padding(.horizontal, 18)
+            
+            Spacer()
+        }
+        .padding(.top, 32)
+    }
+}
+
+struct ManualLocationTab: View {
+    @ObservedObject var viewModel: CreatePostViewModel
+    let onDismiss: () -> Void
+    
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 18) {
+                if let error = viewModel.locationError {
+                    Text(error)
+                        .font(.system(size: 14))
+                        .foregroundColor(.red)
+                        .padding(.horizontal, 18)
+                }
+                
+                // State Dropdown
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("State")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.textSecondary)
+                    
+                    if viewModel.isLoadingStates {
+                        HStack {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .primaryGreen))
+                                .scaleEffect(0.8)
+                            Text("Loading states...")
+                                .font(.system(size: 16))
+                                .foregroundColor(.textSecondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding()
+                        .background(Color.appBackground)
+                        .cornerRadius(22)
+                    } else {
+                        Menu {
+                            ForEach(viewModel.allStates, id: \.self) { state in
+                                Button(state) {
+                                    viewModel.selectState(state)
+                                }
+                            }
+                        } label: {
+                            HStack {
+                                Text(viewModel.selectedState ?? "Select State")
+                                    .font(.system(size: 16))
+                                    .foregroundColor(viewModel.selectedState != nil ? .textPrimary : .textPrimary.opacity(0.5))
+                                Spacer()
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(.textSecondary)
+                            }
+                            .padding()
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.appBackground)
+                            .cornerRadius(22)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 22)
+                                    .stroke(Color.primaryGreen.opacity(0.1), lineWidth: 1)
+                            )
+                        }
+                    }
+                }
+                .padding(.horizontal, 18)
+                
+                // District Dropdown
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("District")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.textSecondary)
+                    
+                    if viewModel.isLoadingDistricts {
+                        HStack {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .primaryGreen))
+                                .scaleEffect(0.8)
+                            Text("Loading districts...")
+                                .font(.system(size: 16))
+                                .foregroundColor(.textSecondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding()
+                        .background(Color.appBackground)
+                        .cornerRadius(22)
+                    } else {
+                        Menu {
+                            ForEach(viewModel.districtsForSelectedState, id: \.self) { district in
+                                Button(district) {
+                                    viewModel.selectDistrict(district)
+                                }
+                            }
+                        } label: {
+                            HStack {
+                                Text(viewModel.selectedDistrict ?? (viewModel.selectedState == nil ? "Select state first" : "Select District"))
+                                    .font(.system(size: 16))
+                                    .foregroundColor(viewModel.selectedDistrict != nil ? .textPrimary : .textPrimary.opacity(0.5))
+                                Spacer()
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(.textSecondary)
+                            }
+                            .padding()
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.appBackground)
+                            .cornerRadius(22)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 22)
+                                    .stroke(Color.primaryGreen.opacity(0.1), lineWidth: 1)
+                            )
+                        }
+                        .disabled(viewModel.selectedState == nil)
+                    }
+                }
+                .padding(.horizontal, 18)
+                
+                // Village Text Field
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 4) {
+                        Text("Village")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.textSecondary)
+                        Text("(Optional)")
+                            .font(.system(size: 12))
+                            .foregroundColor(.textSecondary.opacity(0.6))
+                            .italic()
+                    }
+                    
+                    TextField("Enter village name", text: $viewModel.villageName)
+                        .font(.system(size: 16))
+                        .foregroundColor(.textPrimary)
+                        .padding()
+                        .background(Color.appBackground)
+                        .cornerRadius(22)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 22)
+                                .stroke(Color.primaryGreen.opacity(0.1), lineWidth: 1)
+                        )
+                }
+                .padding(.horizontal, 18)
+                
+                // Save Button
+                Button(action: {
+                    viewModel.saveManualLocation()
+                    // The ViewModel will set showLocationSheet = false when location is set
+                }) {
+                    HStack {
+                        if viewModel.isLoadingLocation {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                .scaleEffect(0.8)
+                            Text("Confirming location...")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.white)
+                        } else {
+                            Text("Save Location")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.white)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 56)
+                    .background(
+                        (viewModel.selectedState != nil && viewModel.selectedDistrict != nil && !viewModel.isLoadingLocation) ?
+                        Color.primaryGreen : Color.primaryGreen.opacity(0.5)
+                    )
+                    .cornerRadius(18)
+                }
+                .disabled(viewModel.selectedState == nil || viewModel.selectedDistrict == nil || viewModel.isLoadingLocation)
+                .padding(.horizontal, 18)
+                .padding(.top, 8)
+                .padding(.bottom, 32)
+            }
         }
     }
 }

@@ -1,19 +1,39 @@
 package com.kissangram.repository
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.location.Geocoder
+import android.location.Location
+import androidx.annotation.RequiresPermission
+import androidx.core.content.ContextCompat
+import com.google.android.gms.location.*
+import com.google.android.gms.location.LocationServices
+
+import com.google.android.gms.tasks.CancellationTokenSource
 import com.google.firebase.FirebaseApp
 import com.google.firebase.firestore.FirebaseFirestore
+import com.kissangram.model.LocationCoordinates
 import kotlinx.coroutines.tasks.await
+import java.util.Locale
 
 /**
  * Android implementation of LocationRepository.
  * Fetches location data from Firestore appConfig/locations document.
  */
-class AndroidLocationRepository : LocationRepository {
+class AndroidLocationRepository(
+    private val context: Context
+) : LocationRepository {
     
     private val firestore = FirebaseFirestore.getInstance(
         FirebaseApp.getInstance(),
         "kissangram"
     )
+    
+    private val fusedLocationClient: FusedLocationProviderClient =
+        LocationServices.getFusedLocationProviderClient(context)
+    
+    private val geocoder = Geocoder(context, Locale.getDefault())
     
     // Cache for location data to avoid repeated Firestore reads
     private var cachedStates: List<String>? = null
@@ -94,5 +114,85 @@ class AndroidLocationRepository : LocationRepository {
     fun clearCache() {
         cachedStates = null
         cachedStatesAndDistricts = null
+    }
+    
+    // MARK: - Geocoding
+    
+    override fun hasLocationPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(
+            context,
+            android.Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED ||
+        ContextCompat.checkSelfPermission(
+            context,
+            android.Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+    
+    override suspend fun requestLocationPermission(): Boolean {
+        // Permission request is handled by the UI layer
+        // This method is a placeholder for the interface contract
+        return hasLocationPermission()
+    }
+    
+    @RequiresPermission(allOf = [Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION])
+    override suspend fun getCurrentLocation(): LocationCoordinates? {
+        if (!hasLocationPermission()) {
+            throw Exception("Location permission not granted")
+        }
+        
+        return try {
+            val cancellationTokenSource = CancellationTokenSource()
+            val locationResult = fusedLocationClient.getCurrentLocation(
+                Priority.PRIORITY_HIGH_ACCURACY,
+                cancellationTokenSource.token
+            ).await()
+            
+            locationResult?.let {
+                LocationCoordinates(latitude = it.latitude, longitude = it.longitude)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+    
+    override suspend fun reverseGeocode(latitude: Double, longitude: Double): String? {
+        return try {
+            val addresses = geocoder.getFromLocation(latitude, longitude, 1)
+            if (addresses != null && addresses.isNotEmpty()) {
+                val address = addresses[0]
+                // Build location string: "District, State" or "City, State"
+                val district = address.subAdminArea ?: address.locality
+                val state = address.adminArea
+                
+                when {
+                    district != null && state != null -> "$district, $state"
+                    state != null -> state
+                    district != null -> district
+                    else -> address.getAddressLine(0) ?: null
+                }
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+    
+    override suspend fun forwardGeocode(locationName: String): LocationCoordinates? {
+        return try {
+            val addresses = geocoder.getFromLocationName(locationName, 1)
+            if (addresses != null && addresses.isNotEmpty()) {
+                val address = addresses[0]
+                LocationCoordinates(latitude = address.latitude, longitude = address.longitude)
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
     }
 }

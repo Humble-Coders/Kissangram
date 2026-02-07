@@ -143,4 +143,109 @@ class MockPostRepository : PostRepository {
         delay(400)
         return emptyList()
     }
+    
+    override suspend fun createPost(postData: Map<String, Any?>): Post {
+        delay(500) // Simulate network delay
+        
+        val postId = "mock_post_${System.currentTimeMillis()}"
+        val authorId = postData["authorId"] as? String ?: "mock_user"
+        val authorName = postData["authorName"] as? String ?: "Mock User"
+        val authorUsername = postData["authorUsername"] as? String ?: "mock_user"
+        val authorProfileImageUrl = postData["authorProfileImageUrl"] as? String
+        val text = postData["text"] as? String ?: ""
+        
+        // Parse media array
+        val mediaList = (postData["media"] as? List<Map<String, Any>>)?.mapNotNull { mediaMap ->
+            val url = mediaMap["url"] as? String ?: return@mapNotNull null
+            val typeStr = mediaMap["type"] as? String ?: "image"
+            val thumbnailUrl = mediaMap["thumbnailUrl"] as? String
+            
+            PostMedia(
+                url = url,
+                type = when (typeStr) {
+                    "video" -> MediaType.VIDEO
+                    else -> MediaType.IMAGE
+                },
+                thumbnailUrl = thumbnailUrl?.takeIf { it.isNotEmpty() }
+            )
+        } ?: emptyList()
+        
+        // Parse voice caption
+        val voiceCaptionMap = postData["voiceCaption"] as? Map<String, Any>
+        val voiceCaption = voiceCaptionMap?.let {
+            VoiceContent(
+                url = it["url"] as? String ?: return@let null,
+                durationSeconds = (it["durationSeconds"] as? Number)?.toInt() ?: 0
+            )
+        }
+        
+        // Parse crops and hashtags
+        val crops = (postData["crops"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList()
+        val hashtags = (postData["hashtags"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList()
+        
+        // Parse location
+        val locationMap = postData["location"] as? Map<String, Any>
+        val location = locationMap?.let {
+            PostLocation(
+                name = it["name"] as? String ?: "",
+                latitude = it["latitude"] as? Double,
+                longitude = it["longitude"] as? Double
+            )
+        }
+        
+        // Parse question data
+        val questionMap = postData["question"] as? Map<String, Any>
+        val question = questionMap?.let {
+            QuestionData(
+                targetExpertise = (it["targetExpertise"] as? List<*>)?.mapNotNull { e -> e as? String } ?: emptyList(),
+                targetExpertIds = (it["targetExpertIds"] as? List<*>)?.mapNotNull { e -> e as? String } ?: emptyList(),
+                targetExperts = emptyList(), // Mock doesn't populate this
+                isAnswered = it["isAnswered"] as? Boolean ?: false,
+                bestAnswerCommentId = it["bestAnswerCommentId"] as? String
+            )
+        }
+        
+        val typeStr = postData["type"] as? String ?: "normal"
+        val roleStr = postData["authorRole"] as? String ?: "farmer"
+        val verificationStatusStr = postData["authorVerificationStatus"] as? String ?: "unverified"
+        
+        return Post(
+            id = postId,
+            authorId = authorId,
+            authorName = authorName,
+            authorUsername = authorUsername,
+            authorProfileImageUrl = authorProfileImageUrl,
+            authorRole = when (roleStr) {
+                "expert" -> UserRole.EXPERT
+                "agripreneur" -> UserRole.AGRIPRENEUR
+                "input_seller" -> UserRole.INPUT_SELLER
+                "agri_lover" -> UserRole.AGRI_LOVER
+                else -> UserRole.FARMER
+            },
+            authorVerificationStatus = when (verificationStatusStr) {
+                "pending" -> VerificationStatus.PENDING
+                "verified" -> VerificationStatus.VERIFIED
+                "rejected" -> VerificationStatus.REJECTED
+                else -> VerificationStatus.UNVERIFIED
+            },
+            type = when (typeStr) {
+                "question" -> PostType.QUESTION
+                else -> PostType.NORMAL
+            },
+            text = text,
+            media = mediaList,
+            voiceCaption = voiceCaption,
+            crops = crops,
+            hashtags = hashtags,
+            location = location,
+            question = question,
+            likesCount = 0,
+            commentsCount = 0,
+            savesCount = 0,
+            isLikedByMe = false,
+            isSavedByMe = false,
+            createdAt = System.currentTimeMillis(),
+            updatedAt = null
+        )
+    }
 }

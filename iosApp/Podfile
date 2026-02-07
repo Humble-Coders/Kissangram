@@ -9,4 +9,6 @@ target 'iosApp' do
   pod 'Firebase/Firestore'
   pod 'Firebase/Auth'
   pod 'Firebase/Storage'
+  pod 'Cloudinary'
+
 end

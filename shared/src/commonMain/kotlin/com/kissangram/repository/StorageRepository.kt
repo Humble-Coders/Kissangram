@@ -1,5 +1,7 @@
 package com.kissangram.repository
 
+import com.kissangram.model.MediaUploadResult
+
 /**
  * Repository interface for Firebase Storage operations.
  * Used for uploading profile images, post media, etc.
@@ -41,4 +43,26 @@ interface StorageRepository {
      */
     @Throws(Exception::class)
     suspend fun uploadVerificationDocument(userId: String, documentData: ByteArray, contentType: String): String
+    
+    /**
+     * Upload post media (image or video) to Cloudinary.
+     * @param mediaData The media file data as ByteArray
+     * @param mediaType The type of media (IMAGE or VIDEO)
+     * @param thumbnailData Optional thumbnail data for videos as ByteArray
+     * @return MediaUploadResult containing mediaUrl and optional thumbnailUrl
+     */
+    @Throws(Exception::class)
+    suspend fun uploadPostMediaToCloudinary(
+        mediaData: ByteArray,
+        mediaType: com.kissangram.model.MediaType,
+        thumbnailData: ByteArray? = null
+    ): MediaUploadResult
+    
+    /**
+     * Upload voice caption audio file to Cloudinary.
+     * @param audioData The audio file data as ByteArray
+     * @return The Cloudinary URL of the uploaded audio file
+     */
+    @Throws(Exception::class)
+    suspend fun uploadVoiceCaptionToCloudinary(audioData: ByteArray): String
 }

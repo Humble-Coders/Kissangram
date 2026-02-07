@@ -30,6 +30,10 @@ kotlin {
             
             // Swipe to refresh
             implementation("com.google.accompanist:accompanist-swiperefresh:0.32.0")
+            implementation("com.google.android.gms:play-services-location:21.3.0")
+            implementation("com.cloudinary:cloudinary-android:3.1.2")
+
+
         }
         commonMain.dependencies {
             implementation(compose.runtime)

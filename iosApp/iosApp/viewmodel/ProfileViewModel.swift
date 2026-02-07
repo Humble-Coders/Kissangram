@@ -17,15 +17,7 @@ class ProfileViewModel: ObservableObject {
         error = nil
         Task {
             do {
-                let profile = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<User?, Error>) in
-                    userRepo.getCurrentUser { user, err in
-                        if let err = err {
-                            continuation.resume(throwing: err)
-                        } else {
-                            continuation.resume(returning: user)
-                        }
-                    }
-                }
+                let profile = try await userRepo.getCurrentUser()
                 await MainActor.run {
                     self.user = profile
                     self.isLoading = false

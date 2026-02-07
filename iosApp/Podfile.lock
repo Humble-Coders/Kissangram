@@ -1194,6 +1194,9 @@ PODS:
   - BoringSSL-GRPC/Implementation (0.0.37):
     - BoringSSL-GRPC/Interface (= 0.0.37)
   - BoringSSL-GRPC/Interface (0.0.37)
+  - Cloudinary (5.2.5):
+    - Cloudinary/ios (= 5.2.5)
+  - Cloudinary/ios (5.2.5)
   - Firebase/Auth (11.15.0):
     - Firebase/CoreOnly
     - FirebaseAuth (~> 11.15.0)
@@ -1436,6 +1439,7 @@ PODS:
     - FirebaseAuth (~> 11.0)
 
 DEPENDENCIES:
+  - Cloudinary
   - Firebase/Auth
   - Firebase/Core
   - Firebase/Firestore
@@ -1446,6 +1450,7 @@ SPEC REPOS:
   trunk:
     - abseil
     - BoringSSL-GRPC
+    - Cloudinary
     - Firebase
     - FirebaseAnalytics
     - FirebaseAppCheckInterop
@@ -1477,6 +1482,7 @@ EXTERNAL SOURCES:
 SPEC CHECKSUMS:
   abseil: a05cc83bf02079535e17169a73c5be5ba47f714b
   BoringSSL-GRPC: dded2a44897e45f28f08ae87a55ee4bcd19bc508
+  Cloudinary: 9b635419d0af7a32eeba37086fd7b5e29534ed55
   Firebase: d99ac19b909cd2c548339c2241ecd0d1599ab02e
   FirebaseAnalytics: 6433dfd311ba78084fc93bdfc145e8cb75740eae
   FirebaseAppCheckInterop: 06fe5a3799278ae4667e6c432edd86b1030fa3df
@@ -1502,6 +1508,6 @@ SPEC CHECKSUMS:
   RecaptchaInterop: 11e0b637842dfb48308d242afc3f448062325aba
   shared: 359db3059f5b37e28dffc6a82370cd6b27486f9d
 
-PODFILE CHECKSUM: 225cbefaab77d47eeabc8d5ae439ed23482f21aa
+PODFILE CHECKSUM: ded49f86ecbc27951844002fd752531b8b715324
 
 COCOAPODS: 1.16.2
