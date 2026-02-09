@@ -30,8 +30,16 @@ import com.kissangram.ui.languageselection.LanguageSelectionScreen
 import com.kissangram.ui.profile.EditProfileScreen
 import com.kissangram.ui.profile.ProfileScreen
 import com.kissangram.ui.createpost.CreatePostScreen
+import com.kissangram.ui.createstory.CreateStoryScreen
+import com.kissangram.repository.AndroidAuthRepository
+import com.kissangram.repository.AndroidStorageRepository
+import com.kissangram.repository.FirestoreUserRepository
+import com.kissangram.repository.FirestoreStoryRepository
+import com.kissangram.usecase.CreateStoryUseCase
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.runtime.rememberCoroutineScope
 @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
 @Composable
 @Preview
@@ -66,7 +74,7 @@ fun App() {
                 currentScreen is Screen.CreatePost ||
                 currentScreen is Screen.Reels ||
                 currentScreen is Screen.Profile
-        // Note: EditProfile is excluded - it doesn't show bottom nav
+        // Note: EditProfile and CreateStory are excluded - they don't show bottom nav
         
         val selectedNavItem = when (currentScreen) {
             is Screen.Home -> BottomNavItem.HOME
@@ -101,8 +109,8 @@ fun App() {
         }
 
         else {
-            // Show either auth flow or edit profile (which doesn't have bottom nav)
-            if (currentScreen is Screen.EditProfile) {
+            // Show either auth flow, edit profile, or create story (which don't have bottom nav)
+            if (currentScreen is Screen.EditProfile || currentScreen is Screen.CreateStory) {
                 MainAppContent(navController, currentScreen)
             } else {
                 AuthFlowContent(navController, currentScreen)
@@ -191,6 +199,7 @@ private fun MainAppContent(navController: NavController, currentScreen: Screen) 
                 onNavigateToMessages = { navController.navigateTo(Screen.Messages) },
                 onNavigateToProfile = { userId -> navController.navigateTo(Screen.UserProfile(userId)) },
                 onNavigateToStory = { userId -> navController.navigateTo(Screen.Story(userId)) },
+                onNavigateToCreateStory = { navController.navigateTo(Screen.CreateStory) },
                 onNavigateToPostDetail = { postId -> navController.navigateTo(Screen.PostDetail(postId)) },
                 onNavigateToComments = { postId -> navController.navigateTo(Screen.Comments(postId)) }
             )
@@ -208,6 +217,49 @@ private fun MainAppContent(navController: NavController, currentScreen: Screen) 
                     // postInput contains: type, text, mediaItems, crops, hashtags, location, visibility, etc.
                     navController.navigateTo(Screen.Home)
                 }
+            )
+        }
+        
+        is Screen.CreateStory -> {
+            val scope = rememberCoroutineScope()
+            val context = LocalContext.current
+            val authRepository = remember {
+                AndroidAuthRepository(
+                    context = context.applicationContext,
+                    activity = null,
+                    preferencesRepository = AndroidPreferencesRepository(context.applicationContext)
+                )
+            }
+            val storageRepository = remember { AndroidStorageRepository(context.applicationContext) }
+            val userRepository = remember { FirestoreUserRepository(authRepository = authRepository) }
+            val storyRepository = remember { FirestoreStoryRepository() }
+            val createStoryUseCase = remember {
+                CreateStoryUseCase(
+                    storageRepository = storageRepository,
+                    storyRepository = storyRepository,
+                    authRepository = authRepository,
+                    userRepository = userRepository
+                )
+            }
+            
+            var isLoading by remember { mutableStateOf(false) }
+            
+            CreateStoryScreen(
+                onBackClick = { navController.navigateBack() },
+                onStoryClick = { storyInput ->
+                    scope.launch {
+                        try {
+                            isLoading = true
+                            createStoryUseCase(storyInput)
+                            navController.navigateTo(Screen.Home)
+                        } catch (e: Exception) {
+                            // Handle error - could show a snackbar
+                            e.printStackTrace()
+                            isLoading = false
+                        }
+                    }
+                },
+                isLoading = isLoading
             )
         }
         

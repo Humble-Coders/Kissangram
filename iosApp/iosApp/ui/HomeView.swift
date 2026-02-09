@@ -19,6 +19,7 @@ struct HomeView: View {
     var onNavigateToMessages: () -> Void = {}
     var onNavigateToProfile: (String) -> Void = { _ in }
     var onNavigateToStory: (String) -> Void = { _ in }
+    var onNavigateToCreateStory: () -> Void = {}
     var onNavigateToPostDetail: (String) -> Void = { _ in }
     var onNavigateToComments: (String) -> Void = { _ in }
     
@@ -61,7 +62,8 @@ struct HomeView: View {
                             // Stories Section
                             StoriesSection(
                                 stories: viewModel.stories,
-                                onStoryClick: onNavigateToStory
+                                onStoryClick: onNavigateToStory,
+                                onCreateStoryClick: onNavigateToCreateStory
                             )
                             
                             // Posts
@@ -171,6 +173,7 @@ struct IconButtonWithBadge: View {
 struct StoriesSection: View {
     let stories: [UserStories]
     let onStoryClick: (String) -> Void
+    let onCreateStoryClick: () -> Void
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -185,6 +188,10 @@ struct StoriesSection: View {
             // Horizontal Story List
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 11) {
+                    // Create Story Card (first item)
+                    CreateStoryCard(onClick: onCreateStoryClick)
+                    
+                    // Other stories
                     ForEach(stories, id: \.userId) { userStory in
                         StoryCard(userStory: userStory) {
                             onStoryClick(userStory.userId)
@@ -291,6 +298,57 @@ struct StoryCard: View {
                         .lineLimit(1)
                     
                     Text("🌾 Wheat")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.primaryGreen)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.primaryGreen.opacity(0.08))
+                        .cornerRadius(16)
+                }
+                .frame(width: 120, height: 67)
+            }
+            .background(Color.white)
+            .cornerRadius(18)
+            .shadow(color: .black.opacity(0.06), radius: 4, y: 2)
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
+struct CreateStoryCard: View {
+    let onClick: () -> Void
+    
+    var body: some View {
+        Button(action: onClick) {
+            VStack(spacing: 0) {
+                // Story Image Area with gradient background
+                ZStack {
+                    LinearGradient(
+                        colors: [.primaryGreen, .accentYellow],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(width: 120, height: 126)
+                    
+                    Image(systemName: "plus")
+                        .font(.system(size: 48, weight: .medium))
+                        .foregroundColor(.white)
+                }
+                .clipShape(
+                    UnevenRoundedRectangle(
+                        topLeadingRadius: 18,
+                        topTrailingRadius: 18
+                    )
+                )
+                
+                // User Info
+                VStack(spacing: 8) {
+                    Text("Your Story")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.textPrimary)
+                        .lineLimit(1)
+                    
+                    Text("+ Add")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(.primaryGreen)
                         .padding(.horizontal, 8)

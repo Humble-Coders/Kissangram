@@ -36,6 +36,7 @@ fun HomeScreen(
     onNavigateToMessages: () -> Unit = {},
     onNavigateToProfile: (String) -> Unit = {},
     onNavigateToStory: (String) -> Unit = {},
+    onNavigateToCreateStory: () -> Unit = {},
     onNavigateToPostDetail: (String) -> Unit = {},
     onNavigateToComments: (String) -> Unit = {}
 ) {
@@ -122,7 +123,8 @@ fun HomeScreen(
                 item {
                     StoriesSection(
                         stories = uiState.stories,
-                        onStoryClick = onNavigateToStory
+                        onStoryClick = onNavigateToStory,
+                        onCreateStoryClick = onNavigateToCreateStory
                     )
                 }
 

@@ -1,0 +1,968 @@
+package com.kissangram.ui.createstory
+
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import kotlinx.coroutines.launch
+import java.io.FileInputStream
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
+import coil.compose.AsyncImage
+import com.kissangram.model.CreateStoryInput
+import com.kissangram.model.CreateStoryLocation
+import com.kissangram.model.MediaType
+import com.kissangram.model.PostVisibility
+import com.kissangram.model.StoryTextOverlay
+import com.kissangram.ui.home.BackgroundColor
+import com.kissangram.ui.home.PrimaryGreen
+import com.kissangram.ui.home.TextPrimary
+import com.kissangram.ui.home.TextSecondary
+import java.io.File
+
+// Helper function to create image URI
+private fun createImageUri(context: Context): Uri {
+    val photoFile = File(
+        context.getExternalFilesDir(android.os.Environment.DIRECTORY_PICTURES),
+        "story_image_${System.currentTimeMillis()}.jpg"
+    )
+    photoFile.parentFile?.mkdirs()
+    return FileProvider.getUriForFile(
+        context,
+        "${context.packageName}.fileprovider",
+        photoFile
+    )
+}
+
+// Helper function to create video URI
+private fun createVideoUri(context: Context): Uri {
+    val videoFile = File(
+        context.getExternalFilesDir(android.os.Environment.DIRECTORY_MOVIES),
+        "story_video_${System.currentTimeMillis()}.mp4"
+    )
+    videoFile.parentFile?.mkdirs()
+    return FileProvider.getUriForFile(
+        context,
+        "${context.packageName}.fileprovider",
+        videoFile
+    )
+}
+
+// Helper function to convert URI to ByteArray
+private suspend fun uriToByteArray(context: Context, uri: Uri): ByteArray {
+    return when (uri.scheme) {
+        "file" -> {
+            val path = uri.path
+            if (path.isNullOrBlank()) {
+                throw IllegalArgumentException("File URI has no path: $uri")
+            }
+            val file = File(path)
+            if (!file.exists()) {
+                throw IllegalArgumentException("File does not exist: $uri")
+            }
+            FileInputStream(file).use { it.readBytes() }
+        }
+        "content" -> {
+            context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                ?: throw IllegalArgumentException("Cannot open input stream for content URI: $uri")
+        }
+        else -> throw IllegalArgumentException("Unsupported URI scheme: ${uri.scheme}")
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CreateStoryScreen(
+    onBackClick: () -> Unit,
+    onStoryClick: (CreateStoryInput) -> Unit = {},
+    isLoading: Boolean = false
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    // State
+    var selectedMediaUri by remember { mutableStateOf<Uri?>(null) }
+    var mediaType by remember { mutableStateOf<MediaType?>(null) }
+    var textOverlays by remember { mutableStateOf<List<StoryTextOverlay>>(emptyList()) }
+    var location by remember { mutableStateOf<CreateStoryLocation?>(null) }
+    var visibility by remember { mutableStateOf(PostVisibility.PUBLIC) }
+    var showTextInputDialog by remember { mutableStateOf(false) }
+    var showLocationPicker by remember { mutableStateOf(false) }
+    var selectedOverlayIdForEdit by remember { mutableStateOf<String?>(null) } // ID of overlay being edited
+    var selectedOverlayId by remember { mutableStateOf<String?>(null) } // For Instagram-style selection
+    var isLoading by remember { mutableStateOf(false) } // Loading state for story creation
+
+    // Media capture URIs
+    var cameraImageUri by remember { mutableStateOf<Uri?>(null) }
+    var cameraVideoUri by remember { mutableStateOf<Uri?>(null) }
+
+    // Camera launcher
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { success ->
+        if (success) {
+            cameraImageUri?.let { uri ->
+                selectedMediaUri = uri
+                mediaType = MediaType.IMAGE
+            }
+        }
+    }
+
+    // Video launcher
+    val videoLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CaptureVideo()
+    ) { success ->
+        if (success) {
+            cameraVideoUri?.let { uri ->
+                selectedMediaUri = uri
+                mediaType = MediaType.VIDEO
+            }
+        }
+    }
+
+    // Gallery launcher
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri: Uri? ->
+        uri?.let {
+            selectedMediaUri = it
+            val contentResolver = context.contentResolver
+            val mimeType = contentResolver.getType(it)
+            mediaType = when {
+                mimeType?.startsWith("image/") == true -> MediaType.IMAGE
+                mimeType?.startsWith("video/") == true -> MediaType.VIDEO
+                else -> MediaType.IMAGE
+            }
+        }
+    }
+
+    // Camera permission launcher
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            val uri = createImageUri(context)
+            cameraImageUri = uri
+            cameraLauncher.launch(uri)
+        }
+    }
+
+    val isStoryEnabled = selectedMediaUri != null
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+    ) {
+        // Media Preview (Full Screen)
+        if (selectedMediaUri != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(selectedOverlayId) {
+                        detectTapGestures(
+                            onTap = {
+                                // Deselect all overlays when tapping background
+                                selectedOverlayId = null
+                            }
+                        )
+                    }
+            ) {
+                AsyncImage(
+                    model = selectedMediaUri,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+
+                // Text Overlays - CHANGED: Update by ID instead of index
+                textOverlays.forEach { overlay ->
+                    DraggableTextOverlay(
+                        overlay = overlay,
+                        isSelected = overlay.id == selectedOverlayId,
+                        onPositionChange = { newX, newY ->
+                            textOverlays = textOverlays.map {
+                                if (it.id == overlay.id) {
+                                    it.copy(positionX = newX, positionY = newY)
+                                } else {
+                                    it
+                                }
+                            }
+                        },
+                        onSizeChange = { newSize ->
+                            textOverlays = textOverlays.map {
+                                if (it.id == overlay.id) {
+                                    it.copy(fontSize = newSize)
+                                } else {
+                                    it
+                                }
+                            }
+                        },
+                        onRotationChange = { newRotation ->
+                            textOverlays = textOverlays.map {
+                                if (it.id == overlay.id) {
+                                    it.copy(rotation = newRotation)
+                                } else {
+                                    it
+                                }
+                            }
+                        },
+                        onScaleChange = { newScale ->
+                            textOverlays = textOverlays.map {
+                                if (it.id == overlay.id) {
+                                    it.copy(scale = newScale)
+                                } else {
+                                    it
+                                }
+                            }
+                        },
+                        onSelect = {
+                            selectedOverlayId = overlay.id
+                        },
+                        onEdit = {
+                            selectedOverlayIdForEdit = overlay.id
+                            showTextInputDialog = true
+                        },
+                        onDelete = {
+                            textOverlays = textOverlays.filter { it.id != overlay.id }
+                            if (selectedOverlayId == overlay.id) {
+                                selectedOverlayId = null
+                            }
+                        }
+                    )
+                }
+            }
+        } else {
+            // Empty state - show media selection options
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = "Create Your Story",
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                Spacer(modifier = Modifier.height(32.dp))
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    // Camera Button
+                    MediaSelectionButton(
+                        icon = Icons.Default.Add,
+                        label = "Camera",
+                        onClick = {
+                            when {
+                                ContextCompat.checkSelfPermission(
+                                    context,
+                                    Manifest.permission.CAMERA
+                                ) == PackageManager.PERMISSION_GRANTED -> {
+                                    val uri = createImageUri(context)
+                                    cameraImageUri = uri
+                                    cameraLauncher.launch(uri)
+                                }
+                                else -> {
+                                    cameraImageUri = createImageUri(context)
+                                    cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                                }
+                            }
+                        }
+                    )
+
+                    // Gallery Button
+                    MediaSelectionButton(
+                        icon = Icons.Default.Add,
+                        label = "Gallery",
+                        onClick = {
+                            // Launch without specifying type to allow both images and videos
+                            galleryLauncher.launch(PickVisualMediaRequest())
+                        }
+                    )
+                }
+            }
+        }
+
+        // Top Bar
+        TopAppBar(
+            title = {
+                Text(
+                    text = "Your Story",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White
+                )
+            },
+            navigationIcon = {
+                IconButton(onClick = onBackClick) {
+                    Icon(
+                        imageVector = Icons.Default.ArrowBack,
+                        contentDescription = "Back",
+                        tint = Color.White
+                    )
+                }
+            },
+            colors = TopAppBarDefaults.topAppBarColors(
+                containerColor = Color.Transparent
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color.Black.copy(alpha = 0.3f))
+        )
+
+        // Bottom Action Bar
+        if (selectedMediaUri != null) {
+            BottomActionBar(
+                onAddTextClick = {
+                    showTextInputDialog = true
+                    selectedOverlayIdForEdit = null
+                },
+                onLocationClick = {
+                    showLocationPicker = true
+                },
+                location = location,
+                onRemoveLocation = {
+                    location = null
+                },
+                visibility = visibility,
+                onVisibilitySelected = { visibility = it },
+                onShareClick = {
+                    // Convert URI to ByteArray and build CreateStoryInput
+                    selectedMediaUri?.let { uri ->
+                        scope.launch {
+                            try {
+                                val mediaData = uriToByteArray(context, uri)
+                                val input = CreateStoryInput(
+                                    mediaData = mediaData,
+                                    mediaType = mediaType,
+                                    thumbnailData = null,
+                                    textOverlays = textOverlays,
+                                    location = location,
+                                    visibility = visibility
+                                )
+                                onStoryClick(input)
+                            } catch (e: Exception) {
+                                // Handle error - could show a snackbar
+                                e.printStackTrace()
+                            }
+                        }
+                    }
+                },
+                isShareEnabled = isStoryEnabled,
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
+        }
+        
+        // Loading Overlay
+        if (isLoading) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.7f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(48.dp),
+                        color = PrimaryGreen
+                    )
+                    Text(
+                        text = "Creating story...",
+                        color = Color.White,
+                        fontSize = 16.sp
+                    )
+                }
+            }
+        }
+    }
+
+    // Text Input Dialog - CHANGED: Don't use remember for overlayToEdit
+    if (showTextInputDialog) {
+        TextOverlayInputDialog(
+            initialText = selectedOverlayIdForEdit?.let { id ->
+                textOverlays.find { it.id == id }?.text
+            } ?: "",
+            initialColor = selectedOverlayIdForEdit?.let { id ->
+                textOverlays.find { it.id == id }?.textColor
+            } ?: 0xFFFFFFFF,
+            onDismiss = {
+                showTextInputDialog = false
+                selectedOverlayIdForEdit = null
+            },
+            onConfirm = { text, color ->
+                if (selectedOverlayIdForEdit != null) {
+                    // Update existing overlay - find it FRESH from current list
+                    textOverlays = textOverlays.map { overlay ->
+                        if (overlay.id == selectedOverlayIdForEdit) {
+                            // Preserve ALL properties except text and color
+                            overlay.copy(
+                                text = text,
+                                textColor = color
+                            )
+                        } else {
+                            overlay
+                        }
+                    }
+                    selectedOverlayId = selectedOverlayIdForEdit // Keep it selected
+                } else {
+                    // Add new overlay at center
+                    val newOverlay = StoryTextOverlay(
+                        text = text,
+                        positionX = 0.5f,
+                        positionY = 0.5f,
+                        fontSize = 28f,
+                        textColor = color,
+                        rotation = 0f,
+                        scale = 1f
+                    )
+                    textOverlays = textOverlays + newOverlay
+                    selectedOverlayId = null
+                }
+                showTextInputDialog = false
+                selectedOverlayIdForEdit = null
+            }
+        )
+    }
+}
+
+@Composable
+private fun MediaSelectionButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(12.dp),
+        color = PrimaryGreen,
+        modifier = Modifier.size(120.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(48.dp)
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = label,
+                color = Color.White,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
+    }
+}
+
+@Composable
+private fun DraggableTextOverlay(
+    overlay: StoryTextOverlay,
+    isSelected: Boolean,
+    onPositionChange: (Float, Float) -> Unit,
+    onScaleChange: (Float) -> Unit,
+    onSizeChange: (Float) -> Unit,
+    onRotationChange: (Float) -> Unit,
+    onSelect: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    /* ---------- Screen px ---------- */
+    val density = LocalDensity.current
+    val config = LocalConfiguration.current
+    val screenWidthPx = with(density) { config.screenWidthDp.dp.toPx() }
+    val screenHeightPx = with(density) { config.screenHeightDp.dp.toPx() }
+
+    /* ---------- Stable base values ---------- */
+    var basePositionPx by remember(overlay.id) {
+        mutableStateOf(
+            Offset(
+                overlay.positionX * screenWidthPx,
+                overlay.positionY * screenHeightPx
+            )
+        )
+    }
+
+    var baseFontSize by remember(overlay.id) {
+        mutableStateOf(overlay.fontSize)
+    }
+
+    /* ---------- Live gesture state ---------- */
+    var localOffset by remember(overlay.id) { mutableStateOf(Offset.Zero) }
+    var scale by remember(overlay.id) { mutableStateOf(overlay.scale) }
+    var rotation by remember(overlay.id) { mutableStateOf(overlay.rotation) }
+    var isTransforming by remember(overlay.id) { mutableStateOf(false) }
+
+    val absoluteX = basePositionPx.x + localOffset.x
+    val absoluteY = basePositionPx.y + localOffset.y
+
+    val liveFontSize = (baseFontSize * scale).coerceIn(12f, 72f)
+
+    Box(
+        modifier = Modifier
+            .offset { IntOffset(absoluteX.toInt(), absoluteY.toInt()) }
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                rotationZ = rotation
+                transformOrigin = TransformOrigin.Center
+            }
+            .pointerInput(overlay.id, isSelected) {
+                if (!isSelected) return@pointerInput
+
+                detectTransformGestures(
+                    onGesture = { _, pan, zoom, rotationDelta ->
+                        isTransforming = true
+
+                        /* ---------- Drag ---------- */
+                        localOffset += pan
+
+                        val livePx = basePositionPx + localOffset
+                        onPositionChange(
+                            (livePx.x / screenWidthPx).coerceIn(0f, 1f),
+                            (livePx.y / screenHeightPx).coerceIn(0f, 1f)
+                        )
+
+                        /* ---------- Scale + Size ---------- */
+                        if (zoom != 1f) {
+                            scale = (scale * zoom).coerceIn(0.5f, 3f)
+                            onScaleChange(scale)
+                            onSizeChange(liveFontSize)
+                        }
+
+                        /* ---------- Rotation ---------- */
+                        if (rotationDelta != 0f) {
+                            rotation = (rotation + rotationDelta) % 360f
+                            onRotationChange(rotation)
+                        }
+                    },
+                    onEnd = {
+                        // Commit position
+                        basePositionPx += localOffset
+                        localOffset = Offset.Zero
+                        isTransforming = false
+                    }
+                )
+            }
+            .pointerInput(overlay.id, isSelected, isTransforming) {
+                if (!isTransforming) {
+                    detectTapGestures(
+                        onTap = {
+                            if (!isSelected) onSelect() else onEdit()
+                        },
+                        onDoubleTap = {
+                            if (!isSelected) onSelect()
+                            onEdit()
+                        }
+                    )
+                }
+            }
+    ) {
+        Box {
+            Row(
+                modifier = Modifier
+                    .background(
+                        Color.Black.copy(alpha = 0.6f),
+                        RoundedCornerShape(8.dp)
+                    )
+                    .then(
+                        if (isSelected)
+                            Modifier.border(2.dp, Color.White, RoundedCornerShape(8.dp))
+                        else Modifier
+                    )
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = overlay.text,
+                    color = Color(overlay.textColor),
+                    fontSize = liveFontSize.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 3
+                )
+            }
+
+            if (isSelected) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .offset(12.dp, (-12).dp)
+                        .size(32.dp)
+                        .background(Color.Red, CircleShape)
+                        .pointerInput(Unit) {
+                            detectTapGestures { onDelete() }
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.Close, null, tint = Color.White, modifier = Modifier.size(18.dp))
+                }
+            }
+        }
+    }
+
+    /* ---------- External sync - ONLY on overlay.id change ---------- */
+    LaunchedEffect(overlay.id) {
+        basePositionPx = Offset(
+            overlay.positionX * screenWidthPx,
+            overlay.positionY * screenHeightPx
+        )
+        localOffset = Offset.Zero
+        baseFontSize = overlay.fontSize
+        scale = overlay.scale
+        rotation = overlay.rotation
+    }
+}
+
+@Composable
+private fun BottomActionBar(
+    onAddTextClick: () -> Unit,
+    onLocationClick: () -> Unit,
+    location: CreateStoryLocation?,
+    onRemoveLocation: () -> Unit,
+    visibility: PostVisibility,
+    onVisibilitySelected: (PostVisibility) -> Unit,
+    onShareClick: () -> Unit,
+    isShareEnabled: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = Color.Black.copy(alpha = 0.7f),
+        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                // Add Text Button
+                IconButton(onClick = onAddTextClick) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            imageVector = Icons.Default.TextFields,
+                            contentDescription = "Add Text",
+                            tint = Color.White,
+                            modifier = Modifier.size(28.dp)
+                        )
+                        Text(
+                            text = "Text",
+                            color = Color.White,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+
+                // Location Button
+                IconButton(onClick = onLocationClick) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            imageVector = Icons.Default.LocationOn,
+                            contentDescription = "Location",
+                            tint = if (location != null) PrimaryGreen else Color.White,
+                            modifier = Modifier.size(28.dp)
+                        )
+                        Text(
+                            text = "Location",
+                            color = if (location != null) PrimaryGreen else Color.White,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Location Display
+            if (location != null) {
+                Surface(
+                    onClick = onRemoveLocation,
+                    shape = RoundedCornerShape(8.dp),
+                    color = PrimaryGreen.copy(alpha = 0.2f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.LocationOn,
+                                contentDescription = null,
+                                tint = PrimaryGreen,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = location.name,
+                                color = Color.White,
+                                fontSize = 14.sp
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Remove",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            // Visibility Selection
+            VisibilitySelectionSection(
+                selectedVisibility = visibility,
+                onVisibilitySelected = onVisibilitySelected
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Share Button
+            Button(
+                onClick = onShareClick,
+                enabled = isShareEnabled,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = PrimaryGreen,
+                    disabledContainerColor = Color.Gray
+                ),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text(
+                    text = "Share Story",
+                    color = Color.White,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(vertical = 12.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TextOverlayInputDialog(
+    initialText: String,
+    initialColor: Long,
+    onDismiss: () -> Unit,
+    onConfirm: (String, Long) -> Unit
+) {
+    var text by remember { mutableStateOf(initialText) }
+    var selectedColor by remember { mutableStateOf(initialColor) }
+
+    val colorOptions = listOf(
+        0xFFFFFFFF to "White",
+        0xFF000000 to "Black",
+        0xFFFF0000 to "Red",
+        0xFF0000FF to "Blue",
+        0xFF00FF00 to "Green",
+        0xFFFFFF00 to "Yellow",
+        0xFFFF00FF to "Magenta",
+        0xFF00FFFF to "Cyan"
+    )
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add Text", color = TextPrimary) },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    label = { Text("Enter text") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = false,
+                    maxLines = 3
+                )
+
+                // Color Picker
+                Column {
+                    Text(
+                        text = "Text Color",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = TextPrimary,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        colorOptions.forEach { (color, label) ->
+                            ColorOption(
+                                color = Color(color),
+                                isSelected = selectedColor == color,
+                                onClick = { selectedColor = color }
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(text, selectedColor) },
+                enabled = text.isNotBlank()
+            ) {
+                Text("Add", color = PrimaryGreen)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = TextSecondary)
+            }
+        },
+        containerColor = BackgroundColor
+    )
+}
+
+@Composable
+private fun ColorOption(
+    color: Color,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(color)
+            .border(
+                width = if (isSelected) 3.dp else 1.dp,
+                color = if (isSelected) PrimaryGreen else Color.Gray,
+                shape = CircleShape
+            )
+            .clickable { onClick() }
+    )
+}
+
+// MARK: - Visibility Selection Section
+@Composable
+private fun VisibilitySelectionSection(
+    selectedVisibility: PostVisibility,
+    onVisibilitySelected: (PostVisibility) -> Unit
+) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(9.dp)
+    ) {
+        Text(
+            text = "Who can see this?",
+            fontSize = 16.875.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = Color.White
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(13.5.dp)
+        ) {
+            VisibilityButton(
+                label = "Public",
+                isSelected = selectedVisibility == PostVisibility.PUBLIC,
+                modifier = Modifier.weight(1f),
+                onClick = { onVisibilitySelected(PostVisibility.PUBLIC) }
+            )
+            VisibilityButton(
+                label = "My Followers",
+                isSelected = selectedVisibility == PostVisibility.FOLLOWERS,
+                modifier = Modifier.weight(1f),
+                onClick = { onVisibilitySelected(PostVisibility.FOLLOWERS) }
+            )
+        }
+
+        Text(
+            text = "Public stories are visible to all farmers",
+            fontSize = 13.5.sp,
+            color = Color.White.copy(alpha = 0.7f)
+        )
+    }
+}
+
+@Composable
+private fun VisibilityButton(
+    label: String,
+    isSelected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = modifier
+            .height(56.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(22.dp),
+        color = if (isSelected) PrimaryGreen else Color.Transparent,
+        border = if (isSelected) null else BorderStroke(
+            width = 1.18.dp,
+            color = PrimaryGreen.copy(alpha = 0.5f)
+        )
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = label,
+                fontSize = 15.75.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = if (isSelected) Color.White else Color.White
+            )
+        }
+    }
+}

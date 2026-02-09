@@ -167,6 +167,16 @@ fun CreatePostScreen(
         }
     }
     
+    // Handle successful post creation - navigate back to home
+    LaunchedEffect(uiState.postCreatedSuccessfully) {
+        if (uiState.postCreatedSuccessfully) {
+            // Reset the flag first
+            viewModel.resetPostCreationState()
+            // Navigate back to home screen
+            onBackClick()
+        }
+    }
+    
     // Camera launcher for photos (must be defined before permission launchers)
     val cameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
@@ -579,8 +589,8 @@ fun CreatePostScreen(
                     onClick = {
                         viewModel.createPost(
                             onSuccess = {
-                                // Navigate back on success
-                                onBackClick()
+                                // Navigation is handled by LaunchedEffect observing postCreatedSuccessfully
+                                // This callback is kept for any additional cleanup if needed
                             },
                             onError = { error ->
                                 // Error is already shown in UI state, but we can show a snackbar here if needed

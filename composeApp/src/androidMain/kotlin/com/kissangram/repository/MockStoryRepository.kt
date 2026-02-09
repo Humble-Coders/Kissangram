@@ -39,8 +39,11 @@ class MockStoryRepository : StoryRepository {
                         ),
                         textOverlay = TextOverlay("Morning at the farm!", 0.5f, 0.8f),
                         locationName = "Punjab",
+                        visibility = PostVisibility.PUBLIC,
                         viewsCount = 45,
+                        likesCount = 12,
                         isViewedByMe = true,
+                        isLikedByMe = false,
                         createdAt = currentTime - 3600000,
                         expiresAt = currentTime - 3600000 + oneDayInMillis
                     )
@@ -70,8 +73,11 @@ class MockStoryRepository : StoryRepository {
                         ),
                         textOverlay = null,
                         locationName = "Ludhiana, Punjab",
+                        visibility = PostVisibility.PUBLIC,
                         viewsCount = 234,
+                        likesCount = 45,
                         isViewedByMe = false,
+                        isLikedByMe = false,
                         createdAt = currentTime - 7200000,
                         expiresAt = currentTime - 7200000 + oneDayInMillis
                     )
@@ -101,8 +107,11 @@ class MockStoryRepository : StoryRepository {
                         ),
                         textOverlay = TextOverlay("New research on wheat irrigation", 0.5f, 0.9f),
                         locationName = null,
+                        visibility = PostVisibility.PUBLIC,
                         viewsCount = 567,
+                        likesCount = 89,
                         isViewedByMe = true,
+                        isLikedByMe = true,
                         createdAt = currentTime - 10800000,
                         expiresAt = currentTime - 10800000 + oneDayInMillis
                     )
@@ -132,8 +141,11 @@ class MockStoryRepository : StoryRepository {
                         ),
                         textOverlay = TextOverlay("Fresh delivery today! 🥛", 0.5f, 0.85f),
                         locationName = "Amritsar",
+                        visibility = PostVisibility.PUBLIC,
                         viewsCount = 189,
+                        likesCount = 34,
                         isViewedByMe = false,
+                        isLikedByMe = false,
                         createdAt = currentTime - 14400000,
                         expiresAt = currentTime - 14400000 + oneDayInMillis
                     )
@@ -163,8 +175,11 @@ class MockStoryRepository : StoryRepository {
                         ),
                         textOverlay = null,
                         locationName = "Muzaffarnagar",
+                        visibility = PostVisibility.PUBLIC,
                         viewsCount = 98,
+                        likesCount = 23,
                         isViewedByMe = true,
+                        isLikedByMe = true,
                         createdAt = currentTime - 18000000,
                         expiresAt = currentTime - 18000000 + oneDayInMillis
                     )
@@ -188,5 +203,56 @@ class MockStoryRepository : StoryRepository {
     override suspend fun getMyStories(): List<Story> {
         delay(300)
         return emptyList()
+    }
+    
+    override suspend fun createStory(storyData: Map<String, Any?>): Story {
+        delay(500)
+        // Mock implementation - return a dummy story
+        val currentTime = System.currentTimeMillis()
+        val oneDayInMillis = 24 * 60 * 60 * 1000L
+        
+        return Story(
+            id = "story_${System.currentTimeMillis()}",
+            authorId = storyData["authorId"] as? String ?: "unknown",
+            authorName = storyData["authorName"] as? String ?: "Unknown",
+            authorUsername = storyData["authorUsername"] as? String ?: "unknown",
+            authorProfileImageUrl = storyData["authorProfileImageUrl"] as? String,
+            authorRole = when (storyData["authorRole"] as? String) {
+                "farmer" -> UserRole.FARMER
+                "expert" -> UserRole.EXPERT
+                "agripreneur" -> UserRole.AGRIPRENEUR
+                "input_seller" -> UserRole.INPUT_SELLER
+                "agri_lover" -> UserRole.AGRI_LOVER
+                else -> UserRole.FARMER
+            },
+            authorVerificationStatus = when (storyData["authorVerificationStatus"] as? String) {
+                "verified" -> VerificationStatus.VERIFIED
+                "pending" -> VerificationStatus.PENDING
+                "rejected" -> VerificationStatus.REJECTED
+                else -> VerificationStatus.UNVERIFIED
+            },
+            media = (storyData["media"] as? Map<*, *>)?.let { mediaMap ->
+                StoryMedia(
+                    url = mediaMap["url"] as? String ?: "",
+                    type = when (mediaMap["type"] as? String) {
+                        "video" -> MediaType.VIDEO
+                        else -> MediaType.IMAGE
+                    },
+                    thumbnailUrl = mediaMap["thumbnailUrl"] as? String
+                )
+            } ?: StoryMedia("", MediaType.IMAGE, null),
+            textOverlay = null,
+            locationName = storyData["locationName"] as? String,
+            visibility = when (storyData["visibility"] as? String) {
+                "followers" -> PostVisibility.FOLLOWERS
+                else -> PostVisibility.PUBLIC
+            },
+            viewsCount = 0,
+            likesCount = 0,
+            isViewedByMe = false,
+            isLikedByMe = false,
+            createdAt = currentTime,
+            expiresAt = currentTime + oneDayInMillis
+        )
     }
 }

@@ -395,3 +395,85 @@ When adding any feature, follow this exact order:
 | iOS Repo Impl | - | `IOS*Repository.swift` |
 | Use Case | `*UseCase.kt` | - |
 | Model | `*.kt` | - |
+
+---
+
+## Firestore Schema Documentation Rule
+
+### ⚠️ CRITICAL: Schema Change Documentation
+
+**Whenever ANY schema change is made, you MUST update `FIRESTORE_SCHEMA.md` immediately.**
+
+### What Constitutes a Schema Change?
+
+A schema change includes ANY modification to:
+
+1. **Data Models** (in `shared/src/commonMain/kotlin/com/kissangram/model/`):
+   - Adding/removing/modifying fields in data classes
+   - Changing field types
+   - Adding/removing nested objects
+   - Changing enum values
+
+2. **Repository Interfaces** (in `shared/src/commonMain/kotlin/com/kissangram/repository/`):
+   - Adding/removing methods that interact with Firestore
+   - Changing method signatures that affect data structure
+   - New repository interfaces
+
+3. **Firestore Collections/Subcollections**:
+   - New collections or subcollections
+   - Changes to document structure
+   - Changes to subcollection structure
+   - New fields in existing documents
+
+4. **Firestore Indexes**:
+   - New composite indexes
+   - Changes to query patterns
+
+5. **Cloud Functions** (if applicable):
+   - New functions that modify data structure
+   - Functions that create/update collections
+
+### Required Actions When Schema Changes
+
+1. **Identify the Change**: Determine which collection/document structure is affected
+2. **Update FIRESTORE_SCHEMA.md**: 
+   - Update the relevant collection schema in the "Collections" section
+   - Update the "Schema Overview" diagram if structure changed
+   - Update "Query Patterns" if queries changed
+   - Update "Firestore Indexes" if new indexes are needed
+   - Update "Cloud Functions" section if functions are affected
+3. **Update Date**: Update the "Last updated" date at the bottom of `FIRESTORE_SCHEMA.md`
+4. **Document Breaking Changes**: If the change is breaking, add a note in the relevant section
+
+### Schema Update Checklist
+
+When making schema changes, ensure:
+
+- [ ] Collection structure is documented in `FIRESTORE_SCHEMA.md`
+- [ ] All fields are documented with types and descriptions
+- [ ] Subcollections are documented
+- [ ] Example documents are updated
+- [ ] Query patterns are updated if affected
+- [ ] Firestore indexes section is updated
+- [ ] Cloud Functions section is updated (if applicable)
+- [ ] Security rules section is updated (if applicable)
+- [ ] "Last updated" date is changed
+
+### Example Workflow
+
+```
+1. Developer adds new field to Post model
+   → AI/Developer updates FIRESTORE_SCHEMA.md posts collection section
+   
+2. Developer creates new ConversationRepository
+   → AI/Developer updates FIRESTORE_SCHEMA.md conversations collection section
+   
+3. Developer adds new query pattern
+   → AI/Developer updates FIRESTORE_SCHEMA.md Query Patterns section
+```
+
+### Enforcement
+
+- **Before committing**: Verify `FIRESTORE_SCHEMA.md` reflects all schema changes
+- **In code reviews**: Check that schema documentation matches code changes
+- **AI Assistant**: Always update `FIRESTORE_SCHEMA.md` when schema-related files are modified

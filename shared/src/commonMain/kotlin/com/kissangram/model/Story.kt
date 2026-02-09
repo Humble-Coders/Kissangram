@@ -23,11 +23,16 @@ data class Story(
     // Location (optional)
     val locationName: String?,
     
+    // Visibility
+    val visibility: PostVisibility,
+    
     // Engagement
     val viewsCount: Int,
+    val likesCount: Int,
     
     // User interaction state
     val isViewedByMe: Boolean,
+    val isLikedByMe: Boolean,
     
     // Metadata
     val createdAt: Long,

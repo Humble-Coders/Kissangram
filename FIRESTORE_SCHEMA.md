@@ -412,8 +412,12 @@ ROOT COLLECTIONS
     name: "Ludhiana, Punjab",
   },
   
+  // Visibility
+  visibility: "public" | "followers",  // Who can see this story
+  
   // Engagement
   viewsCount: 0,
+  likesCount: 0,
   
   // Metadata
   createdAt: Timestamp,
@@ -430,6 +434,22 @@ ROOT COLLECTIONS
 {
   id: "user456",
   viewedAt: Timestamp,
+}
+```
+
+#### Subcollection: Likes
+
+**Path:** `/stories/{storyId}/likes/{userId}`
+
+```javascript
+{
+  id: "user789",
+  
+  name: "Amit Singh",
+  username: "amit_singh",
+  profileImageUrl: "https://...",
+  
+  likedAt: Timestamp,
 }
 ```
 
@@ -1190,4 +1210,4 @@ firestore.collection("hashtags")
 
 ---
 
-*Last updated: January 2026*
+*Last updated: January 2026 (Added visibility field to stories collection)*

@@ -13,6 +13,7 @@ enum Screen: Equatable {
     case home
     case search
     case createPost
+    case createStory
     case reels
     case profile
     

@@ -5,7 +5,7 @@ import Shared
  * Mock implementation of StoryRepository with dummy data for development
  */
 final class MockStoryRepository: StoryRepository {
-    
+
     func getStoryBar() async throws -> [UserStories] {
         try? await Task.sleep(nanoseconds: 400_000_000)
         
@@ -36,8 +36,11 @@ final class MockStoryRepository: StoryRepository {
                         ),
                         textOverlay: TextOverlay(text: "Morning at the farm!", positionX: 0.5, positionY: 0.8),
                         locationName: "Punjab",
+                        visibility: .public_,
                         viewsCount: 45,
+                        likesCount: 12,
                         isViewedByMe: true,
+                        isLikedByMe: false,
                         createdAt: currentTime - 3600000,
                         expiresAt: currentTime - 3600000 + oneDayInMillis
                     )
@@ -67,8 +70,11 @@ final class MockStoryRepository: StoryRepository {
                         ),
                         textOverlay: nil,
                         locationName: "Ludhiana, Punjab",
+                        visibility: .public_,
                         viewsCount: 234,
+                        likesCount: 45,
                         isViewedByMe: false,
+                        isLikedByMe: false,
                         createdAt: currentTime - 7200000,
                         expiresAt: currentTime - 7200000 + oneDayInMillis
                     )
@@ -98,8 +104,11 @@ final class MockStoryRepository: StoryRepository {
                         ),
                         textOverlay: TextOverlay(text: "New research on wheat irrigation", positionX: 0.5, positionY: 0.9),
                         locationName: nil,
+                        visibility: .public_,
                         viewsCount: 567,
+                        likesCount: 89,
                         isViewedByMe: true,
+                        isLikedByMe: true,
                         createdAt: currentTime - 10800000,
                         expiresAt: currentTime - 10800000 + oneDayInMillis
                     )
@@ -129,8 +138,11 @@ final class MockStoryRepository: StoryRepository {
                         ),
                         textOverlay: TextOverlay(text: "Fresh delivery today! 🥛", positionX: 0.5, positionY: 0.85),
                         locationName: "Amritsar",
+                        visibility: .public_,
                         viewsCount: 189,
+                        likesCount: 34,
                         isViewedByMe: false,
+                        isLikedByMe: false,
                         createdAt: currentTime - 14400000,
                         expiresAt: currentTime - 14400000 + oneDayInMillis
                     )
@@ -153,5 +165,72 @@ final class MockStoryRepository: StoryRepository {
     func getMyStories() async throws -> [Story] {
         try? await Task.sleep(nanoseconds: 300_000_000)
         return []
+    }
+    
+    // CHANGED: Parameter type from [String: Any?] to [String: Any]
+    // Kotlin's Map<String, Any?> maps to Swift's [String: Any] in KMM
+    func createStory(storyData: [String: Any]) async throws -> Story {
+        try? await Task.sleep(nanoseconds: 500_000_000)
+        
+        // Mock implementation - return a dummy story
+        let currentTime = Int64(Date().timeIntervalSince1970 * 1000)
+        let oneDayInMillis: Int64 = 24 * 60 * 60 * 1000
+        
+        // Extract visibility from storyData
+        let visibilityStr = storyData["visibility"] as? String ?? "public"
+        let visibility: Shared.PostVisibility = visibilityStr == "followers" ? .followers : .public_
+        
+        // Extract media data
+        let mediaMap = storyData["media"] as? [String: Any] ?? [:]
+        let mediaUrl = mediaMap["url"] as? String ?? ""
+        let mediaTypeStr = mediaMap["type"] as? String ?? "image"
+        let mediaType: Shared.MediaType = mediaTypeStr == "video" ? .video : .image
+        let thumbnailUrl = mediaMap["thumbnailUrl"] as? String
+        
+        return Story(
+            id: "story_\(currentTime)",
+            authorId: storyData["authorId"] as? String ?? "unknown",
+            authorName: storyData["authorName"] as? String ?? "Unknown",
+            authorUsername: storyData["authorUsername"] as? String ?? "unknown",
+            authorProfileImageUrl: storyData["authorProfileImageUrl"] as? String,
+            authorRole: parseUserRole(from: storyData["authorRole"] as? String),
+            authorVerificationStatus: parseVerificationStatus(from: storyData["authorVerificationStatus"] as? String),
+            media: StoryMedia(
+                url: mediaUrl,
+                type: mediaType,
+                thumbnailUrl: thumbnailUrl
+            ),
+            textOverlay: nil,
+            locationName: storyData["locationName"] as? String,
+            visibility: visibility,
+            viewsCount: 0,
+            likesCount: 0,
+            isViewedByMe: false,
+            isLikedByMe: false,
+            createdAt: currentTime,
+            expiresAt: currentTime + oneDayInMillis
+        )
+    }
+    
+    // MARK: - Helper Methods
+    
+    private func parseUserRole(from roleStr: String?) -> UserRole {
+        switch roleStr {
+        case "farmer": return .farmer
+        case "expert": return .expert
+        case "agripreneur": return .agripreneur
+        case "input_seller": return .inputSeller
+        case "agri_lover": return .agriLover
+        default: return .farmer
+        }
+    }
+    
+    private func parseVerificationStatus(from statusStr: String?) -> VerificationStatus {
+        switch statusStr {
+        case "verified": return .verified
+        case "pending": return .pending
+        case "rejected": return .rejected
+        default: return .unverified
+        }
     }
 }

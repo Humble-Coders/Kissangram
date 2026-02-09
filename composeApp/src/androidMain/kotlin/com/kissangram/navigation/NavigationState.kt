@@ -13,6 +13,7 @@ sealed class Screen {
     object Home : Screen()
     object Search : Screen()
     object CreatePost : Screen()
+    object CreateStory : Screen()
     object Reels : Screen()
     object Profile : Screen()
     

@@ -1,6 +1,7 @@
 import SwiftUI
 import FirebaseAuth
 import Shared
+import Foundation
 
 // Import EditProfileView
 extension ContentView {
@@ -20,8 +21,8 @@ struct ContentView: View {
         switch currentScreen {
         case .home, .search, .createPost, .reels, .profile:
             return true
-        case .editProfile:
-            return false // Don't show bottom nav on edit profile
+        case .editProfile, .createStory:
+            return false // Don't show bottom nav on edit profile and create story
         default:
             return false
         }
@@ -46,32 +47,42 @@ struct ContentView: View {
                         }
                     }
             } else if showBottomNav {
-                VStack(spacing: 0) {
-                    mainAppContent
-                    KissangramBottomNavigation(
-                        selectedItem: Binding(
-                            get: { selectedNavItem },
-                            set: { item in
-                                selectedNavItem = item
-                                // Clear navigation stack when using bottom nav
-                                navigationStack = []
-                                switch item {
-                                case .home: currentScreen = .home
-                                case .search: currentScreen = .search
-                                case .post: currentScreen = .createPost
-                                case .reels: currentScreen = .reels
-                                case .profile: currentScreen = .profile
+                ZStack {
+                    Color.appBackground.ignoresSafeArea()
+                    
+                    VStack(spacing: 0) {
+                        mainAppContent
+                        KissangramBottomNavigation(
+                            selectedItem: Binding(
+                                get: { selectedNavItem },
+                                set: { item in
+                                    selectedNavItem = item
+                                    // Clear navigation stack when using bottom nav
+                                    navigationStack = []
+                                    switch item {
+                                    case .home: currentScreen = .home
+                                    case .search: currentScreen = .search
+                                    case .post: currentScreen = .createPost
+                                    case .reels: currentScreen = .reels
+                                    case .profile: currentScreen = .profile
+                                    }
                                 }
-                            }
+                            )
                         )
-                    )
+                    }
                 }
             } else {
-                // Show either auth flow or edit profile (which doesn't have bottom nav)
-                if case .editProfile = currentScreen {
-                    mainAppContent
-                } else {
-                    authFlowContent
+                ZStack {
+                    Color.appBackground.ignoresSafeArea()
+                    
+                    // Show either auth flow, edit profile, or create story (which don't have bottom nav)
+                    if case .editProfile = currentScreen {
+                        mainAppContent
+                    } else if case .createStory = currentScreen {
+                        mainAppContent
+                    } else {
+                        authFlowContent
+                    }
                 }
             }
         }
@@ -153,6 +164,7 @@ struct ContentView: View {
                 onNavigateToMessages: { navigateTo(.messages) },
                 onNavigateToProfile: { userId in navigateTo(.userProfile(userId: userId)) },
                 onNavigateToStory: { userId in navigateTo(.story(userId: userId)) },
+                onNavigateToCreateStory: { navigateTo(.createStory) },
                 onNavigateToPostDetail: { postId in navigateTo(.postDetail(postId: postId)) },
                 onNavigateToComments: { postId in navigateTo(.comments(postId: postId)) }
             )
@@ -168,6 +180,12 @@ struct ContentView: View {
                     // postInput contains: type, text, mediaItems, crops, hashtags, location, visibility, etc.
                     navigateTo(.home)
                 }
+            )
+            
+        case .createStory:
+            CreateStoryViewContent(
+                onBackClick: { navigateBack() },
+                onStoryCreated: { navigateTo(.home) }
             )
             
         case .reels:

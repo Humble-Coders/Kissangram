@@ -8,6 +8,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -28,7 +30,8 @@ import com.kissangram.ui.home.*
 @Composable
 fun StoriesSection(
     stories: List<UserStories>,
-    onStoryClick: (String) -> Unit
+    onStoryClick: (String) -> Unit,
+    onCreateStoryClick: () -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -51,6 +54,12 @@ fun StoriesSection(
             contentPadding = PaddingValues(horizontal = 18.dp),
             horizontalArrangement = Arrangement.spacedBy(11.dp)
         ) {
+            // Create Story Card (first item)
+            item {
+                CreateStoryCard(onClick = onCreateStoryClick)
+            }
+            
+            // Other stories
             items(stories) { userStory ->
                 StoryCard(
                     userStory = userStory,
@@ -199,6 +208,82 @@ private fun StoryCard(
                 ) {
                     Text(
                         text = "🌾 Wheat",
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = PrimaryGreen
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CreateStoryCard(
+    onClick: () -> Unit
+) {
+    val gradientBrush = Brush.verticalGradient(
+        colors = listOf(PrimaryGreen, AccentYellow)
+    )
+    
+    Surface(
+        onClick = onClick,
+        modifier = Modifier
+            .width(120.dp)
+            .height(193.dp),
+        shape = RoundedCornerShape(18.dp),
+        color = Color.White,
+        shadowElevation = 2.dp
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            // Story Image Area with gradient background
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(126.dp)
+                    .background(gradientBrush, RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                // Plus icon
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = "Create Story",
+                    tint = Color.White,
+                    modifier = Modifier.size(48.dp)
+                )
+            }
+            
+            // User Info
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 9.dp, vertical = 9.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "Your Story",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                // Add Story tag
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = PrimaryGreen.copy(alpha = 0.08f)
+                ) {
+                    Text(
+                        text = "+ Add",
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,

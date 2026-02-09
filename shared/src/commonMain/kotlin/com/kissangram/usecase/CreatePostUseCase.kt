@@ -167,6 +167,7 @@ class CreatePostUseCase(
             "media" to mediaArray,
             "crops" to input.crops,
             "hashtags" to input.hashtags,
+            "visibility" to visibilityStr,
             "likesCount" to 0,
             "commentsCount" to 0,
             "savesCount" to 0,
@@ -188,6 +189,7 @@ class CreatePostUseCase(
         println("   - Author Name: ${user.name}")
         println("   - Author Username: ${user.username}")
         println("   - Post Type: $postTypeStr")
+        println("   - Visibility: $visibilityStr")
         println("   - Text: ${input.text.take(100)}${if (input.text.length > 100) "..." else ""}")
         println("   - Media Count: ${mediaArray.size}")
         println("   - Crops: ${input.crops}")

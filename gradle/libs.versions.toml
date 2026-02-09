@@ -19,6 +19,7 @@ datastore = "1.1.1"
 foundation = "1.10.2"
 
 [libraries]
+google-firebase-firestore = { module = "com.google.firebase:firebase-firestore" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
 kotlin-testJunit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
 junit = { module = "junit:junit", version.ref = "junit" }

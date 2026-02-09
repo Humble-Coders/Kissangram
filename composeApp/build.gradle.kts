@@ -24,7 +24,7 @@ kotlin {
             implementation(libs.firebase.storage)
             implementation(libs.firebase.firestore)
             implementation(libs.datastore.preferences)
-            
+            implementation(("com.google.firebase:firebase-bom:34.9.0"))
             // Image loading
             implementation("io.coil-kt:coil-compose:2.5.0")
             

@@ -88,6 +88,7 @@ data class CreatePostUiState(
     // Post creation state
     val isCreatingPost: Boolean = false,
     val postCreationError: String? = null,
+    val postCreatedSuccessfully: Boolean = false, // Flag to trigger navigation
     
     // Error state
     val errorMessage: String? = null
@@ -464,6 +465,20 @@ class CreatePostViewModel(
     
     fun addMediaItem(uri: Uri, type: MediaType) {
         val uriString = uri.toString()
+        
+        // Validate URI string
+        if (uriString.isBlank()) {
+            Log.e(TAG, "addMediaItem: Cannot add media item with blank URI")
+            return
+        }
+        
+        // Validate URI scheme
+        val scheme = uri.scheme
+        if (scheme == null || (scheme != "file" && scheme != "content")) {
+            Log.e(TAG, "addMediaItem: Invalid URI scheme: $scheme for URI: $uriString")
+            return
+        }
+        
         // Create a placeholder MediaItem for UI display (with empty ByteArray)
         val placeholderItem = MediaItem(
             mediaData = ByteArray(0), // Placeholder for UI
@@ -476,6 +491,7 @@ class CreatePostViewModel(
                 mediaItemUris = state.mediaItemUris + (uriString to type)
             ).updateValidation()
         }
+        Log.d(TAG, "addMediaItem: Added media item with URI: $uriString, type: $type")
     }
     
     fun removeMediaItem(item: MediaItem) {
@@ -768,17 +784,56 @@ class CreatePostViewModel(
     // MARK: - Build Post Input
     
     private suspend fun uriToByteArray(uriString: String): ByteArray {
-        val uri = Uri.parse(uriString)
-        return when (uri.scheme) {
+        // Validate URI string is not blank
+        if (uriString.isBlank()) {
+            throw IllegalArgumentException("URI string cannot be blank")
+        }
+        
+        val uri = try {
+            Uri.parse(uriString)
+        } catch (e: Exception) {
+            throw IllegalArgumentException("Invalid URI format: $uriString", e)
+        }
+        
+        // Check if scheme is null
+        val scheme = uri.scheme
+        if (scheme == null) {
+            throw IllegalArgumentException("URI has no scheme. URI: $uriString")
+        }
+        
+        return when (scheme) {
             "file" -> {
-                val file = File(uri.path ?: "")
-                FileInputStream(file).use { it.readBytes() }
+                val path = uri.path
+                if (path.isNullOrBlank()) {
+                    throw IllegalArgumentException("File URI has no path: $uriString")
+                }
+                val file = File(path)
+                if (!file.exists()) {
+                    throw IllegalArgumentException("File does not exist: $uriString (path: $path)")
+                }
+                if (!file.canRead()) {
+                    throw IllegalArgumentException("Cannot read file: $uriString (path: $path)")
+                }
+                try {
+                    FileInputStream(file).use { it.readBytes() }
+                } catch (e: Exception) {
+                    throw IllegalArgumentException("Failed to read file: $uriString", e)
+                }
             }
             "content" -> {
-                getApplication<Application>().contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                    ?: throw IllegalArgumentException("Cannot read content URI: $uriString")
+                try {
+                    val inputStream = getApplication<Application>().contentResolver.openInputStream(uri)
+                        ?: throw IllegalArgumentException("Cannot open input stream for content URI: $uriString")
+                    try {
+                        inputStream.use { it.readBytes() }
+                    } catch (e: Exception) {
+                        throw IllegalArgumentException("Failed to read content URI: $uriString", e)
+                    }
+                } catch (e: SecurityException) {
+                    throw IllegalArgumentException("Permission denied for content URI: $uriString", e)
+                }
             }
-            else -> throw IllegalArgumentException("Unsupported URI scheme: ${uri.scheme}")
+            else -> throw IllegalArgumentException("Unsupported URI scheme: $scheme. URI: $uriString")
         }
     }
     
@@ -786,19 +841,55 @@ class CreatePostViewModel(
         val state = _uiState.value
         
         // Convert URIs to ByteArray for media items
-        val mediaItemsWithData = state.mediaItemUris.mapIndexed { index, (uriString, type) ->
-            val mediaData = uriToByteArray(uriString)
-            // For videos, we might need thumbnail data - for now, set to null
-            // TODO: Extract thumbnail if needed
-            MediaItem(
-                mediaData = mediaData,
-                type = type,
-                thumbnailData = null
-            )
+        // Filter out any invalid URIs and log warnings
+        val mediaItemsWithData = mutableListOf<MediaItem>()
+        
+        state.mediaItemUris.forEachIndexed { index, (uriString, type) ->
+            try {
+                if (uriString.isBlank()) {
+                    Log.w(TAG, "buildPostInput: Skipping media item $index - blank URI")
+                    return@forEachIndexed
+                }
+                
+                val mediaData = uriToByteArray(uriString)
+                if (mediaData.isEmpty()) {
+                    Log.w(TAG, "buildPostInput: Skipping media item $index - empty ByteArray")
+                    return@forEachIndexed
+                }
+                
+                mediaItemsWithData.add(
+                    MediaItem(
+                        mediaData = mediaData,
+                        type = type,
+                        thumbnailData = null
+                    )
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "buildPostInput: Failed to convert URI to ByteArray for media item $index: $uriString", e)
+                // Continue to next item
+            }
+        }
+        
+        // Validate we have at least one valid media item if this is a normal post
+        if (state.postType == PostType.NORMAL && mediaItemsWithData.isEmpty()) {
+            throw IllegalArgumentException("No valid media items found. Please add media again.")
         }
         
         // Convert voice caption URI to ByteArray if present
-        val voiceCaptionData = state.voiceCaptionUri?.let { uriToByteArray(it) }
+        val voiceCaptionData = state.voiceCaptionUri?.takeIf { it.isNotBlank() }?.let { uriString ->
+            try {
+                val audioData = uriToByteArray(uriString)
+                if (audioData.isEmpty()) {
+                    Log.w(TAG, "buildPostInput: Voice caption URI resulted in empty ByteArray: $uriString")
+                    null
+                } else {
+                    audioData
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "buildPostInput: Failed to convert voice caption URI to ByteArray: $uriString", e)
+                null
+            }
+        }
         
         return CreatePostInput(
             type = state.postType,
@@ -824,24 +915,48 @@ class CreatePostViewModel(
             _uiState.update { it.copy(isCreatingPost = true, postCreationError = null) }
             
             try {
+                // Validate state before building input
+                val state = _uiState.value
+                Log.d(TAG, "createPost: State - postType=${state.postType}, mediaItemUris=${state.mediaItemUris.size}, caption length=${state.caption.length}")
+                
                 val input = buildPostInput()
-                Log.d(TAG, "createPost: Starting post creation with ${input.mediaItems.size} media items")
+                Log.d(TAG, "createPost: Starting post creation with ${input.mediaItems.size} media items, type=${input.type}")
+                
+                if (input.mediaItems.isEmpty() && input.type == PostType.NORMAL) {
+                    throw IllegalArgumentException("Cannot create a normal post without media items")
+                }
                 
                 val post = createPostUseCase(input)
                 
                 Log.d(TAG, "createPost: SUCCESS - Post created with ID: ${post.id}")
                 
+                // Update state to indicate success - UI will observe this and navigate
                 _uiState.update { 
                     it.copy(
                         isCreatingPost = false,
-                        postCreationError = null
+                        postCreationError = null,
+                        postCreatedSuccessfully = true
                     )
                 }
                 
+                // Note: Navigation is handled by LaunchedEffect in UI observing postCreatedSuccessfully
+                // Call onSuccess for any additional cleanup if needed
                 onSuccess()
+            } catch (e: IllegalArgumentException) {
+                Log.e(TAG, "createPost: Validation error - ${e.message}", e)
+                val errorMessage = e.message ?: "Invalid post data. Please check your inputs."
+                
+                _uiState.update { 
+                    it.copy(
+                        isCreatingPost = false,
+                        postCreationError = errorMessage
+                    )
+                }
+                
+                onError(errorMessage)
             } catch (e: Exception) {
-                Log.e(TAG, "createPost: FAILED", e)
-                val errorMessage = e.message ?: "Failed to create post"
+                Log.e(TAG, "createPost: FAILED - ${e.javaClass.simpleName}: ${e.message}", e)
+                val errorMessage = e.message ?: "Failed to create post. Please try again."
                 
                 _uiState.update { 
                     it.copy(
@@ -859,6 +974,17 @@ class CreatePostViewModel(
     
     fun clearError() {
         _uiState.update { it.copy(errorMessage = null) }
+    }
+    
+    // MARK: - Reset Post Creation State
+    
+    fun resetPostCreationState() {
+        _uiState.update { 
+            it.copy(
+                postCreatedSuccessfully = false,
+                postCreationError = null
+            )
+        }
     }
     
     // MARK: - Cleanup
