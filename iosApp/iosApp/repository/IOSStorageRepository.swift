@@ -21,9 +21,9 @@ public final class IOSStorageRepository: StorageRepository {
         // Initialize Cloudinary
         // Get these from: https://console.cloudinary.com/settings/api-keys
         let config = CLDConfiguration(
-            cloudName: "enter",
-            apiKey: "enter",
-            apiSecret: "enter"
+            cloudName: "ddjgu0mng",
+            apiKey: "358269548668498",
+            apiSecret: "GfgbZyDrqjwwaKVmiP8UaYtQQfU"
         )
         self.cloudinary = CLDCloudinary(configuration: config)
     }

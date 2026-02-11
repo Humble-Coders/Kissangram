@@ -4,14 +4,11 @@ import Shared
 private let profileBackground = Color(red: 0.984, green: 0.973, blue: 0.941)
 private let expertGreen = Color(red: 0.455, green: 0.765, blue: 0.396)
 
-struct ProfileView: View {
-    @StateObject private var viewModel = ProfileViewModel()
-    @State private var showMenu = false
-
+struct OtherUserProfileView: View {
+    let userId: String
+    @StateObject private var viewModel = OtherUserProfileViewModel()
+    
     var onBackClick: () -> Void = {}
-    var onEditProfile: () -> Void = {}
-    var onSignOut: () -> Void = {}
-    var reloadKey: Int = 0 // Key that changes to trigger reload after save
 
     var body: some View {
         NavigationStack {
@@ -30,7 +27,7 @@ struct ProfileView: View {
                             .foregroundColor(.textSecondary)
                             .multilineTextAlignment(.center)
                         Button("Retry") {
-                            viewModel.loadProfile()
+                            viewModel.loadUserProfile(userId: userId)
                         }
                         .foregroundColor(.white)
                         .padding(.horizontal, 24)
@@ -41,10 +38,15 @@ struct ProfileView: View {
                     Spacer()
                 } else if let user = viewModel.user {
                     ScrollView {
-                        ProfileContent(user: user, onEditProfile: onEditProfile)
-                            .padding(.horizontal, 18)
-                            .padding(.top, 24)
-                            .padding(.bottom, 20)
+                        OtherUserProfileContent(
+                            user: user,
+                            isFollowing: viewModel.isFollowing,
+                            isFollowLoading: viewModel.isFollowLoading,
+                            onFollowClick: { viewModel.toggleFollow() }
+                        )
+                        .padding(.horizontal, 18)
+                        .padding(.top, 24)
+                        .padding(.bottom, 20)
                     }
                     .scrollContentBackground(.hidden)
                 } else {
@@ -53,7 +55,7 @@ struct ProfileView: View {
                         .foregroundColor(.textSecondary)
                     Spacer()
                 }
-            } 
+            }
             .navigationTitle("Profile")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -64,32 +66,19 @@ struct ProfileView: View {
                             .foregroundColor(.textPrimary)
                     }
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Menu {
-                        Button(role: .destructive, action: {
-                            viewModel.signOut { onSignOut() }
-                        }) {
-                            Text("Sign out")
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis")
-                            .font(.system(size: 20))
-                            .foregroundColor(.textPrimary)
-                    }
-                }
             }
         }
-        .task(id: reloadKey) {
-            // Load when reloadKey changes (first display or after save)
-            // This is similar to LaunchedEffect(reloadKey) in Android
-            viewModel.loadProfile()
+        .task {
+            viewModel.loadUserProfile(userId: userId)
         }
     }
 }
 
-struct ProfileContent: View {
+struct OtherUserProfileContent: View {
     let user: User
-    let onEditProfile: () -> Void
+    let isFollowing: Bool
+    let isFollowLoading: Bool
+    let onFollowClick: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 27) {
@@ -163,14 +152,51 @@ struct ProfileContent: View {
             }
             .frame(maxWidth: .infinity)
 
-            Button(action: onEditProfile) {
-                Text("Edit Profile")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 48)
-                    .background(Color.primaryGreen)
-                    .cornerRadius(24)
+            // Follow/Following Button
+            if isFollowing {
+                // Following button (outlined)
+                Button(action: onFollowClick) {
+                    if isFollowLoading {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .primaryGreen))
+                    } else {
+                        Text("Following")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.primaryGreen)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 48)
+                .background(Color.clear)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 24)
+                        .stroke(
+                            LinearGradient(
+                                colors: [.primaryGreen, .accentYellow],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            ),
+                            lineWidth: 2
+                        )
+                )
+                .disabled(isFollowLoading)
+            } else {
+                // Follow button (filled)
+                Button(action: onFollowClick) {
+                    if isFollowLoading {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                    } else {
+                        Text("Follow")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 48)
+                .background(Color.primaryGreen)
+                .cornerRadius(24)
+                .disabled(isFollowLoading)
             }
 
             // Stats
@@ -219,23 +245,6 @@ struct ProfileContent: View {
                     }
                 }
             }
-
-        }
-    }
-}
-
-struct StatItem: View {
-    let count: Int
-    let label: String
-
-    var body: some View {
-        VStack(spacing: 4) {
-            Text("\(count)")
-                .font(.system(size: 18, weight: .bold))
-                .foregroundColor(.textPrimary)
-            Text(label)
-                .font(.system(size: 12))
-                .foregroundColor(.textSecondary)
         }
     }
 }
@@ -251,46 +260,6 @@ private func roleLabel(_ role: UserRole) -> String {
     }
 }
 
-struct VerificationStatusBadge: View {
-    let verificationStatus: VerificationStatus
-    
-    private let verifiedBlue = Color(red: 0.129, green: 0.588, blue: 0.953)
-    private let pendingOrange = Color(red: 1.0, green: 0.596, blue: 0.0)
-    private let rejectedRed = Color(red: 0.737, green: 0.278, blue: 0.286)
-    
-    var body: some View {
-        let (label, color, iconName) = statusInfo
-        
-        HStack(spacing: 6) {
-            Image(systemName: iconName)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(color)
-            Text(label)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(color)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .background(color.opacity(0.15))
-        .cornerRadius(16)
-    }
-    
-    private var statusInfo: (String, Color, String) {
-        switch verificationStatus {
-        case .verified:
-            return ("Verified", verifiedBlue, "checkmark.seal.fill")
-        case .pending:
-            return ("Pending", pendingOrange, "clock.fill")
-        case .rejected:
-            return ("Rejected", rejectedRed, "xmark.circle.fill")
-        case .unverified:
-            return ("Unverified", Color.textSecondary, "questionmark.circle")
-        default:
-            return ("Unverified", Color.textSecondary, "questionmark.circle")
-        }
-    }
-}
-
 #Preview {
-    ProfileView()
+    OtherUserProfileView(userId: "test123")
 }

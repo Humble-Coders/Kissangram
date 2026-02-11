@@ -183,7 +183,52 @@ class FirestoreUserRepository(
         }
     }
 
-    override suspend fun searchUsers(query: String, limit: Int): List<UserInfo> = emptyList()
+    override suspend fun searchUsers(query: String, limit: Int): List<UserInfo> {
+        if (query.isBlank()) return emptyList()
+        
+        val searchTerm = query.trim().lowercase()
+        // Allow single character searches for live incremental search (A -> An -> Ansh)
+        
+        return try {
+            val querySnapshot = usersCollection
+                .whereArrayContains(FIELD_SEARCH_KEYWORDS, searchTerm)
+                .whereEqualTo(FIELD_IS_ACTIVE, true)
+                // TODO: Uncomment after creating Firestore composite index
+                // Create index in Firebase Console: Collection: users, Fields: searchKeywords (Arrays), isActive (Ascending), followersCount (Descending)
+                // Or use the link from the error message when it appears
+                // .orderBy(FIELD_FOLLOWERS_COUNT, com.google.firebase.firestore.Query.Direction.DESCENDING)
+                .limit(limit.toLong())
+                .get()
+                .await()
+            
+            querySnapshot.documents.mapNotNull { doc ->
+                try {
+                    val data = doc.data ?: return@mapNotNull null
+                    val id = doc.id
+                    val name = data[FIELD_NAME] as? String ?: return@mapNotNull null
+                    val username = data[FIELD_USERNAME] as? String ?: return@mapNotNull null
+                    val profileImageUrl = data[FIELD_PROFILE_IMAGE_URL] as? String
+                    val roleStr = data[FIELD_ROLE] as? String ?: "farmer"
+                    val statusStr = data[FIELD_VERIFICATION_STATUS] as? String ?: "unverified"
+                    
+                    UserInfo(
+                        id = id,
+                        name = name,
+                        username = username,
+                        profileImageUrl = profileImageUrl,
+                        role = firestoreToRole(roleStr),
+                        verificationStatus = firestoreToVerificationStatus(statusStr)
+                    )
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error parsing user document ${doc.id}", e)
+                    null
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error searching users", e)
+            emptyList()
+        }
+    }
     override suspend fun isUsernameAvailable(username: String): Boolean = true
     override suspend fun getFollowers(userId: String, page: Int, pageSize: Int): List<UserInfo> = emptyList()
     override suspend fun getFollowing(userId: String, page: Int, pageSize: Int): List<UserInfo> = emptyList()

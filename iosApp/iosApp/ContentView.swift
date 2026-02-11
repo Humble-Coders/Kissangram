@@ -2,6 +2,7 @@ import SwiftUI
 import FirebaseAuth
 import Shared
 import Foundation
+import UIKit
 
 // Import EditProfileView
 extension ContentView {
@@ -11,7 +12,7 @@ extension ContentView {
 struct ContentView: View {
     @State private var currentScreen: Screen = .languageSelection
     @State private var navigationStack: [Screen] = []
-    @State private var selectedNavItem: BottomNavItem = .home
+    @State private var selectedTab: BottomNavItem = .home
     @State private var hasCheckedSession = false
     @State private var profileReloadKey: Int = 0 // Key to trigger ProfileView reload after save
     
@@ -28,10 +29,35 @@ struct ContentView: View {
         }
     }
     
+    init() {
+        // Customize tab bar appearance
+        let appearance = UITabBarAppearance()
+        appearance.configureWithOpaqueBackground()
+        appearance.backgroundColor = UIColor(Color.appBackground)
+        appearance.shadowColor = UIColor.black.withAlphaComponent(0.05)
+        
+        // Selected item color
+        appearance.stackedLayoutAppearance.selected.iconColor = UIColor(Color.primaryGreen)
+        appearance.stackedLayoutAppearance.selected.titleTextAttributes = [
+            .foregroundColor: UIColor(Color.primaryGreen),
+            .font: UIFont.systemFont(ofSize: 12, weight: .semibold)
+        ]
+        
+        // Normal item color
+        appearance.stackedLayoutAppearance.normal.iconColor = UIColor(Color.textSecondary)
+        appearance.stackedLayoutAppearance.normal.titleTextAttributes = [
+            .foregroundColor: UIColor(Color.textSecondary),
+            .font: UIFont.systemFont(ofSize: 12, weight: .medium)
+        ]
+        
+        UITabBar.appearance().standardAppearance = appearance
+        UITabBar.appearance().scrollEdgeAppearance = appearance
+    }
+    
     var body: some View {
         Group {
             if !hasCheckedSession {
-                Color.appBackground.ignoresSafeArea()
+                Color.appBackground
                     .onAppear {
                         Task {
                             let completed = (try? await prefs.hasCompletedAuth())?.boolValue ?? false
@@ -40,50 +66,106 @@ struct ContentView: View {
                                 hasCheckedSession = true
                                 if completed && hasUser {
                                     currentScreen = .home
-                                    selectedNavItem = .home
+                                    selectedTab = .home
                                     navigationStack = []
                                 }
                             }
                         }
                     }
             } else if showBottomNav {
-                ZStack {
-                    Color.appBackground.ignoresSafeArea()
+                TabView(selection: $selectedTab) {
+                    // Home Tab
+                    HomeView(
+                        onNavigateToNotifications: { navigateTo(.notifications) },
+                        onNavigateToMessages: { navigateTo(.messages) },
+                        onNavigateToProfile: { userId in navigateTo(.userProfile(userId: userId)) },
+                        onNavigateToStory: { userId in navigateTo(.story(userId: userId)) },
+                        onNavigateToCreateStory: { navigateTo(.createStory) },
+                        onNavigateToPostDetail: { postId in navigateTo(.postDetail(postId: postId)) },
+                        onNavigateToComments: { postId in navigateTo(.comments(postId: postId)) }
+                    )
+                    .tag(BottomNavItem.home)
+                    .tabItem {
+                        Label("होम", systemImage: "house.fill")
+                    }
                     
-                    VStack(spacing: 0) {
-                        mainAppContent
-                        KissangramBottomNavigation(
-                            selectedItem: Binding(
-                                get: { selectedNavItem },
-                                set: { item in
-                                    selectedNavItem = item
-                                    // Clear navigation stack when using bottom nav
-                                    navigationStack = []
-                                    switch item {
-                                    case .home: currentScreen = .home
-                                    case .search: currentScreen = .search
-                                    case .post: currentScreen = .createPost
-                                    case .reels: currentScreen = .reels
-                                    case .profile: currentScreen = .profile
-                                    }
-                                }
-                            )
-                        )
+                    // Search Tab
+                    SearchView(
+                        onUserClick: { userId in navigateTo(.userProfile(userId: userId)) }
+                    )
+                    .tag(BottomNavItem.search)
+                    .tabItem {
+                        Label("खोजें", systemImage: "magnifyingglass")
+                    }
+                    
+                    // Create Post Tab
+                    CreatePostView(
+                        onBackClick: { navigateBack() },
+                        onPostClick: { postInput in
+                            // TODO: Handle post creation with postInput
+                            navigateTo(.home)
+                        }
+                    )
+                    .tag(BottomNavItem.post)
+                    .tabItem {
+                        Label("पोस्ट", systemImage: "plus.circle.fill")
+                    }
+                    
+                    // Reels Tab
+                    PlaceholderView(title: "Reels")
+                        .tag(BottomNavItem.reels)
+                        .tabItem {
+                            Label("रील्स", systemImage: "play.circle.fill")
+                        }
+                    
+                    // Profile Tab
+                    ProfileView(
+                        onBackClick: { navigateTo(.home); selectedTab = .home },
+                        onEditProfile: { navigateTo(.editProfile) },
+                        onSignOut: {
+                            currentScreen = .languageSelection
+                            navigationStack = []
+                            selectedTab = .home
+                        },
+                        reloadKey: profileReloadKey
+                    )
+                    .tag(BottomNavItem.profile)
+                    .tabItem {
+                        Label("प्रोफ़ाइल", systemImage: "person.fill")
+                    }
+                }
+                .onChange(of: selectedTab) { newValue in
+                    // Clear navigation stack when using bottom nav
+                    navigationStack = []
+                    switch newValue {
+                    case .home: currentScreen = .home
+                    case .search: currentScreen = .search
+                    case .post: currentScreen = .createPost
+                    case .reels: currentScreen = .reels
+                    case .profile: currentScreen = .profile
                     }
                 }
             } else {
                 ZStack {
-                    Color.appBackground.ignoresSafeArea()
+                    // Only ignore safe areas for fullscreen screens like CreateStory
+                    if case .createStory = currentScreen {
+                        Color.appBackground.ignoresSafeArea()
+                    } else {
+                        Color.appBackground
+                    }
                     
-                    // Show either auth flow, edit profile, or create story (which don't have bottom nav)
+                    // Show either auth flow, edit profile, create story, or user profile (which don't have bottom nav)
                     if case .editProfile = currentScreen {
                         mainAppContent
                     } else if case .createStory = currentScreen {
+                        mainAppContent
+                    } else if case .userProfile = currentScreen {
                         mainAppContent
                     } else {
                         authFlowContent
                     }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .animation(.easeInOut(duration: 0.2), value: hasCheckedSession)
@@ -170,14 +252,15 @@ struct ContentView: View {
             )
             
         case .search:
-            PlaceholderView(title: "Search")
+            SearchView(
+                onUserClick: { userId in navigateTo(.userProfile(userId: userId)) }
+            )
             
         case .createPost:
             CreatePostView(
                 onBackClick: { navigateBack() },
                 onPostClick: { postInput in
                     // TODO: Handle post creation with postInput
-                    // postInput contains: type, text, mediaItems, crops, hashtags, location, visibility, etc.
                     navigateTo(.home)
                 }
             )
@@ -193,12 +276,12 @@ struct ContentView: View {
             
         case .profile:
             ProfileView(
-                onBackClick: { navigateTo(.home); selectedNavItem = .home },
+                onBackClick: { navigateTo(.home); selectedTab = .home },
                 onEditProfile: { navigateTo(.editProfile) },
                 onSignOut: {
                     currentScreen = .languageSelection
                     navigationStack = []
-                    selectedNavItem = .home
+                    selectedTab = .home
                 },
                 reloadKey: profileReloadKey
             )
@@ -214,6 +297,30 @@ struct ContentView: View {
                 onNavigateToExpertDocument: { navigateTo(.expertDocumentUpload) }
             )
             
+        case .userProfile(let userId):
+            // Check if viewing own profile or another user's profile
+            let currentUserId = Auth.auth().currentUser?.uid
+            
+            if currentUserId == userId {
+                // Viewing own profile - show ProfileView
+                ProfileView(
+                    onBackClick: { navigateBack() },
+                    onEditProfile: { navigateTo(.editProfile) },
+                    onSignOut: {
+                        currentScreen = .languageSelection
+                        navigationStack = []
+                        selectedTab = .home
+                    },
+                    reloadKey: profileReloadKey
+                )
+            } else {
+                // Viewing another user's profile - show OtherUserProfileView
+                OtherUserProfileView(
+                    userId: userId,
+                    onBackClick: { navigateBack() }
+                )
+            }
+            
         default:
             EmptyView()
         }
@@ -223,13 +330,13 @@ struct ContentView: View {
         navigationStack.append(currentScreen)
         currentScreen = screen
         
-        // Update selected nav item when navigating to main screens
+        // Update selected tab when navigating to main screens
         switch screen {
-        case .home: selectedNavItem = .home
-        case .search: selectedNavItem = .search
-        case .createPost: selectedNavItem = .post
-        case .reels: selectedNavItem = .reels
-        case .profile: selectedNavItem = .profile
+        case .home: selectedTab = .home
+        case .search: selectedTab = .search
+        case .createPost: selectedTab = .post
+        case .reels: selectedTab = .reels
+        case .profile: selectedTab = .profile
         default: break
         }
     }
@@ -238,21 +345,20 @@ struct ContentView: View {
         if let previousScreen = navigationStack.popLast() {
             currentScreen = previousScreen
             
-            // Update selected nav item based on the previous screen
+            // Update selected tab based on the previous screen
             switch previousScreen {
-            case .home: selectedNavItem = .home
-            case .search: selectedNavItem = .search
-            case .createPost: selectedNavItem = .post
-            case .reels: selectedNavItem = .reels
-            case .profile: selectedNavItem = .profile
+            case .home: selectedTab = .home
+            case .search: selectedTab = .search
+            case .createPost: selectedTab = .post
+            case .reels: selectedTab = .reels
+            case .profile: selectedTab = .profile
             default: break
             }
         } else {
             // If stack is empty and we're on a main screen, navigate to home
-            // This handles the case when user clicks back from CreatePost after navigating via bottom nav
             if case .createPost = currentScreen {
                 currentScreen = .home
-                selectedNavItem = .home
+                selectedTab = .home
             }
         }
     }
@@ -263,7 +369,7 @@ struct PlaceholderView: View {
     
     var body: some View {
         ZStack {
-            Color.appBackground.ignoresSafeArea()
+            Color.appBackground
             Text("\(title) - Coming Soon")
                 .foregroundColor(.textSecondary)
         }

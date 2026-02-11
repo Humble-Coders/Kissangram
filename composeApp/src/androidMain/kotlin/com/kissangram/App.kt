@@ -3,7 +3,6 @@ package com.kissangram
 import android.annotation.SuppressLint
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -13,8 +12,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.google.firebase.auth.FirebaseAuth
-import com.kissangram.navigation.NavController
 import com.kissangram.navigation.Screen
 import com.kissangram.repository.AndroidPreferencesRepository
 import com.kissangram.ui.auth.ExpertDocumentUploadScreen
@@ -28,7 +32,9 @@ import com.kissangram.ui.home.components.BottomNavItem
 import com.kissangram.ui.home.components.KissangramBottomNavigation
 import com.kissangram.ui.languageselection.LanguageSelectionScreen
 import com.kissangram.ui.profile.EditProfileScreen
+import com.kissangram.ui.profile.OtherUserProfileScreen
 import com.kissangram.ui.profile.ProfileScreen
+import com.kissangram.ui.search.SearchScreen
 import com.kissangram.ui.createpost.CreatePostScreen
 import com.kissangram.ui.createstory.CreateStoryScreen
 import com.kissangram.repository.AndroidAuthRepository
@@ -40,6 +46,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.runtime.rememberCoroutineScope
+
 @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
 @Composable
 @Preview
@@ -47,41 +54,42 @@ fun App() {
     MaterialTheme {
         val context = LocalContext.current
         val prefs = remember(context) { AndroidPreferencesRepository(context.applicationContext) }
-        var initialScreen by remember { mutableStateOf<Screen?>(null) }
+        var startDestination by remember { mutableStateOf<String?>(null) }
         
         LaunchedEffect(Unit) {
-            initialScreen = withContext(Dispatchers.IO) {
+            startDestination = withContext(Dispatchers.IO) {
                 val completed = prefs.hasCompletedAuth()
                 val hasUser = FirebaseAuth.getInstance().currentUser != null
-                if (completed && hasUser) Screen.Home else Screen.LanguageSelection
+                if (completed && hasUser) Screen.HOME else Screen.LANGUAGE_SELECTION
             }
         }
         
-        val screen = initialScreen
-        if (screen == null) {
+        val destination = startDestination
+        if (destination == null) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
             return@MaterialTheme
         }
         
-        val navController = remember(screen) { NavController(screen) }
-        val currentScreen = navController.currentScreen
+        val navController = rememberNavController()
+        val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
         
         // Determine if we should show bottom navigation
-        val showBottomNav = currentScreen is Screen.Home ||
-                currentScreen is Screen.Search ||
-                currentScreen is Screen.CreatePost ||
-                currentScreen is Screen.Reels ||
-                currentScreen is Screen.Profile
-        // Note: EditProfile and CreateStory are excluded - they don't show bottom nav
+        val showBottomNav = currentRoute in listOf(
+            Screen.HOME,
+            Screen.SEARCH,
+            Screen.CREATE_POST,
+            Screen.REELS,
+            Screen.PROFILE
+        )
         
-        val selectedNavItem = when (currentScreen) {
-            is Screen.Home -> BottomNavItem.HOME
-            is Screen.Search -> BottomNavItem.SEARCH
-            is Screen.CreatePost -> BottomNavItem.POST
-            is Screen.Reels -> BottomNavItem.REELS
-            is Screen.Profile -> BottomNavItem.PROFILE
+        val selectedNavItem = when (currentRoute) {
+            Screen.HOME -> BottomNavItem.HOME
+            Screen.SEARCH -> BottomNavItem.SEARCH
+            Screen.CREATE_POST -> BottomNavItem.POST
+            Screen.REELS -> BottomNavItem.REELS
+            Screen.PROFILE -> BottomNavItem.PROFILE
             else -> BottomNavItem.HOME
         }
 
@@ -92,135 +100,187 @@ fun App() {
                         selectedItem = selectedNavItem,
                         onItemSelected = { item ->
                             when (item) {
-                                BottomNavItem.HOME -> navController.navigateTo(Screen.Home)
-                                BottomNavItem.SEARCH -> navController.navigateTo(Screen.Search)
-                                BottomNavItem.POST -> navController.navigateTo(Screen.CreatePost)
-                                BottomNavItem.REELS -> navController.navigateTo(Screen.Reels)
-                                BottomNavItem.PROFILE -> navController.navigateTo(Screen.Profile)
+                                BottomNavItem.HOME -> navController.navigate(Screen.HOME) {
+                                    // Save and restore state for bottom nav tabs
+                                    popUpTo(navController.graph.startDestinationId) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                                BottomNavItem.SEARCH -> navController.navigate(Screen.SEARCH) {
+                                    popUpTo(navController.graph.startDestinationId) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                                BottomNavItem.POST -> navController.navigate(Screen.CREATE_POST) {
+                                    popUpTo(navController.graph.startDestinationId) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                                BottomNavItem.REELS -> navController.navigate(Screen.REELS) {
+                                    popUpTo(navController.graph.startDestinationId) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                                BottomNavItem.PROFILE -> navController.navigate(Screen.PROFILE) {
+                                    popUpTo(navController.graph.startDestinationId) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
                             }
                         }
                     )
                 }
             ) {
                 Box(modifier = Modifier.fillMaxSize()) {
-                    MainAppContent(navController, currentScreen)
+                    NavigationGraph(navController = navController, startDestination = destination)
                 }
             }
-        }
-
-        else {
-            // Show either auth flow, edit profile, or create story (which don't have bottom nav)
-            if (currentScreen is Screen.EditProfile || currentScreen is Screen.CreateStory) {
-                MainAppContent(navController, currentScreen)
-            } else {
-                AuthFlowContent(navController, currentScreen)
-            }
+        } else {
+            // Show screens without bottom nav (auth flow, edit profile, create story, user profile)
+            NavigationGraph(navController = navController, startDestination = destination)
         }
     }
 }
 
 @Composable
-private fun AuthFlowContent(navController: NavController, currentScreen: Screen) {
-    when (currentScreen) {
-        is Screen.LanguageSelection -> {
+private fun NavigationGraph(navController: NavHostController, startDestination: String) {
+    // Track if profile should reload (after save from EditProfile)
+    var profileReloadKey by remember { mutableStateOf(0) }
+    
+    NavHost(
+        navController = navController,
+        startDestination = startDestination
+    ) {
+        // Auth Flow
+        composable(Screen.LANGUAGE_SELECTION) {
             LanguageSelectionScreen(
                 onLanguageSelected = { languageCode ->
-                    navController.navigateTo(Screen.PhoneNumber(languageCode))
+                    navController.navigate(Screen.buildPhoneNumberRoute(languageCode))
                 }
             )
         }
         
-        is Screen.PhoneNumber -> {
+        composable(
+            route = Screen.PHONE_NUMBER,
+            arguments = listOf(navArgument("languageCode") { defaultValue = "" })
+        ) { backStackEntry ->
+            val languageCode = backStackEntry.arguments?.getString("languageCode") ?: ""
             PhoneNumberScreen(
-                onBackClick = { navController.navigateBack() },
+                onBackClick = { navController.popBackStack() },
                 onOtpSent = { phoneNumber ->
-                    navController.navigateTo(Screen.Otp(phoneNumber))
+                    navController.navigate(Screen.buildOtpRoute(phoneNumber))
                 }
             )
         }
         
-        is Screen.Otp -> {
+        composable(
+            route = Screen.OTP,
+            arguments = listOf(navArgument("phoneNumber") { defaultValue = "" })
+        ) { backStackEntry ->
+            val phoneNumber = backStackEntry.arguments?.getString("phoneNumber") ?: ""
             OtpScreen(
-                phoneNumber = currentScreen.phoneNumber,
-                onBackClick = { navController.navigateBack() },
+                phoneNumber = phoneNumber,
+                onBackClick = { navController.popBackStack() },
                 onOtpVerified = {
-                    navController.navigateTo(Screen.Name)
+                    navController.navigate(Screen.NAME) {
+                        popUpTo(Screen.LANGUAGE_SELECTION) { inclusive = false }
+                    }
                 },
                 onResendOtp = {
-                    navController.navigateBack()
+                    navController.popBackStack()
                 }
             )
         }
         
-        is Screen.Name -> {
+        composable(Screen.NAME) {
             NameScreen(
                 onNameSaved = {
-                    navController.navigateTo(Screen.RoleSelection)
+                    navController.navigate(Screen.ROLE_SELECTION)
                 }
             )
         }
         
-        is Screen.RoleSelection -> {
+        composable(Screen.ROLE_SELECTION) {
             RoleSelectionScreen(
                 onRoleSelected = { selectedRole ->
                     if (selectedRole == UserRole.EXPERT) {
-                        navController.navigateTo(Screen.ExpertDocumentUpload)
+                        navController.navigate(Screen.EXPERT_DOCUMENT_UPLOAD)
                     } else {
-                        navController.navigateTo(Screen.Home)
+                        navController.navigate(Screen.HOME) {
+                            popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                        }
                     }
                 }
             )
         }
         
-        is Screen.ExpertDocumentUpload -> {
+        composable(Screen.EXPERT_DOCUMENT_UPLOAD) {
             ExpertDocumentUploadScreen(
                 onComplete = {
-                    navController.navigateTo(Screen.Home)
+                    navController.navigate(Screen.HOME) {
+                        popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                    }
                 },
                 onSkip = {
-                    navController.navigateTo(Screen.Home)
+                    navController.navigate(Screen.HOME) {
+                        popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                    }
                 }
             )
         }
         
-        else -> {}
-    }
-}
-
-@Composable
-private fun MainAppContent(navController: NavController, currentScreen: Screen) {
-    // Track if profile should reload (after save from EditProfile)
-    var profileReloadKey by remember { mutableStateOf(0) }
-    
-    when (currentScreen) {
-        is Screen.Home -> {
+        // Main App
+        composable(Screen.HOME) {
             HomeScreen(
-                onNavigateToNotifications = { navController.navigateTo(Screen.Notifications) },
-                onNavigateToMessages = { navController.navigateTo(Screen.Messages) },
-                onNavigateToProfile = { userId -> navController.navigateTo(Screen.UserProfile(userId)) },
-                onNavigateToStory = { userId -> navController.navigateTo(Screen.Story(userId)) },
-                onNavigateToCreateStory = { navController.navigateTo(Screen.CreateStory) },
-                onNavigateToPostDetail = { postId -> navController.navigateTo(Screen.PostDetail(postId)) },
-                onNavigateToComments = { postId -> navController.navigateTo(Screen.Comments(postId)) }
+                onNavigateToNotifications = { navController.navigate(Screen.NOTIFICATIONS) },
+                onNavigateToMessages = { navController.navigate(Screen.MESSAGES) },
+                onNavigateToProfile = { userId -> 
+                    navController.navigate(Screen.buildUserProfileRoute(userId))
+                },
+                onNavigateToStory = { userId -> 
+                    navController.navigate(Screen.buildStoryRoute(userId))
+                },
+                onNavigateToCreateStory = { navController.navigate(Screen.CREATE_STORY) },
+                onNavigateToPostDetail = { postId -> 
+                    navController.navigate(Screen.buildPostDetailRoute(postId))
+                },
+                onNavigateToComments = { postId -> 
+                    navController.navigate(Screen.buildCommentsRoute(postId))
+                }
             )
         }
         
-        is Screen.Search -> {
-            PlaceholderScreen("Search")
+        composable(Screen.SEARCH) {
+            SearchScreen(
+                onUserClick = { userId -> 
+                    navController.navigate(Screen.buildUserProfileRoute(userId))
+                }
+            )
         }
         
-        is Screen.CreatePost -> {
+        composable(Screen.CREATE_POST) {
             CreatePostScreen(
-                onBackClick = { navController.navigateBack() },
+                onBackClick = { navController.popBackStack() },
                 onPostClick = { postInput ->
                     // TODO: Handle post creation with postInput
-                    // postInput contains: type, text, mediaItems, crops, hashtags, location, visibility, etc.
-                    navController.navigateTo(Screen.Home)
+                    navController.navigate(Screen.HOME) {
+                        popUpTo(Screen.HOME) { inclusive = false }
+                    }
                 }
             )
         }
         
-        is Screen.CreateStory -> {
+        composable(Screen.CREATE_STORY) {
             val scope = rememberCoroutineScope()
             val context = LocalContext.current
             val authRepository = remember {
@@ -245,15 +305,16 @@ private fun MainAppContent(navController: NavController, currentScreen: Screen) 
             var isLoading by remember { mutableStateOf(false) }
             
             CreateStoryScreen(
-                onBackClick = { navController.navigateBack() },
+                onBackClick = { navController.popBackStack() },
                 onStoryClick = { storyInput ->
                     scope.launch {
                         try {
                             isLoading = true
                             createStoryUseCase(storyInput)
-                            navController.navigateTo(Screen.Home)
+                            navController.navigate(Screen.HOME) {
+                                popUpTo(Screen.HOME) { inclusive = false }
+                            }
                         } catch (e: Exception) {
-                            // Handle error - could show a snackbar
                             e.printStackTrace()
                             isLoading = false
                         }
@@ -263,39 +324,111 @@ private fun MainAppContent(navController: NavController, currentScreen: Screen) 
             )
         }
         
-        is Screen.Reels -> {
+        composable(Screen.REELS) {
             PlaceholderScreen("Reels")
         }
         
-        is Screen.Profile -> {
+        composable(Screen.PROFILE) {
             ProfileScreen(
-                onBackClick = { navController.navigateTo(Screen.Home) },
-                onEditProfile = { navController.navigateTo(Screen.EditProfile) },
-                onSignOut = { navController.replaceAllWith(Screen.LanguageSelection) },
+                onBackClick = { navController.navigate(Screen.HOME) },
+                onEditProfile = { navController.navigate(Screen.EDIT_PROFILE) },
+                onSignOut = { 
+                    navController.navigate(Screen.LANGUAGE_SELECTION) {
+                        popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                    }
+                },
                 reloadKey = profileReloadKey
             )
         }
         
-        is Screen.EditProfile -> {
+        composable(Screen.EDIT_PROFILE) {
             EditProfileScreen(
-                onBackClick = { navController.navigateBack() },
+                onBackClick = { navController.popBackStack() },
                 onSaveClick = {
-                    // Increment reload key to trigger ProfileScreen reload
                     profileReloadKey++
-                    navController.navigateBack()
+                    navController.popBackStack()
                 },
-                onNavigateToExpertDocument = { navController.navigateTo(Screen.ExpertDocumentUpload) }
+                onNavigateToExpertDocument = { navController.navigate(Screen.EXPERT_DOCUMENT_UPLOAD) }
             )
         }
         
-        else -> {}
+        composable(
+            route = Screen.USER_PROFILE,
+            arguments = listOf(navArgument("userId") { defaultValue = "" })
+        ) { backStackEntry ->
+            val userId = backStackEntry.arguments?.getString("userId") ?: ""
+            val context = LocalContext.current
+            val prefs = remember { AndroidPreferencesRepository(context.applicationContext) }
+            val authRepository = remember {
+                AndroidAuthRepository(
+                    context = context.applicationContext,
+                    activity = null,
+                    preferencesRepository = prefs
+                )
+            }
+            
+            val currentUserId = remember { 
+                FirebaseAuth.getInstance().currentUser?.uid 
+            }
+            
+            if (currentUserId == userId) {
+                ProfileScreen(
+                    onBackClick = { navController.popBackStack() },
+                    onEditProfile = { navController.navigate(Screen.EDIT_PROFILE) },
+                    onSignOut = { 
+                        navController.navigate(Screen.LANGUAGE_SELECTION) {
+                            popUpTo(0) { inclusive = true }
+                        }
+                    },
+                    reloadKey = profileReloadKey
+                )
+            } else {
+                OtherUserProfileScreen(
+                    userId = userId,
+                    onBackClick = { navController.popBackStack() }
+                )
+            }
+        }
+        
+        // Detail Screens (placeholders for now)
+        composable(
+            route = Screen.POST_DETAIL,
+            arguments = listOf(navArgument("postId") { defaultValue = "" })
+        ) { backStackEntry ->
+            val postId = backStackEntry.arguments?.getString("postId") ?: ""
+            PlaceholderScreen("Post Detail: $postId")
+        }
+        
+        composable(
+            route = Screen.COMMENTS,
+            arguments = listOf(navArgument("postId") { defaultValue = "" })
+        ) { backStackEntry ->
+            val postId = backStackEntry.arguments?.getString("postId") ?: ""
+            PlaceholderScreen("Comments: $postId")
+        }
+        
+        composable(
+            route = Screen.STORY,
+            arguments = listOf(navArgument("userId") { defaultValue = "" })
+        ) { backStackEntry ->
+            val userId = backStackEntry.arguments?.getString("userId") ?: ""
+            PlaceholderScreen("Story: $userId")
+        }
+        
+        composable(Screen.NOTIFICATIONS) {
+            PlaceholderScreen("Notifications")
+        }
+        
+        composable(Screen.MESSAGES) {
+            PlaceholderScreen("Messages")
+        }
     }
 }
 
 @Composable
 private fun PlaceholderScreen(title: String) {
     Box(
-        modifier = Modifier,
+        modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
         Text(text = "$title - Coming Soon")

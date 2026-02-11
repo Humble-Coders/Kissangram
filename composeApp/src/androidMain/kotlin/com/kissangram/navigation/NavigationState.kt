@@ -25,4 +25,77 @@ sealed class Screen {
     object Notifications : Screen()
     object Messages : Screen()
     object EditProfile : Screen()
+    
+    companion object {
+        // Route constants
+        const val LANGUAGE_SELECTION = "language_selection"
+        const val PHONE_NUMBER = "phone_number/{languageCode}"
+        const val OTP = "otp/{phoneNumber}"
+        const val NAME = "name"
+        const val ROLE_SELECTION = "role_selection"
+        const val EXPERT_DOCUMENT_UPLOAD = "expert_document_upload"
+        const val HOME = "home"
+        const val SEARCH = "search"
+        const val CREATE_POST = "create_post"
+        const val CREATE_STORY = "create_story"
+        const val REELS = "reels"
+        const val PROFILE = "profile"
+        const val POST_DETAIL = "post_detail/{postId}"
+        const val COMMENTS = "comments/{postId}"
+        const val USER_PROFILE = "user_profile/{userId}"
+        const val STORY = "story/{userId}"
+        const val NOTIFICATIONS = "notifications"
+        const val MESSAGES = "messages"
+        const val EDIT_PROFILE = "edit_profile"
+        
+        // Helper function to convert Screen to route
+        fun Screen.toRoute(): String {
+            return when (this) {
+                is LanguageSelection -> LANGUAGE_SELECTION
+                is PhoneNumber -> buildPhoneNumberRoute(languageCode)
+                is Otp -> buildOtpRoute(phoneNumber)
+                is Name -> NAME
+                is RoleSelection -> ROLE_SELECTION
+                is ExpertDocumentUpload -> EXPERT_DOCUMENT_UPLOAD
+                is Home -> HOME
+                is Search -> SEARCH
+                is CreatePost -> CREATE_POST
+                is CreateStory -> CREATE_STORY
+                is Reels -> REELS
+                is Profile -> PROFILE
+                is PostDetail -> buildPostDetailRoute(postId)
+                is Comments -> buildCommentsRoute(postId)
+                is UserProfile -> buildUserProfileRoute(userId)
+                is Story -> buildStoryRoute(userId)
+                is Notifications -> NOTIFICATIONS
+                is Messages -> MESSAGES
+                is EditProfile -> EDIT_PROFILE
+            }
+        }
+        
+        // Route builder functions
+        fun buildPhoneNumberRoute(languageCode: String): String {
+            return "phone_number/$languageCode"
+        }
+        
+        fun buildOtpRoute(phoneNumber: String): String {
+            return "otp/$phoneNumber"
+        }
+        
+        fun buildPostDetailRoute(postId: String): String {
+            return "post_detail/$postId"
+        }
+        
+        fun buildCommentsRoute(postId: String): String {
+            return "comments/$postId"
+        }
+        
+        fun buildUserProfileRoute(userId: String): String {
+            return "user_profile/$userId"
+        }
+        
+        fun buildStoryRoute(userId: String): String {
+            return "story/$userId"
+        }
+    }
 }

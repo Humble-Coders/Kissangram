@@ -3,18 +3,26 @@ import FirebaseFirestore
 import Shared
 
 /// iOS implementation of FollowRepository.
-/// Handles follow/unfollow operations using Firestore.
+/// Handles follow/unfollow operations using Firestore per FIRESTORE_SCHEMA.md.
+/// Includes denormalized user info in subcollections.
 final class IOSFollowRepository: FollowRepository {
     
     private let firestore = Firestore.firestore(database: "kissangram")
     private let authRepository: AuthRepository
+    private let userRepository: UserRepository
     
     private var usersCollection: CollectionReference {
         firestore.collection("users")
     }
     
-    init(authRepository: AuthRepository) {
+    init(authRepository: AuthRepository, userRepository: UserRepository? = nil) {
         self.authRepository = authRepository
+        // If userRepository is not provided, create a FirestoreUserRepository
+        if let userRepo = userRepository {
+            self.userRepository = userRepo
+        } else {
+            self.userRepository = FirestoreUserRepository(authRepository: authRepository)
+        }
     }
     
     func followUser(userId: String) async throws {
@@ -26,15 +34,43 @@ final class IOSFollowRepository: FollowRepository {
             throw NSError(domain: "IOSFollowRepository", code: 2, userInfo: [NSLocalizedDescriptionKey: "Cannot follow yourself"])
         }
         
+        // Get current user info for denormalization
+        guard let currentUser = try await userRepository.getCurrentUser() else {
+            throw NSError(domain: "IOSFollowRepository", code: 3, userInfo: [NSLocalizedDescriptionKey: "Current user not found"])
+        }
+        
+        // Get target user info for denormalization
+        guard let targetUser = try await userRepository.getUser(userId: userId) else {
+            throw NSError(domain: "IOSFollowRepository", code: 4, userInfo: [NSLocalizedDescriptionKey: "User not found"])
+        }
+        
         let batch = firestore.batch()
         
-        // Add to current user's following list
+        // Add to current user's following list with denormalized target user info
         let currentUserFollowingRef = usersCollection.document(currentUserId).collection("following").document(userId)
-        batch.setData(["userId": userId, "followedAt": FieldValue.serverTimestamp()], forDocument: currentUserFollowingRef)
+        let followingData: [String: Any] = [
+            "id": userId,
+            "name": targetUser.name,
+            "username": targetUser.username,
+            "profileImageUrl": targetUser.profileImageUrl ?? "",
+            "role": Self.roleToFirestore(targetUser.role),
+            "verificationStatus": Self.verificationStatusToFirestore(targetUser.verificationStatus),
+            "followedAt": FieldValue.serverTimestamp()
+        ]
+        batch.setData(followingData, forDocument: currentUserFollowingRef)
         
-        // Add to target user's followers list
+        // Add to target user's followers list with denormalized current user info
         let targetUserFollowersRef = usersCollection.document(userId).collection("followers").document(currentUserId)
-        batch.setData(["userId": currentUserId, "followedAt": FieldValue.serverTimestamp()], forDocument: targetUserFollowersRef)
+        let followerData: [String: Any] = [
+            "id": currentUserId,
+            "name": currentUser.name,
+            "username": currentUser.username,
+            "profileImageUrl": currentUser.profileImageUrl ?? "",
+            "role": Self.roleToFirestore(currentUser.role),
+            "verificationStatus": Self.verificationStatusToFirestore(currentUser.verificationStatus),
+            "followedAt": FieldValue.serverTimestamp()
+        ]
+        batch.setData(followerData, forDocument: targetUserFollowersRef)
         
         // Update follower/following counts
         let currentUserRef = usersCollection.document(currentUserId)
@@ -103,5 +139,28 @@ final class IOSFollowRepository: FollowRepository {
         let doc = try await followersRef.getDocument()
         
         return KotlinBoolean(value: doc.exists)
+    }
+    
+    // MARK: - Helper Methods
+    
+    private static func roleToFirestore(_ role: UserRole) -> String {
+        switch role {
+        case .farmer: return "farmer"
+        case .expert: return "expert"
+        case .agripreneur: return "agripreneur"
+        case .inputSeller: return "input_seller"
+        case .agriLover: return "agri_lover"
+        default: return "farmer"
+        }
+    }
+    
+    private static func verificationStatusToFirestore(_ status: VerificationStatus) -> String {
+        switch status {
+        case .unverified: return "unverified"
+        case .pending: return "pending"
+        case .verified: return "verified"
+        case .rejected: return "rejected"
+        default: return "unverified"
+        }
     }
 }

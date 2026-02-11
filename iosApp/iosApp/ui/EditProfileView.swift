@@ -76,118 +76,138 @@ struct EditProfileView: View {
     }
     
     var body: some View {
-        ZStack {
-            editProfileBackground.ignoresSafeArea()
-            
-            VStack(spacing: 0) {
-                // Top Bar
-                HStack {
-                    Button(action: { handleBackClick() }) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 20, weight: .semibold))
-                            .foregroundColor(.textPrimary)
-                            .frame(width: 40, height: 40)
-                            .background(Color.white)
-                            .clipShape(Circle())
-                    }
-                    Spacer()
-                    Text("Edit Profile")
-                        .font(.custom("Lora", size: 22.5))
-                        .fontWeight(.bold)
-                        .foregroundColor(.textPrimary)
-                    Spacer()
-                    Color.clear
-                        .frame(width: 40, height: 40)
-                }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 14)
-                .background(editProfileBackground)
-                .overlay(
-                    Rectangle()
-                        .frame(height: 1)
-                        .foregroundColor(Color.black.opacity(0.05)),
-                    alignment: .bottom
-                )
+        NavigationStack {
+            ZStack {
+                editProfileBackground
                 
-                if viewModel.isLoadingUser {
-                    // Loading state
-                    VStack {
-                        Spacer()
-                        ProgressView()
-                            .scaleEffect(1.5)
-                        Text("Loading profile...")
-                            .foregroundColor(.textSecondary)
-                            .padding(.top, 16)
-                        Spacer()
-                    }
-                } else {
-                    ScrollView {
-                        VStack(spacing: 27) {
-                            // Profile Image Section
-                            ProfileImageSection(
-                                profileImageUrl: viewModel.profileImageUrl,
-                                selectedImage: selectedImage,
-                                userName: viewModel.name.isEmpty ? "R" : String(viewModel.name.prefix(1)),
-                                onImageClick: { showImageSourceSheet = true }
-                            )
-                            .photosPicker(
-                                isPresented: $showImagePicker,
-                                selection: $selectedItem,
-                                matching: .images
-                            )
-                            .onChange(of: selectedItem) { newItem in
-                                Task {
-                                    if let newItem = newItem {
-                                        if let data = try? await newItem.loadTransferable(type: Data.self) {
-                                            if let uiImage = UIImage(data: data) {
-                                                await MainActor.run {
-                                                    selectedImage = uiImage
+                VStack(spacing: 0) {
+                    if viewModel.isLoadingUser {
+                        // Loading state
+                        VStack {
+                            Spacer()
+                            ProgressView()
+                                .scaleEffect(1.5)
+                            Text("Loading profile...")
+                                .foregroundColor(.textSecondary)
+                                .padding(.top, 16)
+                            Spacer()
+                        }
+                    } else {
+                        ScrollView {
+                            VStack(spacing: 27) {
+                                // Profile Image Section
+                                ProfileImageSection(
+                                    profileImageUrl: viewModel.profileImageUrl,
+                                    selectedImage: selectedImage,
+                                    userName: viewModel.name.isEmpty ? "R" : String(viewModel.name.prefix(1)),
+                                    onImageClick: { showImageSourceSheet = true }
+                                )
+                                .photosPicker(
+                                    isPresented: $showImagePicker,
+                                    selection: $selectedItem,
+                                    matching: .images
+                                )
+                                .onChange(of: selectedItem) { newItem in
+                                    Task {
+                                        if let newItem = newItem {
+                                            if let data = try? await newItem.loadTransferable(type: Data.self) {
+                                                if let uiImage = UIImage(data: data) {
+                                                    await MainActor.run {
+                                                        selectedImage = uiImage
+                                                    }
                                                 }
                                             }
                                         }
                                     }
                                 }
+                                
+                                // Basic Details Section
+                                BasicDetailsSection(
+                                    name: Binding(
+                                        get: { viewModel.name },
+                                        set: { viewModel.updateName($0) }
+                                    ),
+                                    username: viewModel.username,
+                                    bio: Binding(
+                                        get: { viewModel.bio },
+                                        set: { viewModel.updateBio($0) }
+                                    ),
+                                    role: Binding(
+                                        get: { viewModel.selectedRole },
+                                        set: { viewModel.onRoleSelected($0) }
+                                    ),
+                                    onRoleChange: { handleRoleChange($0) }
+                                )
+                                
+                                // Location Section with Village
+                                LocationSectionWithVillage(
+                                    viewModel: viewModel,
+                                    showStatePicker: $showStatePicker,
+                                    showDistrictPicker: $showDistrictPicker
+                                )
+                                
+                                // Crops Section
+                                CropsSection(
+                                    viewModel: viewModel,
+                                    selectedCrops: Binding(
+                                        get: { viewModel.selectedCrops },
+                                        set: { _ in } // Ignore sets, use toggleCrop instead
+                                    ),
+                                    onCropToggle: { viewModel.toggleCrop($0) }
+                                )
+                                
+                                // Add bottom padding to prevent content from being hidden behind the button
+                                Spacer()
+                                    .frame(height: 100)
                             }
-                            
-                            // Basic Details Section
-                            BasicDetailsSection(
-                                name: Binding(
-                                    get: { viewModel.name },
-                                    set: { viewModel.updateName($0) }
-                                ),
-                                username: viewModel.username,
-                                bio: Binding(
-                                    get: { viewModel.bio },
-                                    set: { viewModel.updateBio($0) }
-                                ),
-                                role: Binding(
-                                    get: { viewModel.selectedRole },
-                                    set: { viewModel.onRoleSelected($0) }
-                                ),
-                                onRoleChange: { handleRoleChange($0) }
-                            )
-                            
-                            // Location Section with Village
-                            LocationSectionWithVillage(
-                                viewModel: viewModel,
-                                showStatePicker: $showStatePicker,
-                                showDistrictPicker: $showDistrictPicker
-                            )
-                            
-                            // Crops Section
-                            CropsSection(
-                                viewModel: viewModel,
-                                selectedCrops: Binding(
-                                    get: { viewModel.selectedCrops },
-                                    set: { _ in } // Ignore sets, use toggleCrop instead
-                                ),
-                                onCropToggle: { viewModel.toggleCrop($0) }
-                            )
-                            
-                            Spacer(minLength: 100) // Space for bottom button
+                            .padding(.horizontal, 18)
+                            .padding(.top, 24)
+                            .padding(.bottom, 20)
                         }
-                        .padding(.horizontal, 18)
-                        .padding(.top, 24)
+                        .frame(maxHeight: .infinity)
+                    }
+                    
+                    // Bottom Save Button
+                    VStack(spacing: 0) {
+                        Rectangle()
+                            .frame(height: 1)
+                            .foregroundColor(Color.black.opacity(0.05))
+                        
+                        Button(action: handleSave) {
+                            HStack(spacing: 8) {
+                                if viewModel.isSaving {
+                                    ProgressView()
+                                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                        .scaleEffect(0.8)
+                                    Text("Saving...")
+                                        .font(.system(size: 18, weight: .bold))
+                                        .foregroundColor(.white)
+                                } else {
+                                    Text("Save Changes")
+                                        .font(.system(size: 18, weight: .bold))
+                                        .foregroundColor(.white)
+                                }
+                            }
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 63)
+                            .background(viewModel.isSaving ? Color.primaryGreen.opacity(0.5) : Color.primaryGreen)
+                            .cornerRadius(18)
+                        }
+                        .disabled(viewModel.isSaving)
+                        .padding(18)
+                        .background(editProfileBackground)
+                        .shadow(color: Color.black.opacity(0.08), radius: 10, x: 0, y: -2)
+                    }
+                }
+            }
+            .navigationTitle("Edit Profile")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: { handleBackClick() }) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundColor(.textPrimary)
                     }
                 }
             }
@@ -211,41 +231,6 @@ struct EditProfileView: View {
                     selectedImage = image
                 }
             }
-            
-            // Bottom Save Button
-            VStack {
-                Spacer()
-                VStack(spacing: 0) {
-                    Rectangle()
-                        .frame(height: 1)
-                        .foregroundColor(Color.black.opacity(0.05))
-                    
-                    Button(action: handleSave) {
-                        HStack(spacing: 8) {
-                            if viewModel.isSaving {
-                                ProgressView()
-                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                    .scaleEffect(0.8)
-                                Text("Saving...")
-                                    .font(.system(size: 18, weight: .bold))
-                                    .foregroundColor(.white)
-                            } else {
-                                Text("Save Changes")
-                                    .font(.system(size: 18, weight: .bold))
-                                    .foregroundColor(.white)
-                            }
-                        }
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 63)
-                        .background(viewModel.isSaving ? Color.primaryGreen.opacity(0.5) : Color.primaryGreen)
-                        .cornerRadius(18)
-                    }
-                    .disabled(viewModel.isSaving)
-                    .padding(18)
-                    .background(editProfileBackground)
-                    .shadow(color: Color.black.opacity(0.08), radius: 10, x: 0, y: -2)
-                }
-            }
         }
         .alert(isPresented: $showAlert) {
             Alert(
@@ -265,6 +250,7 @@ struct EditProfileView: View {
             Text("You have unsaved changes. Are you sure you want to go back?")
         }
     }
+       
 }
 
 struct ProfileImageSection: View {

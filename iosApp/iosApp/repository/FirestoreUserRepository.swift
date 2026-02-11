@@ -99,8 +99,47 @@ final class FirestoreUserRepository: UserRepository {
     }
 
     func searchUsers(query: String, limit: Int32) async throws -> [UserInfo] {
-        // TODO: Implement user search
-        return []
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedQuery.isEmpty else {
+            return []
+        }
+        
+        let searchTerm = trimmedQuery.lowercased()
+        // Allow single character searches for live incremental search (A -> An -> Ansh)
+        
+        do {
+            let querySnapshot = try await usersCollection
+                .whereField(Self.fieldSearchKeywords, arrayContains: searchTerm)
+                .whereField(Self.fieldIsActive, isEqualTo: true)
+                // TODO: Uncomment after creating Firestore composite index
+                // Create index in Firebase Console: Collection: users, Fields: searchKeywords (Arrays), isActive (Ascending), followersCount (Descending)
+                // Or use the link from the error message when it appears
+                // .order(by: Self.fieldFollowersCount, descending: true)
+                .limit(to: Int(limit))
+                .getDocuments()
+            
+            return querySnapshot.documents.compactMap { doc in
+                let data = doc.data()
+                let id = doc.documentID
+                guard let name = data[Self.fieldName] as? String else { return nil }
+                let username = data[Self.fieldUsername] as? String ?? ""
+                let profileImageUrl = data[Self.fieldProfileImageUrl] as? String
+                let roleStr = data[Self.fieldRole] as? String ?? "farmer"
+                let statusStr = data[Self.fieldVerificationStatus] as? String ?? "unverified"
+                
+                return UserInfo(
+                    id: id,
+                    name: name,
+                    username: username,
+                    profileImageUrl: profileImageUrl,
+                    role: Self.firestoreToRole(roleStr),
+                    verificationStatus: Self.firestoreToVerificationStatus(statusStr)
+                )
+            }
+        } catch {
+            print("Error searching users: \(error.localizedDescription)")
+            return []
+        }
     }
 
     func updateProfile(

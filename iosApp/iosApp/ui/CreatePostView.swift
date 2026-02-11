@@ -100,13 +100,25 @@ struct CreatePostView: View {
     }
     
     var body: some View {
-        ZStack {
-            Color.appBackground.ignoresSafeArea()
-            
-            VStack(spacing: 0) {
-                topBar
-                contentScrollView
-                bottomPostButton
+        NavigationStack {
+            ZStack {
+                Color.appBackground
+                
+                VStack(spacing: 0) {
+                    contentScrollView
+                    bottomPostButton
+                }
+            }
+            .navigationTitle("Create Post")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: onBackClick) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundColor(.textPrimary)
+                    }
+                }
             }
         }
         .sheet(isPresented: $showCamera) {
@@ -143,45 +155,11 @@ struct CreatePostView: View {
         }
     }
     
-    // MARK: - Top Bar
-    private var topBar: some View {
-        HStack {
-            Button(action: onBackClick) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 27))
-                    .foregroundColor(.textPrimary)
-                    .frame(width: 45, height: 45)
-            }
-            
-            Spacer()
-            
-            Text("Create Post")
-                .font(.custom("Lora-SemiBold", size: 20.25))
-                .foregroundColor(.textPrimary)
-            
-            Spacer()
-            
-            Color.clear
-                .frame(width: 45, height: 45)
-        }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 9)
-        .frame(height: 73)
-        .background(Color.appBackground)
-        .overlay(
-            Rectangle()
-                .frame(height: 1.18)
-                .foregroundColor(Color.black.opacity(0.05)),
-            alignment: .bottom
-        )
-    }
-    
     // MARK: - Content Scroll View
     private var contentScrollView: some View {
         ScrollView {
-            VStack(spacing: 18) {
+            VStack(spacing: 27) {
                 PostTypeToggle(selectedType: $postType)
-                    .padding(.top, 18)
                 
                 mediaSelectionButtons
                 
@@ -214,7 +192,10 @@ struct CreatePostView: View {
                 )
             }
             .padding(.horizontal, 18)
+            .padding(.top, 24)
+            .padding(.bottom, 20)
         }
+        .frame(maxHeight: .infinity)
     }
     
     // MARK: - Media Selection Buttons
@@ -322,6 +303,14 @@ struct CreatePostView: View {
                 .background(Color.black.opacity(0.05))
             
             Button(action: {
+                // Sync View's state to ViewModel before creating post
+                viewModel.postType = postType
+                viewModel.caption = caption
+                viewModel.mediaItems = mediaItems
+                viewModel.hashtags = hashtags
+                viewModel.visibility = visibility
+                viewModel.targetExpertise = targetExpertise
+                
                 viewModel.createPost(
                     onSuccess: {
                         // Navigate back on success
@@ -1138,6 +1127,21 @@ struct MediaPicker: UIViewControllerRepresentable {
     let mediaTypes: [String]
     let onImagePicked: ((UIImage) -> Void)?
     let onVideoPicked: ((URL) -> Void)?
+    let allowsEditing: Bool // Allow editing to be configurable
+    
+    init(
+        sourceType: UIImagePickerController.SourceType,
+        mediaTypes: [String],
+        allowsEditing: Bool = true,
+        onImagePicked: ((UIImage) -> Void)? = nil,
+        onVideoPicked: ((URL) -> Void)? = nil
+    ) {
+        self.sourceType = sourceType
+        self.mediaTypes = mediaTypes
+        self.allowsEditing = allowsEditing
+        self.onImagePicked = onImagePicked
+        self.onVideoPicked = onVideoPicked
+    }
     
     func makeUIViewController(context: Context) -> UIImagePickerController {
         let picker = UIImagePickerController()
@@ -1166,10 +1170,23 @@ struct MediaPicker: UIViewControllerRepresentable {
         }
         
         picker.delegate = context.coordinator
-        picker.allowsEditing = true
+        
+        // Configure editing behavior
+        // Note: UIImagePickerController doesn't support selective editing per media type
+        // When both image and video types are available:
+        // - Videos will show trim screen if allowsEditing = true
+        // - Images will show crop screen if allowsEditing = true
+        // Since we want videos to have edit screen but not photos, we need to handle this carefully
+        // For story creation: We want video edit screen but no photo edit screen
+        // Solution: Set allowsEditing based on the allowsEditing parameter
+        // The caller should set allowsEditing = true only when videos are expected
+        picker.allowsEditing = allowsEditing
+        
+        // Check if video is available
+        let hasVideo = picker.mediaTypes.contains(UTType.movie.identifier)
         
         // Only set video settings if video is available
-        if picker.mediaTypes.contains(UTType.movie.identifier) {
+        if hasVideo {
             picker.cameraCaptureMode = .video
             picker.videoQuality = .typeHigh
             picker.videoMaximumDuration = 60 // 60 seconds max

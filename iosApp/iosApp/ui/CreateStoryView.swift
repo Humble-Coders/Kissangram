@@ -25,6 +25,9 @@ enum StoryVisibility {
 
 // MARK: - Create Story View
 struct CreateStoryView: View {
+    // ViewModel - handles all business logic and repository management
+    @StateObject private var viewModel = CreateStoryViewModel()
+    
     // State
     @State private var selectedMediaUrl: URL? = nil
     @State private var mediaType: MediaType? = nil
@@ -44,13 +47,12 @@ struct CreateStoryView: View {
     @State private var imagePickerSourceType: UIImagePickerController.SourceType = .camera
     @State private var selectedPhotos: [PhotosPickerItem] = []
     @State private var showCameraUnavailableAlert = false
-    @State private var isCreatingStory = false
     
     var onBackClick: () -> Void = {}
-    var onStoryClick: (Shared.CreateStoryInput) -> Void = { _ in }
+    var onStoryCreated: () -> Void = {}
     
     private var isStoryEnabled: Bool {
-        selectedMediaUrl != nil
+        selectedMediaUrl != nil && !viewModel.isCreatingStory
     }
     
     var body: some View {
@@ -129,7 +131,8 @@ struct CreateStoryView: View {
                         .foregroundColor(.white)
                     
                     HStack(spacing: 16) {
-                        // Camera Button
+                        // Camera Button - Opens picker that supports both photos and videos
+                        // Videos will show edit screen, photos will go directly to final screen
                         StoryMediaSelectionButton(
                             icon: "camera.fill",
                             label: "Camera",
@@ -143,7 +146,7 @@ struct CreateStoryView: View {
                             }
                         )
                         
-                        // Gallery Button
+                        // Gallery Button - Uses PhotosPicker (no edit screen, goes directly to final screen)
                         StoryMediaSelectionButton(
                             icon: "photo.fill",
                             label: "Gallery",
@@ -212,11 +215,41 @@ struct CreateStoryView: View {
                 .allowsHitTesting(selectedMediaUrl != nil) // Disable interaction when hidden
                 .animation(.easeInOut(duration: 0.2), value: selectedMediaUrl != nil)
             }
+            
+            // Loading Overlay
+            if viewModel.isCreatingStory {
+                ZStack {
+                    Color.black.opacity(0.5)
+                        .ignoresSafeArea()
+                    
+                    VStack(spacing: 16) {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            .scaleEffect(1.5)
+                        
+                        Text("Creating story...")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.white)
+                    }
+                    .padding(24)
+                    .background(Color.black.opacity(0.7))
+                    .cornerRadius(12)
+                }
+            }
+        }
+        .alert("Error", isPresented: $viewModel.showError) {
+            Button("OK") {
+                viewModel.errorMessage = nil
+            }
+        } message: {
+            Text(viewModel.errorMessage ?? "Unknown error occurred")
         }
         .sheet(isPresented: $showCamera) {
+            // Camera picker: Allow editing for videos (trim screen), but not for photos
             MediaPicker(
                 sourceType: imagePickerSourceType,
                 mediaTypes: [UTType.image.identifier, UTType.movie.identifier],
+                allowsEditing: true, // Videos will show trim screen, photos won't show edit screen (iOS handles this)
                 onImagePicked: { image in
                     saveImageToTempFile(image: image) { url in
                         if let url = url {
@@ -232,9 +265,11 @@ struct CreateStoryView: View {
             )
         }
         .sheet(isPresented: $showImagePicker) {
+            // Image picker: Allow editing for videos (trim screen), but not for photos
             MediaPicker(
                 sourceType: imagePickerSourceType,
                 mediaTypes: [UTType.image.identifier, UTType.movie.identifier],
+                allowsEditing: true, // Videos will show trim screen, photos won't show edit screen (iOS handles this)
                 onImagePicked: { image in
                     saveImageToTempFile(image: image) { url in
                         if let url = url {
@@ -357,97 +392,53 @@ struct CreateStoryView: View {
         }
         
         Task {
-            // Read media data
-            var mediaData: Data?
-            var thumbnailData: Data?
-            
-            if mediaTypeValue == .image {
-                if let imageData = try? Data(contentsOf: mediaUrl) {
-                    mediaData = imageData
-                    thumbnailData = imageData // For images, thumbnail is same as image
+            do {
+                // Convert local MediaType to Shared.MediaType
+                let sharedMediaType: Shared.MediaType = mediaTypeValue == .image ? .image : .video
+                
+                // Convert iOS text overlays to Shared text overlays
+                let sharedTextOverlays = textOverlays.map { overlay in
+                    Shared.StoryTextOverlay(
+                        id: overlay.id.uuidString,
+                        text: overlay.text,
+                        positionX: overlay.positionX,
+                        positionY: overlay.positionY,
+                        fontSize: overlay.fontSize,
+                        textColor: Int64(overlay.textColor),
+                        rotation: overlay.rotation,
+                        scale: overlay.scale
+                    )
                 }
-            } else {
-                // For video, read video data and generate thumbnail
-                if let videoData = try? Data(contentsOf: mediaUrl) {
-                    mediaData = videoData
-                    // Generate thumbnail from video
-                    let asset = AVAsset(url: mediaUrl)
-                    let imageGenerator = AVAssetImageGenerator(asset: asset)
-                    imageGenerator.appliesPreferredTrackTransform = true
-                    if let cgImage = try? await imageGenerator.image(at: CMTime.zero).image,
-                       let thumbnailImageData = UIImage(cgImage: cgImage).jpegData(compressionQuality: 0.8) {
-                        thumbnailData = thumbnailImageData
-                    }
+                
+                // Convert iOS location to Shared location
+                let sharedLocation = location.map { loc in
+                    Shared.CreateStoryLocation(
+                        name: loc.name,
+                        latitude: loc.latitude != nil ? KotlinDouble(value: loc.latitude!) : nil,
+                        longitude: loc.longitude != nil ? KotlinDouble(value: loc.longitude!) : nil
+                    )
                 }
-            }
-            
-            guard let finalMediaData = mediaData else {
-                return
-            }
-            
-            // Convert Data to KotlinByteArray (using same pattern as CreatePostViewModel)
-            let kotlinMediaData = KotlinByteArray(size: Int32(finalMediaData.count))
-            finalMediaData.withUnsafeBytes { bytes in
-                for (i, b) in bytes.enumerated() {
-                    kotlinMediaData.set(index: Int32(i), value: Int8(bitPattern: b))
-                }
-            }
-            
-            // Convert thumbnail data to KotlinByteArray if present
-            let kotlinThumbnailData: KotlinByteArray? = thumbnailData.map { data in
-                let kotlinArray = KotlinByteArray(size: Int32(data.count))
-                data.withUnsafeBytes { bytes in
-                    for (i, b) in bytes.enumerated() {
-                        kotlinArray.set(index: Int32(i), value: Int8(bitPattern: b))
-                    }
-                }
-                return kotlinArray
-            }
-            
-            // Convert iOS text overlays to Shared text overlays
-            let sharedTextOverlays = textOverlays.map { overlay in
-                Shared.StoryTextOverlay(
-                    id: overlay.id.uuidString,
-                    text: overlay.text,
-                    positionX: overlay.positionX,
-                    positionY: overlay.positionY,
-                    fontSize: overlay.fontSize,
-                    textColor: Int64(overlay.textColor),
-                    rotation: overlay.rotation,
-                    scale: overlay.scale
+                
+                // Use ViewModel to build story input with proper media handling
+                let storyInput = try await viewModel.buildStoryInput(
+                    mediaUrl: mediaUrl,
+                    mediaType: sharedMediaType,
+                    textOverlays: sharedTextOverlays,
+                    location: sharedLocation,
+                    visibility: visibility
                 )
+                
+                // Use ViewModel to create the story
+                await viewModel.createStory(input: storyInput)
+                
+                // If successful, call the callback
+                if !viewModel.isCreatingStory && viewModel.errorMessage == nil {
+                    onStoryCreated()
+                }
+            } catch {
+                // Error is handled by ViewModel and shown via errorMessage
+                print("Failed to create story: \(error.localizedDescription)")
             }
-            
-            // Convert iOS location to Shared location
-            let sharedLocation = location.map { loc in
-                Shared.CreateStoryLocation(
-                    name: loc.name,
-                    latitude: loc.latitude != nil ? KotlinDouble(value: loc.latitude!) : nil,
-                    longitude: loc.longitude != nil ? KotlinDouble(value: loc.longitude!) : nil
-                )
-            }
-            
-            // Convert media type
-            let sharedMediaType: Shared.MediaType = mediaTypeValue == .image ? .image : .video
-            
-            // Convert visibility
-            let sharedVisibility: Shared.PostVisibility = visibility == .public ? .public_ : .followers
-            
-            // Create Shared.CreateStoryInput (using Swift array, Kotlin/Native will convert automatically)
-            let storyInput = Shared.CreateStoryInput(
-                mediaData: kotlinMediaData,
-                mediaType: sharedMediaType,
-                thumbnailData: kotlinThumbnailData,
-                textOverlays: sharedTextOverlays,
-                location: sharedLocation,
-                visibility: sharedVisibility
-            )
-            
-            // Set loading state and call the callback
-            await MainActor.run {
-                isCreatingStory = true
-            }
-            onStoryClick(storyInput)
         }
     }
 }
@@ -470,7 +461,7 @@ struct StoryMediaSelectionButton: View {
                     .foregroundColor(.white)
             }
             .frame(width: 120, height: 120)
-            .background(Color.primaryGreen)
+            .background(Color(red: 0.176, green: 0.416, blue: 0.310))
             .cornerRadius(12)
         }
     }
@@ -523,7 +514,7 @@ struct DraggableTextOverlayView: View {
             HStack(spacing: 8) {
                 Text(overlay.text)
                     .font(.system(size: max(CGFloat(liveFontSize), 24), weight: .bold))
-                    .foregroundColor(Color(hex: overlay.textColor))
+                    .foregroundColor(colorFromHex(overlay.textColor))
                     .fixedSize()
             }
             .padding(.horizontal, 12)
@@ -763,10 +754,10 @@ struct BottomActionBarView: View {
                     VStack(spacing: 4) {
                         Image(systemName: "location.fill")
                             .font(.system(size: 28))
-                            .foregroundColor(location != nil ? Color.primaryGreen : .white)
+                            .foregroundColor(location != nil ? Color(red: 0.176, green: 0.416, blue: 0.310) : .white)
                         Text("Location")
                             .font(.system(size: 12))
-                            .foregroundColor(location != nil ? Color.primaryGreen : .white)
+                            .foregroundColor(location != nil ? Color(red: 0.176, green: 0.416, blue: 0.310) : .white)
                     }
                 }
             }
@@ -777,7 +768,7 @@ struct BottomActionBarView: View {
                     HStack {
                         Image(systemName: "location.fill")
                             .font(.system(size: 20))
-                            .foregroundColor(.primaryGreen)
+                            .foregroundColor(Color(red: 0.176, green: 0.416, blue: 0.310))
                         
                         Text(location.name)
                             .font(.system(size: 14))
@@ -790,7 +781,7 @@ struct BottomActionBarView: View {
                             .foregroundColor(.white)
                     }
                     .padding(12)
-                    .background(Color.primaryGreen.opacity(0.2))
+                    .background(Color(red: 0.176, green: 0.416, blue: 0.310).opacity(0.2))
                     .cornerRadius(8)
                 }
             }
@@ -805,7 +796,7 @@ struct BottomActionBarView: View {
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
-                    .background(isShareEnabled ? Color.primaryGreen : Color.gray)
+                    .background(isShareEnabled ? Color(red: 0.176, green: 0.416, blue: 0.310) : Color.gray)
                     .cornerRadius(12)
             }
             .disabled(!isShareEnabled)
@@ -853,12 +844,12 @@ struct TextOverlayInputSheet: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Text Color")
                         .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.textPrimary)
+                        .foregroundColor(Color(red: 0.106, green: 0.106, blue: 0.106))
                     
                     HStack(spacing: 8) {
                         ForEach(colorOptions, id: \.0) { color, label in
                             ColorOptionView(
-                                color: Color(hex: color),
+                                color: colorFromHex(color),
                                 isSelected: selectedColor == color,
                                 onClick: { selectedColor = color }
                             )
@@ -901,7 +892,7 @@ struct ColorOptionView: View {
                 .frame(width: 40, height: 40)
                 .overlay(
                     Circle()
-                        .stroke(isSelected ? Color.primaryGreen : Color.gray, lineWidth: isSelected ? 3 : 1)
+                        .stroke(isSelected ? Color(red: 0.176, green: 0.416, blue: 0.310) : Color.gray, lineWidth: isSelected ? 3 : 1)
                 )
         }
     }
@@ -989,11 +980,11 @@ struct VisibilityButtonStyle: ButtonStyle {
         ZStack {
             // Background
             RoundedRectangle(cornerRadius: 22)
-                .fill(isSelected ? Color.primaryGreen : Color.black.opacity(0.5))
+                .fill(isSelected ? Color(red: 0.176, green: 0.416, blue: 0.310) : Color.black.opacity(0.5))
                 .overlay(
                     RoundedRectangle(cornerRadius: 22)
                         .stroke(
-                            isSelected ? Color.clear : Color.primaryGreen.opacity(0.7),
+                            isSelected ? Color.clear : Color(red: 0.176, green: 0.416, blue: 0.310).opacity(0.7),
                             lineWidth: 2
                         )
                 )
@@ -1044,6 +1035,33 @@ struct StoryMovie: Transferable {
             try FileManager.default.copyItem(at: received.file, to: copy)
             return StoryMovie(url: copy)
         }
+    }
+}
+
+// MARK: - Helper Function for Hex Color Conversion
+private func colorFromHex(_ hex: UInt64) -> Color {
+    // Check if hex includes alpha (8-digit: AARRGGBB)
+    let hasAlpha = hex > 0xFFFFFF
+    
+    if hasAlpha {
+        // 8-digit hex with alpha: AARRGGBB
+        let actualAlpha = Double((hex >> 24) & 0xFF) / 255.0
+        return Color(
+            .sRGB,
+            red: Double((hex >> 16) & 0xFF) / 255.0,
+            green: Double((hex >> 8) & 0xFF) / 255.0,
+            blue: Double(hex & 0xFF) / 255.0,
+            opacity: actualAlpha
+        )
+    } else {
+        // 6-digit hex without alpha: RRGGBB
+        return Color(
+            .sRGB,
+            red: Double((hex >> 16) & 0xFF) / 255.0,
+            green: Double((hex >> 8) & 0xFF) / 255.0,
+            blue: Double(hex & 0xFF) / 255.0,
+            opacity: 1.0
+        )
     }
 }
 

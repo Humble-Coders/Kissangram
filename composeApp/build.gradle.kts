@@ -32,6 +32,9 @@ kotlin {
             implementation("com.google.accompanist:accompanist-swiperefresh:0.32.0")
             implementation("com.google.android.gms:play-services-location:21.3.0")
             implementation("com.cloudinary:cloudinary-android:3.1.2")
+            
+            // Navigation Compose
+            implementation("androidx.navigation:navigation-compose:2.8.0")
 
 
         }
