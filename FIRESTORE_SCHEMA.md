@@ -53,6 +53,7 @@ ROOT COLLECTIONS
 │   └── {userId}
 │       ├── followers/{followerId}
 │       ├── following/{followingId}
+│       ├── feed/{postId}
 │       ├── savedPosts/{postId}
 │       ├── notifications/{notificationId}
 │       └── blockedUsers/{blockedUserId}
@@ -240,6 +241,41 @@ ROOT COLLECTIONS
   blockedAt: Timestamp,
 }
 ```
+
+#### Subcollection: Feed
+
+**Path:** `/users/{userId}/feed/{postId}`
+
+Populated by the `onPostCreate` Cloud Function (fan-out). Each document is a copy of a post for the home feed. Document ID = postId.
+
+```javascript
+{
+  id: "post123",
+  authorId: "user123",
+  authorName: "Rajesh Kumar",
+  authorUsername: "rajesh_farmer",
+  authorProfileImageUrl: "https://...",
+  authorRole: "farmer",
+  authorVerificationStatus: "unverified",
+  type: "normal",
+  text: "My wheat crop is ready for harvest! 🌾",
+  media: [...],
+  voiceCaption: null,
+  crops: ["wheat"],
+  hashtags: ["#wheat", "#harvest"],
+  location: { name: "...", geoPoint: GeoPoint(...) },
+  question: null,
+  likesCount: 0,
+  commentsCount: 0,
+  savesCount: 0,
+  createdAt: Timestamp,
+  updatedAt: Timestamp,
+  isActive: true,
+}
+```
+
+- **Read**: Owner only (each user reads their own feed).
+- **Create/Update/Delete**: Cloud Functions only (client cannot write).
 
 ---
 
@@ -1010,6 +1046,12 @@ service cloud.firestore {
       match /blockedUsers/{blockedId} {
         allow read, write: if isOwner(userId);
       }
+      
+      // Feed (fan-out from onPostCreate; read-only for owner, write by Cloud Functions only)
+      match /feed/{postId} {
+        allow read: if isOwner(userId);
+        allow create, update, delete: if false;
+      }
     }
     
     // Posts
@@ -1099,6 +1141,12 @@ service cloud.firestore {
     match /reports/{reportId} {
       allow create: if isAuthenticated();
       allow read, update, delete: if false;  // Admin only via console
+    }
+    
+    // App config (reference data: appConfig/crops, appConfig/locations)
+    match /appConfig/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();  // Dev upload from app; restrict in production if needed
     }
     
     // Crops (read-only reference data)

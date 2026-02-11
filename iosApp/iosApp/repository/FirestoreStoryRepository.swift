@@ -68,7 +68,9 @@ final class FirestoreStoryRepository: StoryRepository {
     
     
     func getStoryBar() async throws -> [UserStories] {
-        throw NSError(domain: "FirestoreStoryRepository", code: 501, userInfo: [NSLocalizedDescriptionKey: "Not yet implemented"])
+        // TODO: Implement story bar (query stories from followed users, group by author)
+        // Return empty so home screen shows real feed without dummy story data
+        return []
     }
 
     func getStoriesForUser(userId: String) async throws -> [Story] {

@@ -1,4 +1,5 @@
 import SwiftUI
+import os.log
 import Shared
 
 // MARK: - Colors
@@ -11,6 +12,8 @@ extension Color {
     static let expertGreen = Color(red: 0.455, green: 0.765, blue: 0.396)
     static let errorRed = Color(red: 0.737, green: 0.278, blue: 0.286)
 }
+
+private let homeViewLog = Logger(subsystem: "com.kissangram", category: "HomeView")
 
 struct HomeView: View {
     @StateObject private var viewModel = HomeViewModel()
@@ -97,6 +100,18 @@ struct HomeView: View {
                         }
                         .scrollContentBackground(.hidden)
                     }
+                }
+                .onAppear {
+                    homeViewLog.debug("HomeView onAppear: posts=\(viewModel.posts.count) isLoading=\(viewModel.isLoading) error=\(viewModel.error ?? "nil")")
+                }
+                .onChange(of: viewModel.posts.count) { _ in
+                    homeViewLog.debug("HomeView uiState: posts=\(viewModel.posts.count) isLoading=\(viewModel.isLoading) error=\(viewModel.error ?? "nil")")
+                }
+                .onChange(of: viewModel.isLoading) { _ in
+                    homeViewLog.debug("HomeView uiState: posts=\(viewModel.posts.count) isLoading=\(viewModel.isLoading) error=\(viewModel.error ?? "nil")")
+                }
+                .onChange(of: viewModel.error) { _ in
+                    homeViewLog.debug("HomeView uiState: posts=\(viewModel.posts.count) isLoading=\(viewModel.isLoading) error=\(viewModel.error ?? "nil")")
                 }
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {

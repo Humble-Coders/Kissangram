@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import android.util.Log
 import com.kissangram.ui.home.components.*
 import com.kissangram.viewmodel.HomeViewModel
 import com.google.accompanist.swiperefresh.SwipeRefresh
@@ -42,6 +43,10 @@ fun HomeScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val listState = rememberLazyListState()
+
+    LaunchedEffect(uiState.posts.size, uiState.isLoading, uiState.error) {
+        Log.d("HomeScreen", "uiState: posts=${uiState.posts.size} isLoading=${uiState.isLoading} error=${uiState.error}")
+    }
     
     // Dev: Upload locations state
     var showUploadDialog by remember { mutableStateOf(false) }

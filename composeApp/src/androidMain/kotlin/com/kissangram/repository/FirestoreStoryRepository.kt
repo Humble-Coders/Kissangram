@@ -68,9 +68,9 @@ class FirestoreStoryRepository(
     }
     
     override suspend fun getStoryBar(): List<UserStories> {
-        // TODO: Implement story bar retrieval
-        // Query stories from followed users, group by author
-        throw UnsupportedOperationException("Not yet implemented")
+        // TODO: Implement story bar retrieval (query stories from followed users, group by author)
+        // Return empty until implemented so home screen shows real feed without dummy story data
+        return emptyList()
     }
     
     override suspend fun getStoriesForUser(userId: String): List<Story> {

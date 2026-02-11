@@ -5,13 +5,16 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.kissangram.model.Post
 import com.kissangram.model.UserStories
-import com.kissangram.repository.MockFeedRepository
+import com.kissangram.repository.AndroidAuthRepository
+import com.kissangram.repository.AndroidPreferencesRepository
+import com.kissangram.repository.FirestoreFeedRepository
+import com.kissangram.repository.FirestoreStoryRepository
 import com.kissangram.repository.MockPostRepository
-import com.kissangram.repository.MockStoryRepository
 import com.kissangram.usecase.GetHomeFeedUseCase
 import com.kissangram.usecase.GetStoryBarUseCase
 import com.kissangram.usecase.LikePostUseCase
 import com.kissangram.usecase.SavePostUseCase
+import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,11 +27,15 @@ import com.kissangram.data.CropsData
 class HomeViewModel(
     application: Application
 ) : AndroidViewModel(application) {
-    
-    // Repositories (using mock for now)
-    private val feedRepository = MockFeedRepository()
+
+    private val authRepository = AndroidAuthRepository(
+        context = application,
+        activity = null,
+        preferencesRepository = AndroidPreferencesRepository(application)
+    )
+    private val feedRepository = FirestoreFeedRepository(authRepository = authRepository)
     private val postRepository = MockPostRepository()
-    private val storyRepository = MockStoryRepository()
+    private val storyRepository = FirestoreStoryRepository()
     
     // Use cases
     private val getHomeFeedUseCase = GetHomeFeedUseCase(feedRepository)
@@ -40,24 +47,29 @@ class HomeViewModel(
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
     
     init {
+        Log.d(TAG, "init: HomeViewModel created, calling loadContent()")
         loadContent()
     }
     
     fun loadContent() {
         viewModelScope.launch {
+            Log.d(TAG, "loadContent: start, setting isLoading=true")
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
-            
+            val userId = authRepository.getCurrentUserId()
+            Log.d(TAG, "loadContent: currentUserId=${userId?.take(8)?.plus("...") ?: "null"}")
             try {
-                // Load stories and posts in parallel
                 val stories = getStoryBarUseCase()
+                Log.d(TAG, "loadContent: stories count=${stories.size}")
                 val posts = getHomeFeedUseCase(page = 0)
-                
+                Log.d(TAG, "loadContent: posts count=${posts.size}, firstId=${posts.firstOrNull()?.id}")
                 _uiState.value = _uiState.value.copy(
                     stories = stories,
                     posts = posts,
                     isLoading = false
                 )
+                Log.d(TAG, "loadContent: success, uiState.posts.size=${_uiState.value.posts.size}")
             } catch (e: Exception) {
+                Log.e(TAG, "loadContent: failed", e)
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     error = e.message ?: "Failed to load content"
@@ -68,18 +80,19 @@ class HomeViewModel(
     
     fun refreshFeed() {
         viewModelScope.launch {
+            Log.d(TAG, "refreshFeed: start")
             _uiState.value = _uiState.value.copy(isRefreshing = true)
-            
             try {
                 val stories = getStoryBarUseCase()
                 val posts = getHomeFeedUseCase(page = 0)
-                
+                Log.d(TAG, "refreshFeed: stories=${stories.size}, posts=${posts.size}")
                 _uiState.value = _uiState.value.copy(
                     stories = stories,
                     posts = posts,
                     isRefreshing = false
                 )
             } catch (e: Exception) {
+                Log.e(TAG, "refreshFeed: failed", e)
                 _uiState.value = _uiState.value.copy(
                     isRefreshing = false,
                     error = e.message
@@ -90,14 +103,13 @@ class HomeViewModel(
     
     fun loadMorePosts() {
         if (_uiState.value.isLoadingMore) return
-        
         viewModelScope.launch {
+            Log.d(TAG, "loadMorePosts: start, currentPage=${_uiState.value.currentPage}")
             _uiState.value = _uiState.value.copy(isLoadingMore = true)
-            
             try {
                 val currentPage = _uiState.value.currentPage
                 val newPosts = getHomeFeedUseCase(page = currentPage + 1)
-                
+                Log.d(TAG, "loadMorePosts: got ${newPosts.size} new posts")
                 if (newPosts.isNotEmpty()) {
                     _uiState.value = _uiState.value.copy(
                         posts = _uiState.value.posts + newPosts,
@@ -111,6 +123,7 @@ class HomeViewModel(
                     )
                 }
             } catch (e: Exception) {
+                Log.e(TAG, "loadMorePosts: failed", e)
                 _uiState.value = _uiState.value.copy(isLoadingMore = false)
             }
         }
@@ -249,6 +262,10 @@ class HomeViewModel(
                 onError(e.message ?: "Failed to upload crops")
             }
         }
+    }
+
+    companion object {
+        private const val TAG = "HomeViewModel"
     }
 }
 
