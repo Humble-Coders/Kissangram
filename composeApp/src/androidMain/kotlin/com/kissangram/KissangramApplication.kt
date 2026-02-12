@@ -16,7 +16,7 @@ import java.util.HashMap
  * Application entry point. Disables Firestore disk persistence so writes go to the server
  * and fail fast when offline instead of queuing indefinitely (Task never completing).
  */
-class KissangramApplication : Application() {
+class  KissangramApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()

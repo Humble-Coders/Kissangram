@@ -304,23 +304,37 @@ private fun NavigationGraph(navController: NavHostController, startDestination: 
             
             var isLoading by remember { mutableStateOf(false) }
             
+            var errorMessage by remember { mutableStateOf<String?>(null) }
+            
             CreateStoryScreen(
                 onBackClick = { navController.popBackStack() },
                 onStoryClick = { storyInput ->
                     scope.launch {
                         try {
                             isLoading = true
-                            createStoryUseCase(storyInput)
+                            errorMessage = null
+                            android.util.Log.d("CreateStory", "📤 Starting story creation")
+                            android.util.Log.d("CreateStory", "   - Media Data Size: ${storyInput.mediaData?.size ?: 0} bytes")
+                            android.util.Log.d("CreateStory", "   - Media Type: ${storyInput.mediaType}")
+                            val story = createStoryUseCase(storyInput)
+                            android.util.Log.d("CreateStory", "✅ Story created successfully: ${story.id}")
+                            isLoading = false
                             navController.navigate(Screen.HOME) {
                                 popUpTo(Screen.HOME) { inclusive = false }
                             }
                         } catch (e: Exception) {
+                            android.util.Log.e("CreateStory", "❌ Story creation failed", e)
+                            android.util.Log.e("CreateStory", "   - Error Type: ${e.javaClass.simpleName}")
+                            android.util.Log.e("CreateStory", "   - Error Message: ${e.message}")
                             e.printStackTrace()
                             isLoading = false
+                            errorMessage = e.message ?: "Failed to create story. Please try again."
                         }
                     }
                 },
-                isLoading = isLoading
+                isLoading = isLoading,
+                errorMessage = errorMessage,
+                onDismissError = { errorMessage = null }
             )
         }
         

@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material.icons.filled.Crop // Keep for icon, but functionality is trim
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -114,7 +115,9 @@ private suspend fun uriToByteArray(context: Context, uri: Uri): ByteArray {
 fun CreateStoryScreen(
     onBackClick: () -> Unit,
     onStoryClick: (CreateStoryInput) -> Unit = {},
-    isLoading: Boolean = false
+    isLoading: Boolean = false,
+    errorMessage: String? = null,
+    onDismissError: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -130,6 +133,11 @@ fun CreateStoryScreen(
     var selectedOverlayIdForEdit by remember { mutableStateOf<String?>(null) } // ID of overlay being edited
     var selectedOverlayId by remember { mutableStateOf<String?>(null) } // For Instagram-style selection
     var isLoading by remember { mutableStateOf(false) } // Loading state for story creation
+    
+    // Video recording and trimming state
+    var showVideoRecorder by remember { mutableStateOf(false) }
+    var showVideoTrim by remember { mutableStateOf(false) }
+    var videoToTrimUri by remember { mutableStateOf<Uri?>(null) }
 
     // Media capture URIs
     var cameraImageUri by remember { mutableStateOf<Uri?>(null) }
@@ -147,30 +155,30 @@ fun CreateStoryScreen(
         }
     }
 
-    // Video launcher
-    val videoLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CaptureVideo()
-    ) { success ->
-        if (success) {
-            cameraVideoUri?.let { uri ->
-                selectedMediaUri = uri
-                mediaType = MediaType.VIDEO
-            }
-        }
-    }
+    // Video recording is now handled by VideoRecorderScreen
+    // Removed basic video launcher
 
     // Gallery launcher
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
         uri?.let {
-            selectedMediaUri = it
             val contentResolver = context.contentResolver
             val mimeType = contentResolver.getType(it)
-            mediaType = when {
+            val detectedMediaType = when {
                 mimeType?.startsWith("image/") == true -> MediaType.IMAGE
                 mimeType?.startsWith("video/") == true -> MediaType.VIDEO
                 else -> MediaType.IMAGE
+            }
+            
+            if (detectedMediaType == MediaType.VIDEO) {
+                // Show trim screen for videos
+                videoToTrimUri = it
+                showVideoTrim = true
+            } else {
+                // Directly set image
+                selectedMediaUri = it
+                mediaType = detectedMediaType
             }
         }
     }
@@ -185,8 +193,35 @@ fun CreateStoryScreen(
             cameraLauncher.launch(uri)
         }
     }
+    
+    // Audio permission launcher for video recording
+    val audioPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            val hasCamera = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.CAMERA
+            ) == PackageManager.PERMISSION_GRANTED
+            if (hasCamera) {
+                showVideoRecorder = true
+            }
+        }
+    }
 
     val isStoryEnabled = selectedMediaUri != null
+    
+    // Error Snackbar
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(errorMessage) {
+        errorMessage?.let {
+            snackbarHostState.showSnackbar(
+                message = it,
+                duration = SnackbarDuration.Long
+            )
+            onDismissError()
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -207,12 +242,23 @@ fun CreateStoryScreen(
                         )
                     }
             ) {
-                AsyncImage(
-                    model = selectedMediaUri,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
+                // Show video preview for videos, image for images
+                if (mediaType == MediaType.VIDEO && selectedMediaUri != null) {
+                    VideoPreviewPlayer(
+                        videoUri = selectedMediaUri!!,
+                        modifier = Modifier.fillMaxSize(),
+                        autoPlay = true,
+                        looping = true,
+                        muted = true
+                    )
+                } else {
+                    AsyncImage(
+                        model = selectedMediaUri,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                }
 
                 // Text Overlays - CHANGED: Update by ID instead of index
                 textOverlays.forEach { overlay ->
@@ -286,38 +332,72 @@ fun CreateStoryScreen(
                 )
                 Spacer(modifier = Modifier.height(32.dp))
 
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    // Camera Button
-                    MediaSelectionButton(
-                        icon = Icons.Default.Add,
-                        label = "Camera",
-                        onClick = {
-                            when {
-                                ContextCompat.checkSelfPermission(
-                                    context,
-                                    Manifest.permission.CAMERA
-                                ) == PackageManager.PERMISSION_GRANTED -> {
-                                    val uri = createImageUri(context)
-                                    cameraImageUri = uri
-                                    cameraLauncher.launch(uri)
-                                }
-                                else -> {
-                                    cameraImageUri = createImageUri(context)
-                                    cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        // Camera Button (Image)
+                        MediaSelectionButton(
+                            icon = Icons.Default.Add,
+                            label = "Camera",
+                            onClick = {
+                                when {
+                                    ContextCompat.checkSelfPermission(
+                                        context,
+                                        Manifest.permission.CAMERA
+                                    ) == PackageManager.PERMISSION_GRANTED -> {
+                                        val uri = createImageUri(context)
+                                        cameraImageUri = uri
+                                        cameraLauncher.launch(uri)
+                                    }
+                                    else -> {
+                                        cameraImageUri = createImageUri(context)
+                                        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                                    }
                                 }
                             }
-                        }
-                    )
+                        )
 
-                    // Gallery Button
+                        // Gallery Button
+                        MediaSelectionButton(
+                            icon = Icons.Default.Add,
+                            label = "Gallery",
+                            onClick = {
+                                // Launch without specifying type to allow both images and videos
+                                galleryLauncher.launch(PickVisualMediaRequest())
+                            }
+                        )
+                    }
+                    
+                    // Video Record Button
                     MediaSelectionButton(
                         icon = Icons.Default.Add,
-                        label = "Gallery",
+                        label = "Record Video",
                         onClick = {
-                            // Launch without specifying type to allow both images and videos
-                            galleryLauncher.launch(PickVisualMediaRequest())
+                            // Check permissions and show video recorder
+                            val hasCamera = ContextCompat.checkSelfPermission(
+                                context,
+                                Manifest.permission.CAMERA
+                            ) == PackageManager.PERMISSION_GRANTED
+                            val hasAudio = ContextCompat.checkSelfPermission(
+                                context,
+                                Manifest.permission.RECORD_AUDIO
+                            ) == PackageManager.PERMISSION_GRANTED
+                            
+                            if (hasCamera && hasAudio) {
+                                showVideoRecorder = true
+                            } else {
+                                // Request missing permissions
+                                if (!hasCamera) {
+                                    cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                                }
+                                if (!hasAudio) {
+                                    audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                }
+                            }
                         }
                     )
                 }
@@ -361,6 +441,14 @@ fun CreateStoryScreen(
                 onLocationClick = {
                     showLocationPicker = true
                 },
+                onTrimClick = {
+                    // Show trim screen for videos
+                    if (mediaType == MediaType.VIDEO && selectedMediaUri != null) {
+                        videoToTrimUri = selectedMediaUri
+                        showVideoTrim = true
+                    }
+                },
+                showTrimButton = mediaType == MediaType.VIDEO,
                 location = location,
                 onRemoveLocation = {
                     location = null
@@ -372,6 +460,9 @@ fun CreateStoryScreen(
                     selectedMediaUri?.let { uri ->
                         scope.launch {
                             try {
+                                // Show loading immediately
+                                // Note: isLoading is managed by parent (App.kt), 
+                                // but we trigger onStoryClick which sets it
                                 val mediaData = uriToByteArray(context, uri)
                                 val input = CreateStoryInput(
                                     mediaData = mediaData,
@@ -381,6 +472,7 @@ fun CreateStoryScreen(
                                     location = location,
                                     visibility = visibility
                                 )
+                                // This will trigger isLoading = true in App.kt
                                 onStoryClick(input)
                             } catch (e: Exception) {
                                 // Handle error - could show a snackbar
@@ -394,30 +486,93 @@ fun CreateStoryScreen(
             )
         }
         
-        // Loading Overlay
+        // Video Recorder Screen
+        if (showVideoRecorder) {
+            VideoRecorderScreen(
+                onVideoRecorded = { uri ->
+                    showVideoRecorder = false
+                    // Show trim screen for recorded videos
+                    videoToTrimUri = uri
+                    showVideoTrim = true
+                },
+                onBackClick = {
+                    showVideoRecorder = false
+                }
+            )
+        }
+        
+        // Video Trim Screen
+        if (showVideoTrim && videoToTrimUri != null) {
+            VideoCropScreen(
+                videoUri = videoToTrimUri!!,
+                onCropComplete = { trimmedUri ->
+                    showVideoTrim = false
+                    selectedMediaUri = trimmedUri
+                    mediaType = MediaType.VIDEO
+                    videoToTrimUri = null
+                },
+                onSkip = {
+                    showVideoTrim = false
+                    selectedMediaUri = videoToTrimUri
+                    mediaType = MediaType.VIDEO
+                    videoToTrimUri = null
+                },
+                onBackClick = {
+                    showVideoTrim = false
+                    videoToTrimUri = null
+                }
+            )
+        }
+        
+        // Full Screen Loading Overlay
         if (isLoading) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.7f)),
+                    .background(Color.Black.copy(alpha = 0.95f))
+                    .clickable(enabled = false) { }, // Block all interactions
                 contentAlignment = Alignment.Center
             ) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                    verticalArrangement = Arrangement.spacedBy(24.dp),
+                    modifier = Modifier.padding(32.dp)
                 ) {
+                    // Large Loading Indicator
                     CircularProgressIndicator(
-                        modifier = Modifier.size(48.dp),
-                        color = PrimaryGreen
+                        modifier = Modifier.size(64.dp),
+                        color = PrimaryGreen,
+                        strokeWidth = 4.dp
                     )
-                    Text(
-                        text = "Creating story...",
-                        color = Color.White,
-                        fontSize = 16.sp
-                    )
+                    
+                    // Loading Text
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Uploading Story",
+                            color = Color.White,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Please wait while we upload your story...",
+                            color = Color.White.copy(alpha = 0.7f),
+                            fontSize = 14.sp
+                        )
+                    }
                 }
             }
         }
+        
+        // Snackbar Host for error messages
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 80.dp) // Above bottom action bar
+        )
     }
 
     // Text Input Dialog - CHANGED: Don't use remember for overlayToEdit
@@ -664,6 +819,8 @@ private fun DraggableTextOverlay(
 private fun BottomActionBar(
     onAddTextClick: () -> Unit,
     onLocationClick: () -> Unit,
+    onTrimClick: () -> Unit,
+    showTrimButton: Boolean,
     location: CreateStoryLocation?,
     onRemoveLocation: () -> Unit,
     visibility: PostVisibility,
@@ -700,6 +857,25 @@ private fun BottomActionBar(
                             color = Color.White,
                             fontSize = 12.sp
                         )
+                    }
+                }
+
+                // Trim Button (only for videos)
+                if (showTrimButton) {
+                    IconButton(onClick = onTrimClick) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                imageVector = Icons.Default.Crop, // Using crop icon for trim functionality
+                                contentDescription = "Trim",
+                                tint = Color.White,
+                                modifier = Modifier.size(28.dp)
+                            )
+                            Text(
+                                text = "Trim",
+                                color = Color.White,
+                                fontSize = 12.sp
+                            )
+                        }
                     }
                 }
 

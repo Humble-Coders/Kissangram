@@ -58,6 +58,11 @@ class CreateStoryUseCase(
         println("   - Media URL: ${uploadResult.mediaUrl}")
         println("   - Thumbnail URL: ${uploadResult.thumbnailUrl ?: "none"}")
         
+        // Validate upload result
+        if (uploadResult.mediaUrl.isBlank()) {
+            throw Exception("Media upload failed: empty media URL returned from Cloudinary")
+        }
+        
         // 4. Build location data (per FIRESTORE_SCHEMA.md: location: { name: "..." })
         val locationData = input.location?.let { loc ->
             mapOf(
@@ -138,9 +143,21 @@ class CreateStoryUseCase(
         println("   - Media URL: ${uploadResult.mediaUrl}")
         println("   - Location: ${locationData?.get("name") ?: "none"}")
         println("   - Text Overlay: ${if (textOverlayData != null) "yes" else "no"}")
+        println("📤 CreateStoryUseCase: Story data map size: ${storyData.size} fields")
         
         // 10. Create story in Firestore
-        return storyRepository.createStory(storyData)
+        println("📤 CreateStoryUseCase: Calling storyRepository.createStory()")
+        return try {
+            val story = storyRepository.createStory(storyData)
+            println("✅ CreateStoryUseCase: Story created successfully in Firestore")
+            println("   - Story ID: ${story.id}")
+            story
+        } catch (e: Exception) {
+            println("❌ CreateStoryUseCase: Failed to create story in Firestore")
+            println("   - Error: ${e.message}")
+            e.printStackTrace()
+            throw Exception("Failed to create story in Firestore: ${e.message}", e)
+        }
     }
     
     private fun validateInput(input: CreateStoryInput) {
