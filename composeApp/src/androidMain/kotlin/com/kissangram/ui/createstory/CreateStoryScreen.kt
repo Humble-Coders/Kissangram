@@ -27,7 +27,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.TextFields
-import androidx.compose.material.icons.filled.Crop // Keep for icon, but functionality is trim
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -133,11 +132,6 @@ fun CreateStoryScreen(
     var selectedOverlayIdForEdit by remember { mutableStateOf<String?>(null) } // ID of overlay being edited
     var selectedOverlayId by remember { mutableStateOf<String?>(null) } // For Instagram-style selection
     var isLoading by remember { mutableStateOf(false) } // Loading state for story creation
-    
-    // Video recording and trimming state
-    var showVideoRecorder by remember { mutableStateOf(false) }
-    var showVideoTrim by remember { mutableStateOf(false) }
-    var videoToTrimUri by remember { mutableStateOf<Uri?>(null) }
 
     // Media capture URIs
     var cameraImageUri by remember { mutableStateOf<Uri?>(null) }
@@ -155,8 +149,17 @@ fun CreateStoryScreen(
         }
     }
 
-    // Video recording is now handled by VideoRecorderScreen
-    // Removed basic video launcher
+    // Video launcher - uses phone's default camera app
+    val videoLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CaptureVideo()
+    ) { success ->
+        if (success && cameraVideoUri != null) {
+            // Video was recorded successfully - use directly without trimming
+            selectedMediaUri = cameraVideoUri
+            mediaType = MediaType.VIDEO
+            cameraVideoUri = null
+        }
+    }
 
     // Gallery launcher
     val galleryLauncher = rememberLauncherForActivityResult(
@@ -171,15 +174,9 @@ fun CreateStoryScreen(
                 else -> MediaType.IMAGE
             }
             
-            if (detectedMediaType == MediaType.VIDEO) {
-                // Show trim screen for videos
-                videoToTrimUri = it
-                showVideoTrim = true
-            } else {
-                // Directly set image
-                selectedMediaUri = it
-                mediaType = detectedMediaType
-            }
+            // Directly set media for both images and videos
+            selectedMediaUri = it
+            mediaType = detectedMediaType
         }
     }
 
@@ -204,7 +201,10 @@ fun CreateStoryScreen(
                 Manifest.permission.CAMERA
             ) == PackageManager.PERMISSION_GRANTED
             if (hasCamera) {
-                showVideoRecorder = true
+                // Create video URI and launch camera app
+                val uri = createVideoUri(context)
+                cameraVideoUri = uri
+                videoLauncher.launch(uri)
             }
         }
     }
@@ -377,7 +377,7 @@ fun CreateStoryScreen(
                         icon = Icons.Default.Add,
                         label = "Record Video",
                         onClick = {
-                            // Check permissions and show video recorder
+                            // Check permissions
                             val hasCamera = ContextCompat.checkSelfPermission(
                                 context,
                                 Manifest.permission.CAMERA
@@ -388,7 +388,10 @@ fun CreateStoryScreen(
                             ) == PackageManager.PERMISSION_GRANTED
                             
                             if (hasCamera && hasAudio) {
-                                showVideoRecorder = true
+                                // Create video URI and launch camera app
+                                val uri = createVideoUri(context)
+                                cameraVideoUri = uri
+                                videoLauncher.launch(uri)
                             } else {
                                 // Request missing permissions
                                 if (!hasCamera) {
@@ -441,14 +444,6 @@ fun CreateStoryScreen(
                 onLocationClick = {
                     showLocationPicker = true
                 },
-                onTrimClick = {
-                    // Show trim screen for videos
-                    if (mediaType == MediaType.VIDEO && selectedMediaUri != null) {
-                        videoToTrimUri = selectedMediaUri
-                        showVideoTrim = true
-                    }
-                },
-                showTrimButton = mediaType == MediaType.VIDEO,
                 location = location,
                 onRemoveLocation = {
                     location = null
@@ -483,44 +478,6 @@ fun CreateStoryScreen(
                 },
                 isShareEnabled = isStoryEnabled,
                 modifier = Modifier.align(Alignment.BottomCenter)
-            )
-        }
-        
-        // Video Recorder Screen
-        if (showVideoRecorder) {
-            VideoRecorderScreen(
-                onVideoRecorded = { uri ->
-                    showVideoRecorder = false
-                    // Show trim screen for recorded videos
-                    videoToTrimUri = uri
-                    showVideoTrim = true
-                },
-                onBackClick = {
-                    showVideoRecorder = false
-                }
-            )
-        }
-        
-        // Video Trim Screen
-        if (showVideoTrim && videoToTrimUri != null) {
-            VideoCropScreen(
-                videoUri = videoToTrimUri!!,
-                onCropComplete = { trimmedUri ->
-                    showVideoTrim = false
-                    selectedMediaUri = trimmedUri
-                    mediaType = MediaType.VIDEO
-                    videoToTrimUri = null
-                },
-                onSkip = {
-                    showVideoTrim = false
-                    selectedMediaUri = videoToTrimUri
-                    mediaType = MediaType.VIDEO
-                    videoToTrimUri = null
-                },
-                onBackClick = {
-                    showVideoTrim = false
-                    videoToTrimUri = null
-                }
             )
         }
         
@@ -819,8 +776,6 @@ private fun DraggableTextOverlay(
 private fun BottomActionBar(
     onAddTextClick: () -> Unit,
     onLocationClick: () -> Unit,
-    onTrimClick: () -> Unit,
-    showTrimButton: Boolean,
     location: CreateStoryLocation?,
     onRemoveLocation: () -> Unit,
     visibility: PostVisibility,
@@ -857,25 +812,6 @@ private fun BottomActionBar(
                             color = Color.White,
                             fontSize = 12.sp
                         )
-                    }
-                }
-
-                // Trim Button (only for videos)
-                if (showTrimButton) {
-                    IconButton(onClick = onTrimClick) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                imageVector = Icons.Default.Crop, // Using crop icon for trim functionality
-                                contentDescription = "Trim",
-                                tint = Color.White,
-                                modifier = Modifier.size(28.dp)
-                            )
-                            Text(
-                                text = "Trim",
-                                color = Color.White,
-                                fontSize = 12.sp
-                            )
-                        }
                     }
                 }
 

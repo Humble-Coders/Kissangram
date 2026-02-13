@@ -133,13 +133,16 @@ class CreatePostViewModel(
     
     // Repositories for post creation
     private val storageRepository = AndroidStorageRepository(application)
-    private val postRepository = FirestorePostRepository()
     private val authRepository = AndroidAuthRepository(
         context = application,
         activity = null,
         preferencesRepository = com.kissangram.repository.AndroidPreferencesRepository(application)
     )
     private val userRepository = FirestoreUserRepository(authRepository = authRepository)
+    private val postRepository = FirestorePostRepository(
+        authRepository = authRepository,
+        userRepository = userRepository
+    )
     
     // Use case for creating posts
     private val createPostUseCase = CreatePostUseCase(
@@ -789,6 +792,21 @@ class CreatePostViewModel(
             throw IllegalArgumentException("URI string cannot be blank")
         }
         
+        // Handle plain file paths (not URIs) - common for voice captions
+        val file = File(uriString)
+        if (file.exists() && file.isFile) {
+            // It's a plain file path, read it directly
+            if (!file.canRead()) {
+                throw IllegalArgumentException("Cannot read file: $uriString")
+            }
+            try {
+                return FileInputStream(file).use { it.readBytes() }
+            } catch (e: Exception) {
+                throw IllegalArgumentException("Failed to read file: $uriString", e)
+            }
+        }
+        
+        // Otherwise, treat it as a URI
         val uri = try {
             Uri.parse(uriString)
         } catch (e: Exception) {
@@ -798,7 +816,7 @@ class CreatePostViewModel(
         // Check if scheme is null
         val scheme = uri.scheme
         if (scheme == null) {
-            throw IllegalArgumentException("URI has no scheme. URI: $uriString")
+            throw IllegalArgumentException("URI has no scheme and is not a valid file path. URI: $uriString")
         }
         
         return when (scheme) {
@@ -807,15 +825,15 @@ class CreatePostViewModel(
                 if (path.isNullOrBlank()) {
                     throw IllegalArgumentException("File URI has no path: $uriString")
                 }
-                val file = File(path)
-                if (!file.exists()) {
+                val fileFromUri = File(path)
+                if (!fileFromUri.exists()) {
                     throw IllegalArgumentException("File does not exist: $uriString (path: $path)")
                 }
-                if (!file.canRead()) {
+                if (!fileFromUri.canRead()) {
                     throw IllegalArgumentException("Cannot read file: $uriString (path: $path)")
                 }
                 try {
-                    FileInputStream(file).use { it.readBytes() }
+                    FileInputStream(fileFromUri).use { it.readBytes() }
                 } catch (e: Exception) {
                     throw IllegalArgumentException("Failed to read file: $uriString", e)
                 }
@@ -883,6 +901,7 @@ class CreatePostViewModel(
                     Log.w(TAG, "buildPostInput: Voice caption URI resulted in empty ByteArray: $uriString")
                     null
                 } else {
+                    Log.d(TAG, "buildPostInput: Successfully converted voice caption to ByteArray (${audioData.size} bytes) from: $uriString")
                     audioData
                 }
             } catch (e: Exception) {

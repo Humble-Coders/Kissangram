@@ -1,6 +1,8 @@
 import SwiftUI
 import os.log
 import Shared
+import AVFoundation
+import AVKit
 
 // MARK: - Colors
 extension Color {
@@ -17,6 +19,7 @@ private let homeViewLog = Logger(subsystem: "com.kissangram", category: "HomeVie
 
 struct HomeView: View {
     @StateObject private var viewModel = HomeViewModel()
+    @State private var visiblePostIndices: Set<Int> = []
     
     var onNavigateToNotifications: () -> Void = {}
     var onNavigateToMessages: () -> Void = {}
@@ -24,7 +27,7 @@ struct HomeView: View {
     var onNavigateToStory: (String) -> Void = { _ in }
     var onNavigateToCreateStory: () -> Void = {}
     var onNavigateToPostDetail: (String) -> Void = { _ in }
-    var onNavigateToComments: (String) -> Void = { _ in }
+    var onNavigateToComments: (String, Post) -> Void = { _, _ in }
     
     var body: some View {
         NavigationStack {
@@ -70,16 +73,23 @@ struct HomeView: View {
                                 Spacer().frame(height: 12)
                                 
                                 // Post Cards — each card handles its own horizontal padding
-                                ForEach(viewModel.posts, id: \.id) { post in
+                                ForEach(Array(viewModel.posts.enumerated()), id: \.element.id) { index, post in
                                     PostCardView(
                                         post: post,
+                                        isVisible: visiblePostIndices.contains(index),
                                         onLikeClick: { viewModel.onLikePost(post.id) },
-                                        onCommentClick: { onNavigateToComments(post.id) },
+                                        onCommentClick: { onNavigateToComments(post.id, post) },
                                         onShareClick: {},
                                         onSaveClick: { viewModel.onSavePost(post.id) },
                                         onAuthorClick: { onNavigateToProfile(post.authorId) },
                                         onPostClick: { onNavigateToPostDetail(post.id) }
                                     )
+                                    .onAppear {
+                                        visiblePostIndices.insert(index)
+                                    }
+                                    .onDisappear {
+                                        visiblePostIndices.remove(index)
+                                    }
                                 }
                                 
                                 if viewModel.isLoadingMore {
@@ -335,12 +345,41 @@ struct CreateStoryCard: View {
 // 6pt vertical gap, rounded corners and shadow — matching EditProfileView card style.
 struct PostCardView: View {
     let post: Post
-    let onLikeClick: () -> Void
+    let isVisible: Bool
+    let onLikeClick: () -> Bool // Returns true if request was accepted
     let onCommentClick: () -> Void
     let onShareClick: () -> Void
     let onSaveClick: () -> Void
     let onAuthorClick: () -> Void
     let onPostClick: () -> Void
+    
+    // ⚡ INSTAGRAM APPROACH: Local state for instant visual feedback
+    // Updates immediately on click, before ViewModel processes the request
+    @State private var localLikedState: Bool
+    @State private var localLikesCount: Int32
+    
+    init(
+        post: Post,
+        isVisible: Bool,
+        onLikeClick: @escaping () -> Bool, // Returns true if request was accepted
+        onCommentClick: @escaping () -> Void,
+        onShareClick: @escaping () -> Void,
+        onSaveClick: @escaping () -> Void,
+        onAuthorClick: @escaping () -> Void,
+        onPostClick: @escaping () -> Void
+    ) {
+        self.post = post
+        self.isVisible = isVisible
+        self.onLikeClick = onLikeClick
+        self.onCommentClick = onCommentClick
+        self.onShareClick = onShareClick
+        self.onSaveClick = onSaveClick
+        self.onAuthorClick = onAuthorClick
+        self.onPostClick = onPostClick
+        // Initialize local state from post
+        _localLikedState = State(initialValue: post.isLikedByMe)
+        _localLikesCount = State(initialValue: post.likesCount)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -354,25 +393,73 @@ struct PostCardView: View {
             PostTagsRow(post: post)
                 .padding(.horizontal, 16)
 
-            // Image — full width inside card, rounded corners
-            if !post.media.isEmpty, let firstMedia = post.media.first {
+            // Media — full width inside card, rounded corners
+            if !post.media.isEmpty {
                 Spacer().frame(height: 12)
-                PostImageView(media: firstMedia, onClick: onPostClick)
-                    .padding(.horizontal, 16) // ← inset from card edges
+                MediaCarousel(
+                    media: post.media,
+                    onMediaClick: onPostClick,
+                    isVisible: isVisible
+                )
+                .padding(.horizontal, 16) // ← inset from card edges
             }
 
             // Post Text
-            if !post.text.isEmpty {
+            if !post.text.isEmpty || post.voiceCaption != nil {
                 Spacer().frame(height: post.media.isEmpty ? 10 : 14)
-                PostTextContent(text: post.text, onReadMore: onPostClick)
+                PostTextContent(
+                    text: post.text,
+                    voiceCaption: post.voiceCaption,
+                    onReadMore: onPostClick
+                )
                     .padding(.horizontal, 16)
             }
 
-            // Action Bar
+            // Action Bar - use local state for instant feedback
             Spacer().frame(height: 4)
             PostActionBar(
-                post: post,
-                onLikeClick: onLikeClick,
+                post: Post(
+                    id: post.id,
+                    authorId: post.authorId,
+                    authorName: post.authorName,
+                    authorUsername: post.authorUsername,
+                    authorProfileImageUrl: post.authorProfileImageUrl,
+                    authorRole: post.authorRole,
+                    authorVerificationStatus: post.authorVerificationStatus,
+                    type: post.type,
+                    text: post.text,
+                    media: post.media,
+                    voiceCaption: post.voiceCaption,
+                    crops: post.crops,
+                    hashtags: post.hashtags,
+                    location: post.location,
+                    question: post.question,
+                    likesCount: localLikesCount,
+                    commentsCount: post.commentsCount,
+                    savesCount: post.savesCount,
+                    isLikedByMe: localLikedState,
+                    isSavedByMe: post.isSavedByMe,
+                    createdAt: post.createdAt,
+                    updatedAt: post.updatedAt
+                ),
+                onLikeClick: {
+                    // ⚡ Update local state IMMEDIATELY (before ViewModel call)
+                    // This gives instant visual feedback with zero perceived lag
+                    let newLikedState = !localLikedState
+                    let newLikesCount = newLikedState ? localLikesCount + 1 : localLikesCount - 1
+                    
+                    // Call ViewModel first to check if it accepts the request
+                    let accepted = onLikeClick()
+                    
+                    // Only update local state if ViewModel accepted the request
+                    // This prevents sync issues when rapid clicks are ignored
+                    if accepted {
+                        localLikedState = newLikedState
+                        localLikesCount = newLikesCount
+                    }
+                    // If not accepted (already processing), local state stays as-is
+                    // onChange will sync it with actual post state when request completes
+                },
                 onCommentClick: onCommentClick,
                 onShareClick: onShareClick,
                 onSaveClick: onSaveClick
@@ -383,6 +470,14 @@ struct PostCardView: View {
         .background(Color.white)              // ← white card background
         .cornerRadius(18)                     // ← rounded corners
         .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 2) // ← relief shadow
+        .onChange(of: post.isLikedByMe) { newValue in
+            // Sync local state with actual post state when it changes (from ViewModel or refresh)
+            localLikedState = newValue
+        }
+        .onChange(of: post.likesCount) { newValue in
+            // Sync local state with actual post state when it changes
+            localLikesCount = newValue
+        }
         .padding(.horizontal, 18)             // ← 18pt screen margins (left & right)
         .padding(.vertical, 6)               // ← gap between cards
     }
@@ -536,60 +631,158 @@ struct TagChip: View {
     }
 }
 
-// Image inside a card — no negative padding needed, just fill card width with rounded corners
-struct PostImageView: View {
-    let media: PostMedia
-    let onClick: () -> Void
-
-    var body: some View {
-        Button(action: onClick) {
-            if let url = URL(string: media.url) {
-                AsyncImage(url: url) { image in
-                    image.resizable().aspectRatio(contentMode: .fill)
-                } placeholder: {
-                    Color.gray.opacity(0.3)
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: 220)          // ← slightly shorter now that it has card padding
-                .clipped()
-                .cornerRadius(14)            // ← inner corner radius inside the card
-            }
-        }
-        .buttonStyle(PlainButtonStyle())
-        .contentShape(Rectangle())
-    }
-}
-
 struct PostTextContent: View {
     let text: String
+    let voiceCaption: VoiceContent?
     let onReadMore: () -> Void
+    
+    @State private var isPlaying = false
+    @State private var playbackProgress = 0
+    @State private var audioPlayer: AVPlayer?
+    @State private var timeObserver: Any?
+    @State private var endTimeObserver: NSObjectProtocol?
 
     var body: some View {
         HStack(alignment: .top, spacing: 11) {
-            Circle()
-                .fill(Color.primaryGreen.opacity(0.1))
-                .frame(width: 40, height: 40)
-                .overlay(
-                    Image(systemName: "text.alignleft")
-                        .font(.system(size: 18))
-                        .foregroundColor(.primaryGreen)
-                )
-            VStack(alignment: .leading, spacing: 4) {
-                Text(text)
-                    .font(.system(size: 17))
-                    .foregroundColor(.textPrimary)
-                    .lineLimit(3)
-                    .lineSpacing(6)
-                    .fixedSize(horizontal: false, vertical: true)
-                if text.count > 150 {
-                    Button("Read more", action: onReadMore)
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.primaryGreen)
+            // Left icon/button - show play button if voiceCaption exists, otherwise text icon
+            if let voiceCaption = voiceCaption {
+                // Voice caption play button
+                VStack(alignment: .center, spacing: 4) {
+                    Button(action: togglePlayback) {
+                        Circle()
+                            .fill(isPlaying ? Color(red: 1.0, green: 0.42, blue: 0.42) : Color.primaryGreen)
+                            .frame(width: 40, height: 40)
+                            .overlay(
+                                Image(systemName: isPlaying ? "stop.fill" : "speaker.wave.2.fill")
+                                    .font(.system(size: 18))
+                                    .foregroundColor(.white)
+                            )
+                    }
+                    
                 }
+                .frame(width: 40)
+            } else {
+                // Text icon (when no voice caption)
+                Circle()
+                    .fill(Color.primaryGreen.opacity(0.1))
+                    .frame(width: 40, height: 40)
+                    .overlay(
+                        Image(systemName: "text.alignleft")
+                            .font(.system(size: 18))
+                            .foregroundColor(.primaryGreen)
+                    )
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            
+            // Text caption (right side)
+            if !text.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(text)
+                        .font(.system(size: 17))
+                        .foregroundColor(.textPrimary)
+                        .lineLimit(3)
+                        .lineSpacing(6)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if text.count > 150 {
+                        Button("Read more", action: onReadMore)
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.primaryGreen)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                // If no text but has voice caption, take up space
+                Spacer()
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .onDisappear {
+            stopPlayback()
+        }
+    }
+    
+    private func togglePlayback() {
+        if isPlaying {
+            stopPlayback()
+        } else {
+            startPlayback()
+        }
+    }
+    
+    private func startPlayback() {
+        guard let voiceCaption = voiceCaption else { return }
+        
+        // Stop any existing playback
+        stopPlayback()
+        
+        guard let url = URL(string: voiceCaption.url) else {
+            print("Invalid voice caption URL: \(voiceCaption.url)")
+            return
+        }
+        
+        do {
+            // Configure audio session
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
+            try AVAudioSession.sharedInstance().setActive(true)
+            
+            // Create AVPlayer for remote URLs (AVAudioPlayer doesn't support remote URLs)
+            let player = AVPlayer(url: url)
+            
+            // Observe time for progress updates
+            let interval = CMTime(seconds: 0.1, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
+            let observer = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { time in
+                let currentSeconds = Int(CMTimeGetSeconds(time))
+                playbackProgress = currentSeconds
+                
+                if currentSeconds >= voiceCaption.durationSeconds {
+                    stopPlayback()
+                }
+            }
+            timeObserver = observer
+            
+            // Observe when playback finishes
+            let endObserver = NotificationCenter.default.addObserver(
+                forName: .AVPlayerItemDidPlayToEndTime,
+                object: player.currentItem,
+                queue: .main
+            ) { _ in
+                stopPlayback()
+            }
+            endTimeObserver = endObserver
+            
+            player.play()
+            audioPlayer = player
+            isPlaying = true
+            playbackProgress = 0
+            
+        } catch {
+            print("Failed to play audio: \(error.localizedDescription)")
+            stopPlayback()
+        }
+    }
+    
+    private func stopPlayback() {
+        // Remove time observer
+        if let observer = timeObserver {
+            audioPlayer?.removeTimeObserver(observer)
+            timeObserver = nil
+        }
+        
+        // Remove notification observer
+        if let observer = endTimeObserver {
+            NotificationCenter.default.removeObserver(observer)
+            endTimeObserver = nil
+        }
+        
+        // Stop player
+        audioPlayer?.pause()
+        audioPlayer?.replaceCurrentItem(with: nil)
+        audioPlayer = nil
+        
+        isPlaying = false
+        playbackProgress = 0
+        
+        // Deactivate audio session
+        try? AVAudioSession.sharedInstance().setActive(false)
     }
 }
 

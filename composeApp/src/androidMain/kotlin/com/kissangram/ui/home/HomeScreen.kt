@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudUpload
@@ -18,6 +19,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import android.util.Log
 import com.kissangram.ui.home.components.*
 import com.kissangram.viewmodel.HomeViewModel
+import com.kissangram.model.Post
 import com.google.accompanist.swiperefresh.SwipeRefresh
 import com.google.accompanist.swiperefresh.rememberSwipeRefreshState
 
@@ -39,10 +41,25 @@ fun HomeScreen(
     onNavigateToStory: (String) -> Unit = {},
     onNavigateToCreateStory: () -> Unit = {},
     onNavigateToPostDetail: (String) -> Unit = {},
-    onNavigateToComments: (String) -> Unit = {}
+    onNavigateToComments: (String, Post) -> Unit = { _, _ -> }
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val listState = rememberLazyListState()
+    
+    // Track visible post indices for video auto-play
+    val visiblePostIndices = remember { mutableStateSetOf<Int>() }
+    
+    // Update visible posts when layout changes
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.layoutInfo.visibleItemsInfo.map { it.index } }
+            .collect { visibleIndices ->
+                // Filter out story section (index 0) and get post indices
+                // Posts start from index 1 (after stories)
+                val postIndices = visibleIndices.filter { it > 0 }.map { it - 1 }
+                visiblePostIndices.clear()
+                visiblePostIndices.addAll(postIndices)
+            }
+    }
 
     LaunchedEffect(uiState.posts.size, uiState.isLoading, uiState.error) {
         Log.d("HomeScreen", "uiState: posts=${uiState.posts.size} isLoading=${uiState.isLoading} error=${uiState.error}")
@@ -134,14 +151,16 @@ fun HomeScreen(
                 }
 
                 // Posts
-                items(
+                itemsIndexed(
                     items = uiState.posts,
-                    key = { it.id }
-                ) { post ->
+                    key = { _, post -> post.id }
+                ) { index, post ->
+                    val isVisible = visiblePostIndices.contains(index)
                     PostCard(
                         post = post,
-                        onLikeClick = { viewModel.onLikePost(post.id) },
-                        onCommentClick = { onNavigateToComments(post.id) },
+                        isVisible = isVisible,
+                        onLikeClick = { viewModel.onLikePost(post.id) }, // Returns Boolean
+                        onCommentClick = { onNavigateToComments(post.id, post) },
                         onShareClick = { /* Share */ },
                         onSaveClick = { viewModel.onSavePost(post.id) },
                         onAuthorClick = { onNavigateToProfile(post.authorId) },

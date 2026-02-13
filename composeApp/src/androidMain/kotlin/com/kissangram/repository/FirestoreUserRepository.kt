@@ -42,7 +42,19 @@ class FirestoreUserRepository(
         val searchKeywords = buildSearchKeywords(name, username)
         val now = System.currentTimeMillis()
 
-        // Build data map with ONLY non-null values
+        // Check if user document already exists to preserve count fields
+        val userDocRef = usersCollection.document(userId)
+        val existingDoc = try {
+            userDocRef.get().await()
+        } catch (e: Exception) {
+            Log.w(TAG, "createUserProfile: Error checking existing user, assuming new user", e)
+            null
+        }
+        
+        val userExists = existingDoc?.exists() == true
+        Log.d(TAG, "createUserProfile: User exists=$userExists")
+
+        // Build data map with base fields
         val data = hashMapOf<String, Any>(
             FIELD_ID to userId,
             FIELD_PHONE_NUMBER to phoneNumber,
@@ -51,16 +63,25 @@ class FirestoreUserRepository(
             FIELD_ROLE to roleToFirestore(role),
             FIELD_VERIFICATION_STATUS to verificationStatusToFirestore(verificationStatus),
             FIELD_EXPERTISE to emptyList<String>(),
-            FIELD_FOLLOWERS_COUNT to 0L,
-            FIELD_FOLLOWING_COUNT to 0L,
-            FIELD_POSTS_COUNT to 0L,
             FIELD_LANGUAGE to language,
-            FIELD_CREATED_AT to now,
             FIELD_UPDATED_AT to now,
             FIELD_LAST_ACTIVE_AT to now,
             FIELD_SEARCH_KEYWORDS to searchKeywords,
             FIELD_IS_ACTIVE to true
         )
+        
+        // Only set count fields and createdAt if user doesn't exist
+        // This preserves existing follow counts when user logs in again
+        if (!userExists) {
+            data[FIELD_FOLLOWERS_COUNT] = 0L
+            data[FIELD_FOLLOWING_COUNT] = 0L
+            data[FIELD_POSTS_COUNT] = 0L
+            data[FIELD_CREATED_AT] = now
+            Log.d(TAG, "createUserProfile: New user - setting count fields to 0")
+        } else {
+            Log.d(TAG, "createUserProfile: Existing user - preserving count fields")
+        }
+        
         verificationDocUrl?.let { data[FIELD_VERIFICATION_DOC_URL] = it }
 
         Log.d(TAG, "createUserProfile: Writing user document with ${data.size} fields (timeout 30s)")
@@ -70,7 +91,7 @@ class FirestoreUserRepository(
             withTimeout(30_000L) {
                 usersCollection.document(userId).set(data, SetOptions.merge()).await()
             }
-            Log.d(TAG, "createUserProfile: SUCCESS - User profile created")
+            Log.d(TAG, "createUserProfile: SUCCESS - User profile ${if (userExists) "updated" else "created"}")
         } catch (e: TimeoutCancellationException) {
             Log.w(TAG, "createUserProfile: Firestore write timed out after 30s", e)
             throw IOException("Request timed out. Check your connection and try again.", e)

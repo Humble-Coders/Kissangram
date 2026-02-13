@@ -409,6 +409,7 @@ Populated by the `onPostCreate` Cloud Function (fan-out). Each document is a cop
   // Metadata
   createdAt: Timestamp,
   isActive: true,
+  deletionReason: null,  // Set when comment is soft-deleted (isActive = false)
 }
 ```
 
@@ -905,8 +906,9 @@ Fields: topics (Arrays), membersCount (Descending)
 | `onPostDelete` | `posts/{postId}` delete/update | Update user's postsCount |
 | `onLike` | `posts/{postId}/likes/{userId}` create | Update likesCount, send notification |
 | `onUnlike` | `posts/{postId}/likes/{userId}` delete | Update likesCount |
-| `onComment` | `posts/{postId}/comments/{commentId}` create | Update commentsCount, send notification |
-| `onCommentDelete` | `posts/{postId}/comments/{commentId}` delete | Update commentsCount |
+| `onComment` | `posts/{postId}/comments/{commentId}` create | Update commentsCount/repliesCount, send notification |
+| `onCommentUpdate` | `posts/{postId}/comments/{commentId}` update | Handle soft delete (isActive = false), update counts |
+| `onCommentDelete` | `posts/{postId}/comments/{commentId}` delete | Update counts (hard delete - rarely used) |
 | `onSavePost` | `users/{userId}/savedPosts/{postId}` create | Update post's savesCount |
 | `onUnsavePost` | `users/{userId}/savedPosts/{postId}` delete | Update post's savesCount |
 | `onMessageSend` | `conversations/{id}/messages/{msgId}` create | Update lastMessage, unreadCount, send push |
@@ -982,6 +984,154 @@ exports.onLike = functions.firestore
                 },
             });
         }
+    });
+```
+
+### Example: onComment Function
+
+```javascript
+exports.onComment = functions.firestore.v2.firestore
+    .onDocumentCreated({
+        document: 'posts/{postId}/comments/{commentId}',
+        database: 'kissangram',
+    }, async (event) => {
+        const { postId, commentId } = event.params;
+        const commentData = event.data.data();
+        const commenterId = commentData.authorId;
+        const parentCommentId = commentData.parentCommentId || null;
+
+        // 1. Update counts based on whether it's a reply or top-level comment
+        if (parentCommentId) {
+            // It's a reply - increment repliesCount on parent comment
+            await db
+                .collection('posts')
+                .doc(postId)
+                .collection('comments')
+                .doc(parentCommentId)
+                .update({
+                    repliesCount: admin.firestore.FieldValue.increment(1),
+                });
+        } else {
+            // It's a top-level comment - increment commentsCount on post
+            await db.collection('posts').doc(postId).update({
+                commentsCount: admin.firestore.FieldValue.increment(1),
+            });
+        }
+
+        // 2. Get post to find author
+        const postDoc = await db.collection('posts').doc(postId).get();
+        const post = postDoc.data();
+        const postAuthorId = post.authorId;
+
+        // 3. Don't notify if user commented on their own post
+        if (postAuthorId === commenterId) {
+            // But still notify parent comment author if it's a reply
+            if (parentCommentId) {
+                const parentCommentDoc = await db
+                    .collection('posts')
+                    .doc(postId)
+                    .collection('comments')
+                    .doc(parentCommentId)
+                    .get();
+                if (parentCommentDoc.exists) {
+                    const parentComment = parentCommentDoc.data();
+                    const parentCommentAuthorId = parentComment.authorId;
+                    if (parentCommentAuthorId && parentCommentAuthorId !== commenterId) {
+                        // Notify parent comment author about the reply
+                        await createReplyNotification(
+                            parentCommentAuthorId,
+                            commenterId,
+                            commentData,
+                            postId,
+                            commentId,
+                            post
+                        );
+                    }
+                }
+            }
+            return null;
+        }
+
+        // 4. Create notification for post author (top-level comment or reply)
+        await createCommentNotification(
+            postAuthorId,
+            commenterId,
+            commentData,
+            postId,
+            commentId,
+            post
+        );
+
+        // 5. If it's a reply, also notify parent comment author (if different from post author)
+        if (parentCommentId && parentCommentId !== postAuthorId) {
+            const parentCommentDoc = await db
+                .collection('posts')
+                .doc(postId)
+                .collection('comments')
+                .doc(parentCommentId)
+                .get();
+            if (parentCommentDoc.exists) {
+                const parentComment = parentCommentDoc.data();
+                const parentCommentAuthorId = parentComment.authorId;
+                if (
+                    parentCommentAuthorId &&
+                    parentCommentAuthorId !== postAuthorId &&
+                    parentCommentAuthorId !== commenterId
+                ) {
+                    await createReplyNotification(
+                        parentCommentAuthorId,
+                        commenterId,
+                        commentData,
+                        postId,
+                        commentId,
+                        post
+                    );
+                }
+            }
+        }
+
+        return null;
+    });
+```
+
+### Example: onCommentUpdate Function (Soft Delete)
+
+```javascript
+exports.onCommentUpdate = functions.firestore.v2.firestore
+    .onDocumentUpdated({
+        document: 'posts/{postId}/comments/{commentId}',
+        database: 'kissangram',
+    }, async (event) => {
+        const before = event.data.before;
+        const after = event.data.after;
+        const { postId, commentId } = event.params;
+
+        const beforeData = before.data();
+        const afterData = after.data();
+
+        // Check if comment was soft-deleted (isActive changed from true to false)
+        if (beforeData.isActive === true && afterData.isActive === false) {
+            const parentCommentId = afterData.parentCommentId || null;
+
+            if (parentCommentId) {
+                // It was a reply - decrement repliesCount on parent comment
+                await db
+                    .collection('posts')
+                    .doc(postId)
+                    .collection('comments')
+                    .doc(parentCommentId)
+                    .update({
+                        repliesCount: admin.firestore.FieldValue.increment(-1),
+                    });
+            } else {
+                // It was a top-level comment - decrement commentsCount on post
+                await db.collection('posts').doc(postId).update({
+                    commentsCount: admin.firestore.FieldValue.increment(-1),
+                });
+            }
+        }
+
+        return null;
     });
 ```
 
@@ -1258,4 +1408,4 @@ firestore.collection("hashtags")
 
 ---
 
-*Last updated: January 2026 (Added visibility field to stories collection)*
+*Last updated: February 2026 (Added comment feature with replies, delete with reason, and Cloud Functions)*

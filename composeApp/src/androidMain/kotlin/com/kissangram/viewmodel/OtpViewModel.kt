@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.kissangram.repository.AndroidAuthRepository
 import com.kissangram.repository.AndroidPreferencesRepository
 import com.kissangram.repository.AndroidSpeechRepository
+import com.kissangram.repository.FirestoreUserRepository
 import com.kissangram.usecase.VerifyOtpUseCase
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,6 +24,7 @@ class OtpViewModel(
         context = application,
         preferencesRepository = preferencesRepository
     )
+    private val userRepository = FirestoreUserRepository(authRepository = authRepository)
     private val verifyOtpUseCase = VerifyOtpUseCase(authRepository)
     private val speechRepository = AndroidSpeechRepository(application)
     
@@ -36,7 +38,11 @@ class OtpViewModel(
         )
     }
     
-    fun verifyOtp(onSuccess: () -> Unit, onError: (String) -> Unit) {
+    fun verifyOtp(
+        onExistingUser: (String) -> Unit, // userName callback for existing users
+        onNewUser: () -> Unit, // callback for new users
+        onError: (String) -> Unit
+    ) {
         val otp = _uiState.value.otp
         if (otp.length != 6) {
             _uiState.value = _uiState.value.copy(
@@ -50,8 +56,18 @@ class OtpViewModel(
             
             try {
                 verifyOtpUseCase(otp)
-                _uiState.value = _uiState.value.copy(isLoading = false)
-                onSuccess()
+                
+                // Check if user exists in Firestore
+                val currentUser = userRepository.getCurrentUser()
+                if (currentUser != null) {
+                    // Existing user - show welcome back screen
+                    _uiState.value = _uiState.value.copy(isLoading = false)
+                    onExistingUser(currentUser.name)
+                } else {
+                    // New user - continue to name screen
+                    _uiState.value = _uiState.value.copy(isLoading = false)
+                    onNewUser()
+                }
             } catch (exception: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,

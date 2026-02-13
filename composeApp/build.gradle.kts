@@ -28,6 +28,8 @@ kotlin {
             // Image loading
             implementation("io.coil-kt:coil-compose:2.5.0")
             
+            // Note: Using LazyRow for carousel instead of foundation-pager for better compatibility
+            
             // Swipe to refresh
             implementation("com.google.accompanist:accompanist-swiperefresh:0.32.0")
             implementation("com.google.android.gms:play-services-location:21.3.0")

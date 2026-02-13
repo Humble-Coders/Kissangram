@@ -9,7 +9,8 @@ import com.kissangram.repository.AndroidAuthRepository
 import com.kissangram.repository.AndroidPreferencesRepository
 import com.kissangram.repository.FirestoreFeedRepository
 import com.kissangram.repository.FirestoreStoryRepository
-import com.kissangram.repository.MockPostRepository
+import com.kissangram.repository.FirestorePostRepository
+import com.kissangram.repository.FirestoreUserRepository
 import com.kissangram.usecase.GetHomeFeedUseCase
 import com.kissangram.usecase.GetStoryBarUseCase
 import com.kissangram.usecase.LikePostUseCase
@@ -33,8 +34,12 @@ class HomeViewModel(
         activity = null,
         preferencesRepository = AndroidPreferencesRepository(application)
     )
+    private val userRepository = FirestoreUserRepository(authRepository = authRepository)
     private val feedRepository = FirestoreFeedRepository(authRepository = authRepository)
-    private val postRepository = MockPostRepository()
+    private val postRepository = FirestorePostRepository(
+        authRepository = authRepository,
+        userRepository = userRepository
+    )
     private val storyRepository = FirestoreStoryRepository()
     
     // Use cases
@@ -45,6 +50,9 @@ class HomeViewModel(
     
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
+    
+    // Track posts currently being processed to prevent race conditions
+    private val postsBeingProcessed = mutableSetOf<String>()
     
     init {
         Log.d(TAG, "init: HomeViewModel created, calling loadContent()")
@@ -129,57 +137,94 @@ class HomeViewModel(
         }
     }
     
-    fun onLikePost(postId: String) {
-        viewModelScope.launch {
-            val currentPosts = _uiState.value.posts
-            val postIndex = currentPosts.indexOfFirst { it.id == postId }
+    /**
+     * Handles like/unlike action for a post.
+     * @return true if the request was accepted and processed, false if it was ignored (e.g., already processing)
+     */
+    fun onLikePost(postId: String): Boolean {
+        // Prevent multiple simultaneous requests for the same post
+        if (postsBeingProcessed.contains(postId)) {
+            Log.d(TAG, "onLikePost: post $postId is already being processed, ignoring")
+            return false
+        }
+        
+        val currentPosts = _uiState.value.posts
+        val postIndex = currentPosts.indexOfFirst { it.id == postId }
+        
+        if (postIndex != -1) {
+            val post = currentPosts[postIndex]
+            val newLikedState = !post.isLikedByMe
+            val newLikesCount = if (newLikedState) post.likesCount + 1 else post.likesCount - 1
             
-            if (postIndex != -1) {
-                val post = currentPosts[postIndex]
-                val newLikedState = !post.isLikedByMe
-                val newLikesCount = if (newLikedState) post.likesCount + 1 else post.likesCount - 1
-                
-                // Optimistic update
-                val updatedPost = post.copy(
-                    isLikedByMe = newLikedState,
-                    likesCount = newLikesCount
-                )
-                val updatedPosts = currentPosts.toMutableList()
-                updatedPosts[postIndex] = updatedPost
-                _uiState.value = _uiState.value.copy(posts = updatedPosts)
-                
+            // Mark as being processed
+            postsBeingProcessed.add(postId)
+            
+            // ⚡ INSTAGRAM APPROACH: Update UI IMMEDIATELY (synchronous, main thread)
+            // This happens before any async work, so user sees instant feedback
+            val updatedPost = post.copy(
+                isLikedByMe = newLikedState,
+                likesCount = newLikesCount
+            )
+            val updatedPosts = currentPosts.toMutableList()
+            updatedPosts[postIndex] = updatedPost
+            _uiState.value = _uiState.value.copy(posts = updatedPosts)
+            
+            // Fire network request in background (non-blocking)
+            viewModelScope.launch {
                 try {
                     likePostUseCase(postId, post.isLikedByMe)
                 } catch (e: Exception) {
+                    Log.e(TAG, "onLikePost: failed for postId=$postId", e)
                     // Revert on failure
                     val revertedPosts = currentPosts.toMutableList()
                     _uiState.value = _uiState.value.copy(posts = revertedPosts)
+                } finally {
+                    // Always remove from processing set
+                    postsBeingProcessed.remove(postId)
                 }
             }
+            return true
         }
+        return false
     }
     
     fun onSavePost(postId: String) {
-        viewModelScope.launch {
-            val currentPosts = _uiState.value.posts
-            val postIndex = currentPosts.indexOfFirst { it.id == postId }
+        // Prevent multiple simultaneous requests for the same post
+        val saveKey = "save_$postId"
+        if (postsBeingProcessed.contains(saveKey)) {
+            Log.d(TAG, "onSavePost: post $postId is already being processed, ignoring")
+            return
+        }
+        
+        val currentPosts = _uiState.value.posts
+        val postIndex = currentPosts.indexOfFirst { it.id == postId }
+        
+        if (postIndex != -1) {
+            val post = currentPosts[postIndex]
+            val newSavedState = !post.isSavedByMe
             
-            if (postIndex != -1) {
-                val post = currentPosts[postIndex]
-                val newSavedState = !post.isSavedByMe
-                
-                // Optimistic update
-                val updatedPost = post.copy(isSavedByMe = newSavedState)
-                val updatedPosts = currentPosts.toMutableList()
-                updatedPosts[postIndex] = updatedPost
-                _uiState.value = _uiState.value.copy(posts = updatedPosts)
-                
+            // Mark as being processed
+            postsBeingProcessed.add(saveKey)
+            
+            // ⚡ INSTAGRAM APPROACH: Update UI IMMEDIATELY (synchronous, main thread)
+            // This happens before any async work, so user sees instant feedback
+            val updatedPost = post.copy(isSavedByMe = newSavedState)
+            val updatedPosts = currentPosts.toMutableList()
+            updatedPosts[postIndex] = updatedPost
+            _uiState.value = _uiState.value.copy(posts = updatedPosts)
+            
+            // Fire network request in background (non-blocking)
+            viewModelScope.launch {
                 try {
                     savePostUseCase(postId, post.isSavedByMe)
                 } catch (e: Exception) {
+                    Log.e(TAG, "onSavePost: failed for postId=$postId", e)
                     // Revert on failure
                     val revertedPosts = currentPosts.toMutableList()
                     _uiState.value = _uiState.value.copy(posts = revertedPosts)
+                } finally {
+                    // Always remove from processing set
+                    postsBeingProcessed.remove(saveKey)
                 }
             }
         }

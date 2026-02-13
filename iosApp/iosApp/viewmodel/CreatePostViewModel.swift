@@ -111,13 +111,15 @@ class CreatePostViewModel: ObservableObject {
     
     // Repositories for post creation
     private let storageRepository = IOSStorageRepository()
-    private let postRepository = FirestorePostRepository()
     private let preferencesRepository = IOSPreferencesRepository()
     private lazy var authRepository: AuthRepository = {
         IOSAuthRepository(preferencesRepository: preferencesRepository)
     }()
     private lazy var userRepository: UserRepository = {
         FirestoreUserRepository(authRepository: authRepository)
+    }()
+    private lazy var postRepository: PostRepository = {
+        FirestorePostRepository(authRepository: authRepository, userRepository: userRepository)
     }()
     
     // Use case for creating posts

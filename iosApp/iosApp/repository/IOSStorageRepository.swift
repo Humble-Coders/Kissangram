@@ -164,6 +164,15 @@ public final class IOSStorageRepository: StorageRepository {
     
     // MARK: - Cloudinary Upload Methods
     
+    /// Ensure URL uses HTTPS (required for network security)
+    /// Converts http:// to https://
+    private func ensureHttps(_ url: String) -> String {
+        if url.hasPrefix("http://") {
+            return url.replacingOccurrences(of: "http://", with: "https://")
+        }
+        return url
+    }
+    
     /// Upload post media (image or video) to Cloudinary.
     /// - Parameters:
     ///   - mediaData: The media file data as KotlinByteArray
@@ -190,8 +199,10 @@ public final class IOSStorageRepository: StorageRepository {
                 completionHandler: { result, error in
                     if let error = error {
                         continuation.resume(throwing: error)
+                    } else if let secureUrl = result?.secureUrl {
+                        continuation.resume(returning: self.ensureHttps(secureUrl))
                     } else if let url = result?.url {
-                        continuation.resume(returning: url)
+                        continuation.resume(returning: self.ensureHttps(url))
                     } else {
                         continuation.resume(throwing: NSError(domain: "IOSStorageRepository", code: 500, userInfo: [NSLocalizedDescriptionKey: "Upload succeeded but no URL returned"]))
                     }
@@ -217,8 +228,10 @@ public final class IOSStorageRepository: StorageRepository {
                         completionHandler: { result, error in
                             if let error = error {
                                 continuation.resume(returning: nil)
+                            } else if let secureUrl = result?.secureUrl {
+                                continuation.resume(returning: self.ensureHttps(secureUrl))
                             } else if let url = result?.url {
-                                continuation.resume(returning: url)
+                                continuation.resume(returning: self.ensureHttps(url))
                             } else {
                                 continuation.resume(returning: nil)
                             }
@@ -257,8 +270,10 @@ public final class IOSStorageRepository: StorageRepository {
                 completionHandler: { result, error in
                     if let error = error {
                         continuation.resume(throwing: error)
+                    } else if let secureUrl = result?.secureUrl {
+                        continuation.resume(returning: self.ensureHttps(secureUrl))
                     } else if let url = result?.url {
-                        continuation.resume(returning: url)
+                        continuation.resume(returning: self.ensureHttps(url))
                     } else {
                         continuation.resume(throwing: NSError(domain: "IOSStorageRepository", code: 500, userInfo: [NSLocalizedDescriptionKey: "Upload succeeded but no URL returned"]))
                     }

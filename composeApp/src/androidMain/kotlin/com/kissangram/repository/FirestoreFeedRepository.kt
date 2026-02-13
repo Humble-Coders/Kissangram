@@ -7,6 +7,8 @@ import com.google.firebase.firestore.GeoPoint
 import com.google.firebase.firestore.Query
 import com.kissangram.model.*
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 
 /**
  * Firestore implementation of FeedRepository.
@@ -58,12 +60,27 @@ class FirestoreFeedRepository(
             val snapshot = query.get().await()
             val rawCount = snapshot.documents.size
             Log.d(TAG, "getHomeFeed: snapshot.documents.size=$rawCount")
-            val list = snapshot.documents.mapNotNull { doc ->
-                val post = doc.toPost()
+            
+            // First, parse all posts to get their IDs
+            val postsWithIds = snapshot.documents.mapNotNull { doc ->
+                val post = doc.toPost(isLikedByMe = false) // Temporary, will update after checking likes
                 if (post == null) Log.w(TAG, "getHomeFeed: toPost() returned null for doc ${doc.id}")
                 post
             }
-            Log.d(TAG, "getHomeFeed: parsed list.size=${list.size} (raw=$rawCount)")
+            
+            // Batch check which posts are liked by current user
+            val likedPostIds = if (postsWithIds.isNotEmpty()) {
+                batchCheckLikes(postsWithIds.map { it.id }, currentUserId)
+            } else {
+                emptySet()
+            }
+            
+            // Update posts with correct isLikedByMe value
+            val list = postsWithIds.map { post ->
+                post.copy(isLikedByMe = likedPostIds.contains(post.id))
+            }
+            
+            Log.d(TAG, "getHomeFeed: parsed list.size=${list.size} (raw=$rawCount), liked=${likedPostIds.size}")
             if (snapshot.documents.isNotEmpty()) {
                 lastDocumentSnapshot = snapshot.documents.last()
             }
@@ -80,7 +97,45 @@ class FirestoreFeedRepository(
         return getHomeFeed(0, DEFAULT_PAGE_SIZE)
     }
 
-    private fun DocumentSnapshot.toPost(): Post? {
+    /**
+     * Batch check which posts are liked by the current user.
+     * Uses parallel coroutines for efficient batch fetching.
+     */
+    private suspend fun batchCheckLikes(postIds: List<String>, userId: String): Set<String> = coroutineScope {
+        if (postIds.isEmpty()) return@coroutineScope emptySet()
+        
+        try {
+            // Use coroutines to check all posts in parallel
+            val results = postIds.map { postId ->
+                async {
+                    try {
+                        val likeDoc = firestore
+                            .collection("posts")
+                            .document(postId)
+                            .collection("likes")
+                            .document(userId)
+                            .get()
+                            .await()
+                        if (likeDoc.exists()) postId else null
+                    } catch (e: Exception) {
+                        Log.e(TAG, "batchCheckLikes: failed for postId=$postId", e)
+                        null
+                    }
+                }
+            }
+            
+            // Wait for all checks to complete and collect results
+            val likedPostIds = results.mapNotNull { it.await() }.toSet()
+            
+            Log.d(TAG, "batchCheckLikes: checked ${postIds.size} posts, found ${likedPostIds.size} liked")
+            likedPostIds
+        } catch (e: Exception) {
+            Log.e(TAG, "batchCheckLikes: failed", e)
+            emptySet() // Return empty set on error, posts will show as not liked
+        }
+    }
+
+    private fun DocumentSnapshot.toPost(isLikedByMe: Boolean = false): Post? {
         return try {
             val data = data ?: return null
             val id = getString("id") ?: this.id
@@ -179,8 +234,8 @@ class FirestoreFeedRepository(
                 likesCount = likesCount,
                 commentsCount = commentsCount,
                 savesCount = savesCount,
-                isLikedByMe = false,
-                isSavedByMe = false,
+                isLikedByMe = isLikedByMe,
+                isSavedByMe = false, // TODO: Check saved posts similarly
                 createdAt = createdAt,
                 updatedAt = updatedAt
             )

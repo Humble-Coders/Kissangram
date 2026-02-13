@@ -36,52 +36,11 @@ final class MockPostRepository: PostRepository {
     
     func getComments(postId: String, page: Int32, pageSize: Int32) async throws -> [Comment] {
         try? await Task.sleep(nanoseconds: 400_000_000)
-        
-        let currentTime = Int64(Date().timeIntervalSince1970 * 1000)
-        
-        return [
-            Comment(
-                id: "comment1",
-                postId: postId,
-                authorId: "user10",
-                authorName: "Dr. Sharma",
-                authorUsername: "dr_sharma",
-                authorProfileImageUrl: "https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?w=150",
-                authorRole: .expert,
-                authorVerificationStatus: .verified,
-                text: "Great progress! Make sure to check soil moisture before next irrigation.",
-                voiceComment: nil,
-                parentCommentId: nil,
-                repliesCount: 2,
-                likesCount: 15,
-                isLikedByMe: false,
-                isExpertAnswer: true,
-                isBestAnswer: false,
-                createdAt: currentTime - 1800000
-            ),
-            Comment(
-                id: "comment2",
-                postId: postId,
-                authorId: "user11",
-                authorName: "Anil Kumar",
-                authorUsername: "anil_farmer",
-                authorProfileImageUrl: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150",
-                authorRole: .farmer,
-                authorVerificationStatus: .unverified,
-                text: "Which variety is this? I want to try next season.",
-                voiceComment: nil,
-                parentCommentId: nil,
-                repliesCount: 1,
-                likesCount: 5,
-                isLikedByMe: true,
-                isExpertAnswer: false,
-                isBestAnswer: false,
-                createdAt: currentTime - 3600000
-            )
-        ]
+        // Return empty list - use FirestorePostRepository for actual data
+        return []
     }
     
-    func addComment(postId: String, text: String) async throws -> Comment {
+    func addComment(postId: String, text: String, parentCommentId: String?) async throws -> Comment {
         try? await Task.sleep(nanoseconds: 500_000_000)
         
         return Comment(
@@ -95,14 +54,19 @@ final class MockPostRepository: PostRepository {
             authorVerificationStatus: .unverified,
             text: text,
             voiceComment: nil,
-            parentCommentId: nil,
-            repliesCount: 0,
-            likesCount: 0,
+            parentCommentId: parentCommentId,
+            repliesCount: Int32(0),
+            likesCount: Int32(0),
             isLikedByMe: false,
             isExpertAnswer: false,
             isBestAnswer: false,
             createdAt: Int64(Date().timeIntervalSince1970 * 1000)
         )
+    }
+    
+    func deleteComment(postId: String, commentId: String, reason: String) async throws {
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        // Mock implementation - just simulate deletion
     }
     
     func getPostsByUser(userId: String, page: Int32, pageSize: Int32) async throws -> [Post] {

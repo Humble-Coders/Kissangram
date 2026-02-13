@@ -17,6 +17,7 @@ firebaseStorage = "21.0.0"
 firebaseFirestore = "25.1.1"
 datastore = "1.1.1"
 foundation = "1.10.2"
+ui = "1.10.2"
 
 [libraries]
 google-firebase-firestore = { module = "com.google.firebase:firebase-firestore" }
@@ -35,6 +36,7 @@ firebase-storage = { module = "com.google.firebase:firebase-storage-ktx", versio
 firebase-firestore = { module = "com.google.firebase:firebase-firestore-ktx", version.ref = "firebaseFirestore" }
 datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "datastore" }
 androidx-foundation = { group = "androidx.compose.foundation", name = "foundation", version.ref = "foundation" }
+androidx-ui = { group = "androidx.compose.ui", name = "ui", version.ref = "ui" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }

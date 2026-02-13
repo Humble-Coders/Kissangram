@@ -1,6 +1,7 @@
 package com.kissangram.ui.profile
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.rememberScrollState
@@ -11,6 +12,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.LaunchedEffect
@@ -28,6 +31,9 @@ import coil.compose.AsyncImage
 import com.kissangram.model.User
 import com.kissangram.model.UserRole
 import com.kissangram.model.VerificationStatus
+import com.kissangram.model.Post
+import com.kissangram.model.MediaType
+import com.kissangram.util.CloudinaryUrlTransformer
 import com.kissangram.ui.home.PrimaryGreen
 import com.kissangram.ui.home.AccentYellow
 import com.kissangram.ui.home.TextPrimary
@@ -53,6 +59,7 @@ fun ProfileScreen(
     onBackClick: () -> Unit = {},
     onEditProfile: () -> Unit = {},
     onSignOut: () -> Unit = {},
+    onPostClick: (String) -> Unit = {},
     reloadKey: Int = 0, // Key that changes to trigger reload after save
     viewModel: ProfileViewModel = viewModel()
 ) {
@@ -153,7 +160,10 @@ fun ProfileScreen(
                         uiState.user?.let { user ->
                             ProfileContent(
                                 user = user,
+                                posts = uiState.posts,
+                                isLoadingPosts = uiState.isLoadingPosts,
                                 onEditProfile = onEditProfile,
+                                onPostClick = onPostClick,
                                 paddingValues = PaddingValues(0.dp) // no Scaffold now
                             )
                         } ?: run {
@@ -173,7 +183,10 @@ fun ProfileScreen(
 @Composable
 private fun ProfileContent(
     user: User,
+    posts: List<Post>,
+    isLoadingPosts: Boolean,
     onEditProfile: () -> Unit,
+    onPostClick: (String) -> Unit,
     paddingValues: PaddingValues
 ) {
     Column(
@@ -345,17 +358,27 @@ private fun ProfileContent(
         Spacer(Modifier.height(24.dp))
         Text("Posts", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
         Spacer(Modifier.height(12.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            repeat(3) {
-                Surface(modifier = Modifier.weight(1f).aspectRatio(1f), shape = RoundedCornerShape(12.dp), color = Color(0xFFE5E6DE)) {}
+        
+        if (isLoadingPosts) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 32.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(
+                    color = PrimaryGreen,
+                    modifier = Modifier.size(24.dp)
+                )
             }
+        } else {
+            PostThumbnailGrid(
+                posts = posts,
+                onPostClick = onPostClick,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
-        Spacer(Modifier.height(8.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            repeat(3) {
-                Surface(modifier = Modifier.weight(1f).aspectRatio(1f), shape = RoundedCornerShape(12.dp), color = Color(0xFFE5E6DE)) {}
-            }
-        }
+        
         Spacer(Modifier.height(32.dp))
     }
 }
@@ -374,6 +397,164 @@ private fun StatItem(count: Int, label: String) {
             fontSize = 12.sp,
             color = TextSecondary
         )
+    }
+}
+
+@Composable
+private fun PostThumbnailGrid(
+    posts: List<Post>,
+    onPostClick: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    if (posts.isEmpty()) {
+        Box(
+            modifier = modifier
+                .fillMaxWidth()
+                .padding(vertical = 32.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "No posts yet",
+                fontSize = 15.sp,
+                color = TextSecondary
+            )
+        }
+    } else {
+        // Use regular Column with Rows instead of LazyVerticalGrid
+        // to avoid nested scrolling issues
+        Column(
+            modifier = modifier,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            posts.chunked(3).forEach { rowPosts ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    rowPosts.forEach { post ->
+                        PostThumbnailItem(
+                            post = post,
+                            onClick = { onPostClick(post.id) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    // Fill remaining space if row has less than 3 items
+                    repeat(3 - rowPosts.size) {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PostThumbnailItem(
+    post: Post,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .aspectRatio(1f)
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+    ) {
+        val firstMedia = post.media.firstOrNull()
+        
+        if (firstMedia != null) {
+            when (firstMedia.type) {
+                MediaType.IMAGE -> {
+                    val imageUrl = remember(firstMedia.url) {
+                        try {
+                            CloudinaryUrlTransformer.transformForThumbnail(firstMedia.url)
+                        } catch (e: Exception) {
+                            firstMedia.url
+                        }
+                    }
+                    AsyncImage(
+                        model = imageUrl,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                }
+                MediaType.VIDEO -> {
+                    val thumbnailUrl = remember(firstMedia.thumbnailUrl, firstMedia.url) {
+                        if (firstMedia.thumbnailUrl != null) {
+                            try {
+                                CloudinaryUrlTransformer.transformForThumbnail(firstMedia.thumbnailUrl!!)
+                            } catch (e: Exception) {
+                                firstMedia.thumbnailUrl!!
+                            }
+                        } else {
+                            null
+                        }
+                    }
+                    
+                    if (thumbnailUrl != null) {
+                        AsyncImage(
+                            model = thumbnailUrl,
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.Black.copy(alpha = 0.3f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.PlayArrow,
+                                contentDescription = "Video",
+                                tint = Color.White,
+                                modifier = Modifier.size(32.dp)
+                            )
+                        }
+                    }
+                    
+                    // Play icon overlay
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.2f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.PlayArrow,
+                            contentDescription = "Video",
+                            tint = Color.White,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+                }
+            }
+        } else {
+            // No media - show placeholder
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xFFE5E6DE)),
+                contentAlignment = Alignment.Center
+            ) {
+                if (post.text.isNotEmpty()) {
+                    Text(
+                        text = post.text.take(1).uppercase(),
+                        fontSize = 24.sp,
+                        color = TextSecondary
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Outlined.Image,
+                        contentDescription = "Post",
+                        tint = TextSecondary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
+        }
     }
 }
 

@@ -14,6 +14,7 @@ class OtpViewModel: ObservableObject {
     
     private let preferencesRepository: PreferencesRepository
     private let authRepository: AuthRepository
+    private let userRepository: UserRepository
     private let verifyOtpUseCase: VerifyOtpUseCase
     private let speechRepository: IOSSpeechRepository
     
@@ -21,11 +22,16 @@ class OtpViewModel: ObservableObject {
         self.phoneNumber = phoneNumber
         self.preferencesRepository = IOSPreferencesRepository()
         self.authRepository = IOSAuthRepository(preferencesRepository: preferencesRepository)
+        self.userRepository = FirestoreUserRepository(authRepository: authRepository)
         self.verifyOtpUseCase = VerifyOtpUseCase(authRepository: authRepository)
         self.speechRepository = IOSSpeechRepository()
     }
     
-    func verifyOtp(onSuccess: @escaping () -> Void, onError: @escaping (String) -> Void) async {
+    func verifyOtp(
+        onExistingUser: @escaping (String) -> Void, // userName callback for existing users
+        onNewUser: @escaping () -> Void, // callback for new users
+        onError: @escaping (String) -> Void
+    ) async {
         guard otp.count == 6 else {
             error = "Please enter 6 digit OTP"
             return
@@ -36,8 +42,17 @@ class OtpViewModel: ObservableObject {
         
         do {
             try await verifyOtpUseCase.invoke(otp: otp)
-            isLoading = false
-            onSuccess()
+            
+            // Check if user exists in Firestore
+            if let currentUser = try await userRepository.getCurrentUser() {
+                // Existing user - show welcome back screen
+                isLoading = false
+                onExistingUser(currentUser.name)
+            } else {
+                // New user - continue to name screen
+                isLoading = false
+                onNewUser()
+            }
         } catch {
             isLoading = false
             let errorMessage = (error as? Error)?.localizedDescription ?? "Invalid OTP"

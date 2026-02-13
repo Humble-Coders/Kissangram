@@ -226,8 +226,9 @@ class AndroidStorageRepository(
 
 
                         override fun onSuccess(requestId: String, resultData: Map<*, *>?) {
-                            val url = resultData?.get("url") as? String
-                                ?: resultData?.get("secure_url") as? String
+                            val url = (resultData?.get("secure_url") as? String
+                                ?: resultData?.get("url") as? String)
+                                ?.let { ensureHttps(it) }
                                 ?: throw IllegalStateException("No URL in upload result")
                             Log.d(TAG, "✅ AndroidStorageRepository: Post media uploaded to Cloudinary successfully")
                             Log.d(TAG, "   - Media URL: $url")
@@ -269,8 +270,9 @@ class AndroidStorageRepository(
                                     override fun onStart(requestId: String) {}
                                     override fun onProgress(requestId: String, bytes: Long, totalBytes: Long) {}
                                     override fun onSuccess(requestId: String, resultData: Map<*, *>?) {
-                                        val url = resultData?.get("url") as? String
-                                            ?: resultData?.get("secure_url") as? String
+                                        val url = (resultData?.get("secure_url") as? String
+                                            ?: resultData?.get("url") as? String)
+                                            ?.let { ensureHttps(it) }
                                         continuation.resume(url)
                                     }
                                     override fun onError(requestId: String, error: ErrorInfo) {
@@ -338,8 +340,9 @@ class AndroidStorageRepository(
                         }
                         
                         override fun onSuccess(requestId: String, resultData: Map<*, *>?) {
-                            val url = resultData?.get("url") as? String
-                                ?: resultData?.get("secure_url") as? String
+                            val url = (resultData?.get("secure_url") as? String
+                                ?: resultData?.get("url") as? String)
+                                ?.let { ensureHttps(it) }
                                 ?: throw IllegalStateException("No URL in upload result")
                             Log.d(TAG, "✅ AndroidStorageRepository: Voice caption uploaded to Cloudinary successfully")
                             Log.d(TAG, "   - Voice URL: $url")
@@ -369,6 +372,18 @@ class AndroidStorageRepository(
         } catch (e: Exception) {
             Log.e(TAG, "uploadVoiceCaptionToCloudinary: FAILED", e)
             throw Exception("Failed to upload voice caption to Cloudinary: ${e.message}", e)
+        }
+    }
+    
+    /**
+     * Ensure URL uses HTTPS (required for Android network security)
+     * Converts http:// to https://
+     */
+    private fun ensureHttps(url: String): String {
+        return if (url.startsWith("http://")) {
+            url.replace("http://", "https://")
+        } else {
+            url
         }
     }
     

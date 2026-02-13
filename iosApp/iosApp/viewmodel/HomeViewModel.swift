@@ -26,11 +26,15 @@ class HomeViewModel: ObservableObject {
     @Published var error: String?
 
     private var currentPage: Int32 = 0
+    
+    // Track posts currently being processed to prevent race conditions
+    private var postsBeingProcessed = Set<String>()
 
     init() {
         self.authRepository = IOSAuthRepository(preferencesRepository: prefs)
+        let userRepository = FirestoreUserRepository(authRepository: authRepository)
         self.feedRepository = FirestoreFeedRepository(authRepository: authRepository)
-        self.postRepository = MockPostRepository()
+        self.postRepository = FirestorePostRepository(authRepository: authRepository, userRepository: userRepository)
         self.storyRepository = FirestoreStoryRepository()
 
         self.getHomeFeedUseCase = GetHomeFeedUseCase(feedRepository: feedRepository)
@@ -107,14 +111,29 @@ class HomeViewModel: ObservableObject {
         }
     }
     
-    func onLikePost(_ postId: String) {
-        guard let index = posts.firstIndex(where: { $0.id == postId }) else { return }
+    /**
+     * Handles like/unlike action for a post.
+     * @return true if the request was accepted and processed, false if it was ignored (e.g., already processing)
+     */
+    func onLikePost(_ postId: String) -> Bool {
+        // Prevent multiple simultaneous requests for the same post
+        guard !postsBeingProcessed.contains(postId) else {
+            Self.log.debug("onLikePost: post \(postId) is already being processed, ignoring")
+            return false
+        }
+        
+        guard let index = posts.firstIndex(where: { $0.id == postId }) else { return false }
         
         let post = posts[index]
         let newLikedState = !post.isLikedByMe
         let newLikesCount = newLikedState ? post.likesCount + 1 : post.likesCount - 1
         
-        // Optimistic update
+        // Mark as being processed
+        postsBeingProcessed.insert(postId)
+        
+        // ⚡ INSTAGRAM APPROACH: Update UI IMMEDIATELY (synchronous, main thread)
+        // Since we're @MainActor, this happens synchronously before any async work
+        // User sees instant feedback with zero perceived lag
         posts[index] = Post(
             id: post.id,
             authorId: post.authorId,
@@ -141,22 +160,42 @@ class HomeViewModel: ObservableObject {
         )
         
         Task {
+            defer {
+                // Always remove from processing set
+                postsBeingProcessed.remove(postId)
+            }
+            
             do {
                 try await likePostUseCase.invoke(postId: postId, isCurrentlyLiked: post.isLikedByMe)
             } catch {
+                Self.log.error("onLikePost: failed for postId=\(postId), error=\(error.localizedDescription)")
                 // Revert on failure
                 self.posts[index] = post
             }
         }
+        
+        return true
     }
     
     func onSavePost(_ postId: String) {
+        // Prevent multiple simultaneous requests for the same post
+        let saveKey = "save_\(postId)"
+        guard !postsBeingProcessed.contains(saveKey) else {
+            Self.log.debug("onSavePost: post \(postId) is already being processed, ignoring")
+            return
+        }
+        
         guard let index = posts.firstIndex(where: { $0.id == postId }) else { return }
         
         let post = posts[index]
         let newSavedState = !post.isSavedByMe
         
-        // Optimistic update
+        // Mark as being processed
+        postsBeingProcessed.insert(saveKey)
+        
+        // ⚡ INSTAGRAM APPROACH: Update UI IMMEDIATELY (synchronous, main thread)
+        // Since we're @MainActor, this happens synchronously before any async work
+        // User sees instant feedback with zero perceived lag
         posts[index] = Post(
             id: post.id,
             authorId: post.authorId,
@@ -183,9 +222,15 @@ class HomeViewModel: ObservableObject {
         )
         
         Task {
+            defer {
+                // Always remove from processing set
+                postsBeingProcessed.remove(saveKey)
+            }
+            
             do {
                 try await savePostUseCase.invoke(postId: postId, isCurrentlySaved: post.isSavedByMe)
             } catch {
+                Self.log.error("onSavePost: failed for postId=\(postId), error=\(error.localizedDescription)")
                 // Revert on failure
                 self.posts[index] = post
             }

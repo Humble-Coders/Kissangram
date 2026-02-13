@@ -5,6 +5,7 @@ sealed class Screen {
     object LanguageSelection : Screen()
     data class PhoneNumber(val languageCode: String) : Screen()
     data class Otp(val phoneNumber: String) : Screen()
+    data class WelcomeBack(val userName: String) : Screen()
     object Name : Screen()
     object RoleSelection : Screen()
     object ExpertDocumentUpload : Screen()
@@ -31,6 +32,7 @@ sealed class Screen {
         const val LANGUAGE_SELECTION = "language_selection"
         const val PHONE_NUMBER = "phone_number/{languageCode}"
         const val OTP = "otp/{phoneNumber}"
+        const val WELCOME_BACK = "welcome_back/{userName}"
         const val NAME = "name"
         const val ROLE_SELECTION = "role_selection"
         const val EXPERT_DOCUMENT_UPLOAD = "expert_document_upload"
@@ -54,6 +56,7 @@ sealed class Screen {
                 is LanguageSelection -> LANGUAGE_SELECTION
                 is PhoneNumber -> buildPhoneNumberRoute(languageCode)
                 is Otp -> buildOtpRoute(phoneNumber)
+                is WelcomeBack -> buildWelcomeBackRoute(userName)
                 is Name -> NAME
                 is RoleSelection -> ROLE_SELECTION
                 is ExpertDocumentUpload -> EXPERT_DOCUMENT_UPLOAD
@@ -79,7 +82,11 @@ sealed class Screen {
         }
         
         fun buildOtpRoute(phoneNumber: String): String {
-            return "otp/$phoneNumber"
+            return "otp/${java.net.URLEncoder.encode(phoneNumber, "UTF-8")}"
+        }
+        
+        fun buildWelcomeBackRoute(userName: String): String {
+            return "welcome_back/${java.net.URLEncoder.encode(userName, "UTF-8")}"
         }
         
         fun buildPostDetailRoute(postId: String): String {

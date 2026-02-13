@@ -41,7 +41,8 @@ import kissangram.composeapp.generated.resources.*
 fun OtpScreen(
     phoneNumber: String,
     onBackClick: () -> Unit,
-    onOtpVerified: () -> Unit,
+    onExistingUser: (String) -> Unit, // userName callback for existing users
+    onNewUser: () -> Unit, // callback for new users
     onResendOtp: () -> Unit
 ) {
     val context = LocalContext.current
@@ -265,7 +266,8 @@ fun OtpScreen(
             Button(
                 onClick = {
                     viewModel.verifyOtp(
-                        onSuccess = onOtpVerified,
+                        onExistingUser = onExistingUser,
+                        onNewUser = onNewUser,
                         onError = {}
                     )
                 },

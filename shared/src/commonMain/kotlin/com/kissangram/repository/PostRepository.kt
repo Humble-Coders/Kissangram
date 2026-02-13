@@ -45,9 +45,22 @@ interface PostRepository {
     
     /**
      * Add a comment to a post
+     * @param postId The ID of the post
+     * @param text The comment text
+     * @param parentCommentId Optional parent comment ID for replies. If null, creates a top-level comment.
+     * @return The created Comment object
      */
     @Throws(Exception::class)
-    suspend fun addComment(postId: String, text: String): Comment
+    suspend fun addComment(postId: String, text: String, parentCommentId: String? = null): Comment
+    
+    /**
+     * Delete a comment from a post
+     * @param postId The ID of the post
+     * @param commentId The ID of the comment to delete
+     * @param reason The reason for deletion
+     */
+    @Throws(Exception::class)
+    suspend fun deleteComment(postId: String, commentId: String, reason: String)
     
     /**
      * Get posts by user

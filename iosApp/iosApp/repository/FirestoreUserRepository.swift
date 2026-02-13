@@ -32,6 +32,20 @@ final class FirestoreUserRepository: UserRepository {
         let searchKeywords = Self.buildSearchKeywords(name: name, username: username)
         let now = Int64(Date().timeIntervalSince1970 * 1000)
 
+        // Check if user document already exists to preserve count fields
+        let userDocRef = usersCollection.document(userId)
+        let existingDoc: DocumentSnapshot?
+        do {
+            existingDoc = try await userDocRef.getDocument()
+        } catch {
+            print("createUserProfile: Error checking existing user, assuming new user: \(error.localizedDescription)")
+            existingDoc = nil
+        }
+        
+        let userExists = existingDoc?.exists ?? false
+        print("createUserProfile: User exists=\(userExists)")
+
+        // Build data map with base fields
         var data: [String: Any] = [
             Self.fieldId: userId,
             Self.fieldPhoneNumber: phoneNumber,
@@ -40,16 +54,25 @@ final class FirestoreUserRepository: UserRepository {
             Self.fieldRole: Self.roleToFirestore(role),
             Self.fieldVerificationStatus: Self.verificationStatusToFirestore(verificationStatus),
             Self.fieldExpertise: [String](),
-            Self.fieldFollowersCount: 0,
-            Self.fieldFollowingCount: 0,
-            Self.fieldPostsCount: 0,
             Self.fieldLanguage: language,
-            Self.fieldCreatedAt: now,
             Self.fieldUpdatedAt: now,
             Self.fieldLastActiveAt: now,
             Self.fieldSearchKeywords: searchKeywords,
             Self.fieldIsActive: true
         ]
+        
+        // Only set count fields and createdAt if user doesn't exist
+        // This preserves existing follow counts when user logs in again
+        if !userExists {
+            data[Self.fieldFollowersCount] = 0
+            data[Self.fieldFollowingCount] = 0
+            data[Self.fieldPostsCount] = 0
+            data[Self.fieldCreatedAt] = now
+            print("createUserProfile: New user - setting count fields to 0")
+        } else {
+            print("createUserProfile: Existing user - preserving count fields")
+        }
+        
         data[Self.fieldProfileImageUrl] = NSNull()
         data[Self.fieldBio] = NSNull()
         data[Self.fieldVerificationDocUrl] = verificationDocUrl ?? NSNull()
@@ -58,6 +81,7 @@ final class FirestoreUserRepository: UserRepository {
         data[Self.fieldLocation] = NSNull()
 
         try await usersCollection.document(userId).setData(data, merge: true)
+        print("createUserProfile: SUCCESS - User profile \(userExists ? "updated" : "created")")
     }
 
     func getCurrentUser() async throws -> User? {

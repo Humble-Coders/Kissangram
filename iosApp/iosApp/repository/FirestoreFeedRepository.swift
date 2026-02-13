@@ -45,12 +45,50 @@ final class FirestoreFeedRepository: FeedRepository {
         let snapshot = try await query.getDocuments()
         let rawCount = snapshot.documents.count
         Self.log.debug("getHomeFeed: snapshot.documents.count=\(rawCount)")
-        let posts = snapshot.documents.compactMap { doc -> Post? in
-            let post = toPost(from: doc)
+        
+        // First, parse all posts to get their IDs
+        let postsWithIds = snapshot.documents.compactMap { doc -> Post? in
+            let post = toPost(from: doc, isLikedByMe: false) // Temporary, will update after checking likes
             if post == nil { Self.log.warning("getHomeFeed: toPost returned nil for doc \(doc.documentID)") }
             return post
         }
-        Self.log.debug("getHomeFeed: parsed list.count=\(posts.count) raw=\(rawCount)")
+        
+        // Batch check which posts are liked by current user
+        let likedPostIds = if !postsWithIds.isEmpty {
+            try await batchCheckLikes(postIds: postsWithIds.map { $0.id }, userId: currentUserId)
+        } else {
+            Set<String>()
+        }
+        
+        // Update posts with correct isLikedByMe value
+        let posts = postsWithIds.map { post in
+            Post(
+                id: post.id,
+                authorId: post.authorId,
+                authorName: post.authorName,
+                authorUsername: post.authorUsername,
+                authorProfileImageUrl: post.authorProfileImageUrl,
+                authorRole: post.authorRole,
+                authorVerificationStatus: post.authorVerificationStatus,
+                type: post.type,
+                text: post.text,
+                media: post.media,
+                voiceCaption: post.voiceCaption,
+                crops: post.crops,
+                hashtags: post.hashtags,
+                location: post.location,
+                question: post.question,
+                likesCount: post.likesCount,
+                commentsCount: post.commentsCount,
+                savesCount: post.savesCount,
+                isLikedByMe: likedPostIds.contains(post.id),
+                isSavedByMe: post.isSavedByMe,
+                createdAt: post.createdAt,
+                updatedAt: post.updatedAt
+            )
+        }
+        
+        Self.log.debug("getHomeFeed: parsed list.count=\(posts.count) raw=\(rawCount), liked=\(likedPostIds.count)")
         if let last = snapshot.documents.last {
             lastDocumentSnapshot = last
         }
@@ -62,10 +100,45 @@ final class FirestoreFeedRepository: FeedRepository {
         lastDocumentSnapshot = nil
         return try await getHomeFeed(page: 0, pageSize: 20)
     }
+    
+    // MARK: - Batch Check Likes
+    
+    /// Batch check which posts are liked by the current user.
+    /// Uses parallel async/await for efficient batch fetching.
+    private func batchCheckLikes(postIds: [String], userId: String) async throws -> Set<String> {
+        if postIds.isEmpty { return Set<String>() }
+        
+        return try await withThrowingTaskGroup(of: (String, Bool).self) { group in
+            var likedPostIds = Set<String>()
+            
+            // Create tasks to check each post
+            for postId in postIds {
+                group.addTask {
+                    let likeDoc = try await self.firestore
+                        .collection("posts")
+                        .document(postId)
+                        .collection("likes")
+                        .document(userId)
+                        .getDocument()
+                    return (postId, likeDoc.exists)
+                }
+            }
+            
+            // Collect results
+            for try await (postId, exists) in group {
+                if exists {
+                    likedPostIds.insert(postId)
+                }
+            }
+            
+            Self.log.debug("batchCheckLikes: checked \(postIds.count) posts, found \(likedPostIds.count) liked")
+            return likedPostIds
+        }
+    }
 
     // MARK: - toPost (same shape as post document in feed)
 
-    private func toPost(from doc: DocumentSnapshot) -> Post? {
+    private func toPost(from doc: DocumentSnapshot, isLikedByMe: Bool = false) -> Post? {
         guard let data = doc.data() else { return nil }
 
         let id = (doc.get("id") as? String) ?? doc.documentID
@@ -183,8 +256,8 @@ final class FirestoreFeedRepository: FeedRepository {
                 likesCount: Int32(likesCount),
                 commentsCount: Int32(commentsCount),
                 savesCount: Int32(savesCount),
-                isLikedByMe: false,
-                isSavedByMe: false,
+                isLikedByMe: isLikedByMe,
+                isSavedByMe: false, // TODO: Check saved posts similarly
                 createdAt: Int64(createdAt),
                 updatedAt: updatedAt.map { KotlinLong(value: Int64($0)) }
             )

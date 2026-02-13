@@ -20,12 +20,15 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.google.firebase.auth.FirebaseAuth
 import com.kissangram.navigation.Screen
+import com.kissangram.navigation.PostCache
+import com.kissangram.model.Post
 import com.kissangram.repository.AndroidPreferencesRepository
 import com.kissangram.ui.auth.ExpertDocumentUploadScreen
 import com.kissangram.ui.auth.NameScreen
 import com.kissangram.ui.auth.OtpScreen
 import com.kissangram.ui.auth.PhoneNumberScreen
 import com.kissangram.ui.auth.RoleSelectionScreen
+import com.kissangram.ui.auth.WelcomeBackScreen
 import com.kissangram.model.UserRole
 import com.kissangram.ui.home.HomeScreen
 import com.kissangram.ui.home.components.BottomNavItem
@@ -191,13 +194,38 @@ private fun NavigationGraph(navController: NavHostController, startDestination: 
             OtpScreen(
                 phoneNumber = phoneNumber,
                 onBackClick = { navController.popBackStack() },
-                onOtpVerified = {
+                onExistingUser = { userName ->
+                    navController.navigate(Screen.buildWelcomeBackRoute(userName)) {
+                        popUpTo(Screen.LANGUAGE_SELECTION) { inclusive = false }
+                    }
+                },
+                onNewUser = {
                     navController.navigate(Screen.NAME) {
                         popUpTo(Screen.LANGUAGE_SELECTION) { inclusive = false }
                     }
                 },
                 onResendOtp = {
                     navController.popBackStack()
+                }
+            )
+        }
+        
+        composable(
+            route = Screen.WELCOME_BACK,
+            arguments = listOf(navArgument("userName") { defaultValue = "" })
+        ) { backStackEntry ->
+            val encodedUserName = backStackEntry.arguments?.getString("userName") ?: ""
+            val userName = try {
+                java.net.URLDecoder.decode(encodedUserName, "UTF-8")
+            } catch (e: Exception) {
+                encodedUserName
+            }
+            WelcomeBackScreen(
+                userName = userName,
+                onContinue = {
+                    navController.navigate(Screen.HOME) {
+                        popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                    }
                 }
             )
         }
@@ -254,7 +282,8 @@ private fun NavigationGraph(navController: NavHostController, startDestination: 
                 onNavigateToPostDetail = { postId -> 
                     navController.navigate(Screen.buildPostDetailRoute(postId))
                 },
-                onNavigateToComments = { postId -> 
+                onNavigateToComments = { postId, post -> 
+                    PostCache.put(postId, post)
                     navController.navigate(Screen.buildCommentsRoute(postId))
                 }
             )
@@ -394,6 +423,9 @@ private fun NavigationGraph(navController: NavHostController, startDestination: 
                             popUpTo(0) { inclusive = true }
                         }
                     },
+                    onPostClick = { postId ->
+                        navController.navigate(Screen.buildPostDetailRoute(postId))
+                    },
                     reloadKey = profileReloadKey
                 )
             } else {
@@ -418,7 +450,15 @@ private fun NavigationGraph(navController: NavHostController, startDestination: 
             arguments = listOf(navArgument("postId") { defaultValue = "" })
         ) { backStackEntry ->
             val postId = backStackEntry.arguments?.getString("postId") ?: ""
-            PlaceholderScreen("Comments: $postId")
+            val initialPost = PostCache.get(postId) // Get and remove from cache
+            com.kissangram.ui.comments.CommentsScreen(
+                postId = postId,
+                initialPost = initialPost,
+                onBackClick = { navController.popBackStack() },
+                onNavigateToProfile = { userId ->
+                    navController.navigate(Screen.PROFILE.replace("{userId}", userId))
+                }
+            )
         }
         
         composable(

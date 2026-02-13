@@ -82,7 +82,7 @@ struct ContentView: View {
                         onNavigateToStory: { userId in navigateTo(.story(userId: userId)) },
                         onNavigateToCreateStory: { navigateTo(.createStory) },
                         onNavigateToPostDetail: { postId in navigateTo(.postDetail(postId: postId)) },
-                        onNavigateToComments: { postId in navigateTo(.comments(postId: postId)) }
+                        onNavigateToComments: { postId, post in navigateTo(.comments(postId: postId, post: post)) }
                     )
                     .tag(BottomNavItem.home)
                     .tabItem {
@@ -154,12 +154,20 @@ struct ContentView: View {
                         Color.appBackground
                     }
                     
-                    // Show either auth flow, edit profile, create story, or user profile (which don't have bottom nav)
+                    // Show either auth flow, edit profile, create story, user profile, or detail screens (which don't have bottom nav)
                     if case .editProfile = currentScreen {
                         mainAppContent
                     } else if case .createStory = currentScreen {
                         mainAppContent
                     } else if case .userProfile = currentScreen {
+                        mainAppContent
+                    } else if case .comments = currentScreen {
+                        mainAppContent
+                    } else if case .postDetail = currentScreen {
+                        mainAppContent
+                    } else if case .notifications = currentScreen {
+                        mainAppContent
+                    } else if case .messages = currentScreen {
                         mainAppContent
                     } else {
                         authFlowContent
@@ -196,11 +204,24 @@ struct ContentView: View {
                 onBackClick: {
                     navigateBack()
                 },
-                onOtpVerified: {
+                onExistingUser: { userName in
+                    navigateTo(.welcomeBack(userName: userName))
+                },
+                onNewUser: {
                     navigateTo(.name)
                 },
                 onResendOtp: {
                     navigateBack()
+                }
+            )
+            
+        case .welcomeBack(let userName):
+            WelcomeBackView(
+                userName: userName,
+                onContinue: {
+                    navigateTo(.home)
+                    selectedTab = .home
+                    navigationStack = []
                 }
             )
             
@@ -248,7 +269,7 @@ struct ContentView: View {
                 onNavigateToStory: { userId in navigateTo(.story(userId: userId)) },
                 onNavigateToCreateStory: { navigateTo(.createStory) },
                 onNavigateToPostDetail: { postId in navigateTo(.postDetail(postId: postId)) },
-                onNavigateToComments: { postId in navigateTo(.comments(postId: postId)) }
+                onNavigateToComments: { postId, post in navigateTo(.comments(postId: postId, post: post)) }
             )
             
         case .search:
@@ -283,6 +304,7 @@ struct ContentView: View {
                     navigationStack = []
                     selectedTab = .home
                 },
+                onPostClick: { postId in navigateTo(.postDetail(postId: postId)) },
                 reloadKey: profileReloadKey
             )
             
@@ -311,6 +333,7 @@ struct ContentView: View {
                         navigationStack = []
                         selectedTab = .home
                     },
+                    onPostClick: { postId in navigateTo(.postDetail(postId: postId)) },
                     reloadKey: profileReloadKey
                 )
             } else {
@@ -320,6 +343,14 @@ struct ContentView: View {
                     onBackClick: { navigateBack() }
                 )
             }
+            
+        case .comments(let postId, let post):
+            CommentsView(
+                postId: postId,
+                initialPost: post,
+                onBackClick: { navigateBack() },
+                onNavigateToProfile: { userId in navigateTo(.userProfile(userId: userId)) }
+            )
             
         default:
             EmptyView()

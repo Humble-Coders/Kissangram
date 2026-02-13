@@ -41,71 +41,11 @@ class MockPostRepository : PostRepository {
     
     override suspend fun getComments(postId: String, page: Int, pageSize: Int): List<Comment> {
         delay(400)
-        
-        val currentTime = System.currentTimeMillis()
-        
-        return listOf(
-            Comment(
-                id = "comment1",
-                postId = postId,
-                authorId = "user10",
-                authorName = "Dr. Sharma",
-                authorUsername = "dr_sharma",
-                authorProfileImageUrl = "https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?w=150",
-                authorRole = UserRole.EXPERT,
-                authorVerificationStatus = VerificationStatus.VERIFIED,
-                text = "Great progress! Make sure to check soil moisture before next irrigation.",
-                voiceComment = null,
-                parentCommentId = null,
-                repliesCount = 2,
-                likesCount = 15,
-                isLikedByMe = false,
-                isExpertAnswer = true,
-                isBestAnswer = false,
-                createdAt = currentTime - 1800000
-            ),
-            Comment(
-                id = "comment2",
-                postId = postId,
-                authorId = "user11",
-                authorName = "Anil Kumar",
-                authorUsername = "anil_farmer",
-                authorProfileImageUrl = "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150",
-                authorRole = UserRole.FARMER,
-                authorVerificationStatus = VerificationStatus.UNVERIFIED,
-                text = "Which variety is this? I want to try next season.",
-                voiceComment = null,
-                parentCommentId = null,
-                repliesCount = 1,
-                likesCount = 5,
-                isLikedByMe = true,
-                isExpertAnswer = false,
-                isBestAnswer = false,
-                createdAt = currentTime - 3600000
-            ),
-            Comment(
-                id = "comment3",
-                postId = postId,
-                authorId = "user12",
-                authorName = "Ravi Singh",
-                authorUsername = "ravi_agri",
-                authorProfileImageUrl = null,
-                authorRole = UserRole.FARMER,
-                authorVerificationStatus = VerificationStatus.UNVERIFIED,
-                text = "Very nice! What's your irrigation schedule?",
-                voiceComment = null,
-                parentCommentId = null,
-                repliesCount = 0,
-                likesCount = 3,
-                isLikedByMe = false,
-                isExpertAnswer = false,
-                isBestAnswer = false,
-                createdAt = currentTime - 5400000
-            )
-        )
+        // Return empty list - use FirestorePostRepository for actual data
+        return emptyList()
     }
     
-    override suspend fun addComment(postId: String, text: String): Comment {
+    override suspend fun addComment(postId: String, text: String, parentCommentId: String?): Comment {
         delay(500)
         
         return Comment(
@@ -119,7 +59,7 @@ class MockPostRepository : PostRepository {
             authorVerificationStatus = VerificationStatus.UNVERIFIED,
             text = text,
             voiceComment = null,
-            parentCommentId = null,
+            parentCommentId = parentCommentId,
             repliesCount = 0,
             likesCount = 0,
             isLikedByMe = false,
@@ -127,6 +67,11 @@ class MockPostRepository : PostRepository {
             isBestAnswer = false,
             createdAt = System.currentTimeMillis()
         )
+    }
+    
+    override suspend fun deleteComment(postId: String, commentId: String, reason: String) {
+        delay(300)
+        // Mock implementation - just simulate deletion
     }
     
     override suspend fun getPostsByUser(userId: String, page: Int, pageSize: Int): List<Post> {

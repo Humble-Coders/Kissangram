@@ -5,19 +5,22 @@ struct OtpView: View {
     let phoneNumber: String
     @StateObject private var viewModel: OtpViewModel
     let onBackClick: () -> Void
-    let onOtpVerified: () -> Void
+    let onExistingUser: (String) -> Void // userName callback for existing users
+    let onNewUser: () -> Void // callback for new users
     let onResendOtp: () -> Void
     
     init(
         phoneNumber: String,
         onBackClick: @escaping () -> Void,
-        onOtpVerified: @escaping () -> Void,
+        onExistingUser: @escaping (String) -> Void,
+        onNewUser: @escaping () -> Void,
         onResendOtp: @escaping () -> Void
     ) {
         self.phoneNumber = phoneNumber
         self._viewModel = StateObject(wrappedValue: OtpViewModel(phoneNumber: phoneNumber))
         self.onBackClick = onBackClick
-        self.onOtpVerified = onOtpVerified
+        self.onExistingUser = onExistingUser
+        self.onNewUser = onNewUser
         self.onResendOtp = onResendOtp
     }
     
@@ -176,7 +179,8 @@ struct OtpView: View {
                     Button(action: {
                         Task {
                             await viewModel.verifyOtp(
-                                onSuccess: onOtpVerified,
+                                onExistingUser: onExistingUser,
+                                onNewUser: onNewUser,
                                 onError: { _ in }
                             )
                         }

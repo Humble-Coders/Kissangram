@@ -11,6 +11,7 @@ struct ProfileView: View {
     var onBackClick: () -> Void = {}
     var onEditProfile: () -> Void = {}
     var onSignOut: () -> Void = {}
+    var onPostClick: (String) -> Void = { _ in }
     var reloadKey: Int = 0 // Key that changes to trigger reload after save
 
     var body: some View {
@@ -41,10 +42,16 @@ struct ProfileView: View {
                     Spacer()
                 } else if let user = viewModel.user {
                     ScrollView {
-                        ProfileContent(user: user, onEditProfile: onEditProfile)
-                            .padding(.horizontal, 18)
-                            .padding(.top, 24)
-                            .padding(.bottom, 20)
+                        ProfileContent(
+                            user: user,
+                            posts: viewModel.posts,
+                            isLoadingPosts: viewModel.isLoadingPosts,
+                            onEditProfile: onEditProfile,
+                            onPostClick: onPostClick
+                        )
+                        .padding(.horizontal, 18)
+                        .padding(.top, 24)
+                        .padding(.bottom, 20)
                     }
                     .scrollContentBackground(.hidden)
                 } else {
@@ -89,7 +96,10 @@ struct ProfileView: View {
 
 struct ProfileContent: View {
     let user: User
+    let posts: [Post]
+    let isLoadingPosts: Bool
     let onEditProfile: () -> Void
+    let onPostClick: (String) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 27) {
@@ -202,21 +212,16 @@ struct ProfileContent: View {
                     .font(.system(size: 18, weight: .bold))
                     .foregroundColor(.textPrimary)
 
-                VStack(spacing: 8) {
-                    HStack(spacing: 8) {
-                        ForEach(0..<3, id: \.self) { _ in
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(Color(red: 0.898, green: 0.902, blue: 0.859))
-                                .aspectRatio(1, contentMode: .fit)
-                        }
+                if isLoadingPosts {
+                    HStack {
+                        Spacer()
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .primaryGreen))
+                        Spacer()
                     }
-                    HStack(spacing: 8) {
-                        ForEach(0..<3, id: \.self) { _ in
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(Color(red: 0.898, green: 0.902, blue: 0.859))
-                                .aspectRatio(1, contentMode: .fit)
-                        }
-                    }
+                    .padding(.vertical, 32)
+                } else {
+                    PostThumbnailGrid(posts: posts, onPostClick: onPostClick)
                 }
             }
 
@@ -288,6 +293,115 @@ struct VerificationStatusBadge: View {
         default:
             return ("Unverified", Color.textSecondary, "questionmark.circle")
         }
+    }
+}
+
+struct PostThumbnailGrid: View {
+    let posts: [Post]
+    let onPostClick: (String) -> Void
+    
+    private let columns = [
+        GridItem(.flexible(), spacing: 8),
+        GridItem(.flexible(), spacing: 8),
+        GridItem(.flexible(), spacing: 8)
+    ]
+    
+    var body: some View {
+        if posts.isEmpty {
+            Text("No posts yet")
+                .font(.system(size: 15))
+                .foregroundColor(.textSecondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 32)
+        } else {
+            LazyVGrid(columns: columns, spacing: 8) {
+                ForEach(posts, id: \.id) { post in
+                    PostThumbnailItem(post: post, onClick: { onPostClick(post.id) })
+                }
+            }
+        }
+    }
+}
+
+struct PostThumbnailItem: View {
+    let post: Post
+    let onClick: () -> Void
+    
+    var body: some View {
+        ZStack {
+            let firstMedia = post.media.first
+            
+            if let media = firstMedia {
+                if media.type == .image {
+                    AsyncImage(url: URL(string: transformThumbnailUrl(media.url))) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                        case .failure(_), .empty:
+                            Color(red: 0.898, green: 0.902, blue: 0.859)
+                        @unknown default:
+                            Color(red: 0.898, green: 0.902, blue: 0.859)
+                        }
+                    }
+                } else {
+                    // Video
+                    ZStack {
+                        if let thumbnailUrl = media.thumbnailUrl {
+                            AsyncImage(url: URL(string: transformThumbnailUrl(thumbnailUrl))) { phase in
+                                switch phase {
+                                case .success(let image):
+                                    image
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fill)
+                                case .failure(_), .empty:
+                                    Color.black.opacity(0.3)
+                                @unknown default:
+                                    Color.black.opacity(0.3)
+                                }
+                            }
+                        } else {
+                            Color.black.opacity(0.3)
+                        }
+                        
+                        // Play icon overlay
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 24))
+                            .foregroundColor(.white)
+                    }
+                }
+            } else {
+                // No media - placeholder
+                ZStack {
+                    Color(red: 0.898, green: 0.902, blue: 0.859)
+                    if !post.text.isEmpty {
+                        Text(String(post.text.prefix(1)).uppercased())
+                            .font(.system(size: 24))
+                            .foregroundColor(.textSecondary)
+                    } else {
+                        Image(systemName: "photo")
+                            .font(.system(size: 24))
+                            .foregroundColor(.textSecondary)
+                    }
+                }
+            }
+        }
+        .aspectRatio(1, contentMode: .fit)
+        .cornerRadius(12)
+        .onTapGesture {
+            onClick()
+        }
+    }
+    
+    private func transformThumbnailUrl(_ url: String) -> String {
+        // Transform Cloudinary URL for thumbnail (similar to Android)
+        if url.contains("cloudinary.com") || url.contains("res.cloudinary.com") {
+            let parts = url.split(separator: "?", maxSplits: 1)
+            let baseUrl = parts.first.map(String.init) ?? url
+            return "\(baseUrl)?w_300,h_300,c_fill,q_auto,f_auto"
+        }
+        return url
     }
 }
 
