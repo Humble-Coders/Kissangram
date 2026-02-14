@@ -3,6 +3,8 @@ import PhotosUI
 import AVFoundation
 import AVKit
 import UniformTypeIdentifiers
+import Photos
+import UIKit
 import Shared
 
 // MARK: - Story Text Overlay
@@ -42,11 +44,18 @@ struct CreateStoryView: View {
     // Media picker state
     @State private var showCamera = false
     @State private var showImagePicker = false
+    @State private var showVisibilityDialog = false
     @State private var showVideoPicker = false
     @State private var showGalleryPicker = false
     @State private var imagePickerSourceType: UIImagePickerController.SourceType = .camera
     @State private var selectedPhotos: [PhotosPickerItem] = []
     @State private var showCameraUnavailableAlert = false
+    @State private var isVideoFromCamera = false
+    @State private var locationPositionX: Float = 0.5
+    @State private var locationPositionY: Float = 0.5
+    @State private var isLocationOverlaySelected = false
+    @State private var showSavedToPhotosConfirmation = false
+    @State private var saveToPhotosError: String? = nil
     
     var onBackClick: () -> Void = {}
     var onStoryCreated: () -> Void = {}
@@ -56,83 +65,70 @@ struct CreateStoryView: View {
     }
     
     var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-            
+        Group {
             if let mediaUrl = selectedMediaUrl {
-                // Media Preview (Full Screen)
-                ZStack {
-                    if mediaType == .image {
-                        AsyncImage(url: mediaUrl) { image in
-                            image
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                .clipped()
-                        } placeholder: {
-                            Color.gray.opacity(0.3)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        }
-                    } else {
-                        VideoPlayer(player: AVPlayer(url: mediaUrl))
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .clipped()
-                    }
-                    
-                    // Background tap detection
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            // Background tap - deselect all overlays
+                CreateStoryMediaSection(
+                    mediaUrl: mediaUrl,
+                    mediaType: mediaType,
+                    isVideoFromCamera: isVideoFromCamera,
+                    textOverlays: textOverlays,
+                    selectedOverlayId: selectedOverlayId,
+                    location: location,
+                    locationPositionX: locationPositionX,
+                    locationPositionY: locationPositionY,
+                    isLocationOverlaySelected: isLocationOverlaySelected,
+                    onLocationOverlaySelect: { selectedOverlayId = nil; isLocationOverlaySelected = true },
+                    onLocationPositionChange: { locationPositionX = $0; locationPositionY = $1 },
+                    onRemoveLocation: { location = nil; isLocationOverlaySelected = false },
+                    onBackgroundTap: { selectedOverlayId = nil; isLocationOverlaySelected = false },
+                    onPositionChange: { index, newX, newY in
+                        guard textOverlays.indices.contains(index) else { return }
+                        var updated = textOverlays
+                        updated[index].positionX = newX
+                        updated[index].positionY = newY
+                        textOverlays = updated
+                    },
+                    onSizeChange: { index, newSize in
+                        guard textOverlays.indices.contains(index) else { return }
+                        var updated = textOverlays
+                        updated[index].fontSize = newSize
+                        textOverlays = updated
+                    },
+                    onRotationChange: { index, newRotation in
+                        guard textOverlays.indices.contains(index) else { return }
+                        var updated = textOverlays
+                        updated[index].rotation = newRotation
+                        textOverlays = updated
+                    },
+                    onScaleChange: { index, newScale in
+                        guard textOverlays.indices.contains(index) else { return }
+                        var updated = textOverlays
+                        updated[index].scale = newScale
+                        textOverlays = updated
+                    },
+                    onSelect: { index in
+                        guard textOverlays.indices.contains(index) else { return }
+                        selectedOverlayId = textOverlays[index].id
+                    },
+                    onEdit: { index in
+                        selectedTextOverlayIndex = index
+                        showTextInputSheet = true
+                    },
+                    onDelete: { index in
+                        let overlayId = textOverlays[index].id
+                        textOverlays.remove(at: index)
+                        if selectedOverlayId == overlayId {
                             selectedOverlayId = nil
                         }
-                    
-                    // Text Overlays
-                    ForEach(textOverlays.indices, id: \.self) { index in
-                        DraggableTextOverlayView(
-                            overlay: textOverlays[index],
-                            isSelected: textOverlays[index].id == selectedOverlayId,
-                            onPositionChange: { newX, newY in
-                                textOverlays[index].positionX = newX
-                                textOverlays[index].positionY = newY
-                            },
-                            onSizeChange: { newSize in
-                                textOverlays[index].fontSize = newSize
-                            },
-                            onRotationChange: { newRotation in
-                                textOverlays[index].rotation = newRotation
-                            },
-                            onScaleChange: { newScale in
-                                textOverlays[index].scale = newScale
-                            },
-                            onSelect: {
-                                selectedOverlayId = textOverlays[index].id
-                            },
-                            onEdit: {
-                                selectedTextOverlayIndex = index
-                                showTextInputSheet = true
-                            },
-                            onDelete: {
-                                let overlayId = textOverlays[index].id
-                                textOverlays.remove(at: index)
-                                if selectedOverlayId == overlayId {
-                                    selectedOverlayId = nil
-                                }
-                            }
-                        )
                     }
-                }
-                .ignoresSafeArea()
+                )
             } else {
-                // Empty state - show media selection options
                 VStack(spacing: 32) {
+                    Spacer()
                     Text("Create Your Story")
                         .font(.system(size: 24, weight: .bold))
                         .foregroundColor(.white)
-                    
                     HStack(spacing: 16) {
-                        // Camera Button - Opens picker that supports both photos and videos
-                        // Videos will show edit screen, photos will go directly to final screen
                         StoryMediaSelectionButton(
                             icon: "camera.fill",
                             label: "Camera",
@@ -145,96 +141,55 @@ struct CreateStoryView: View {
                                 }
                             }
                         )
-                        
-                        // Gallery Button - Uses PhotosPicker (no edit screen, goes directly to final screen)
                         StoryMediaSelectionButton(
                             icon: "photo.fill",
                             label: "Gallery",
-                            onClick: {
-                                showGalleryPicker = true
-                            }
+                            onClick: { showGalleryPicker = true }
                         )
                     }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-            
-            // Top Bar
-            VStack {
-                HStack {
-                    Button(action: onBackClick) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 20, weight: .semibold))
-                            .foregroundColor(.white)
-                            .padding(12)
-                            .background(Color.black.opacity(0.3))
-                            .clipShape(Circle())
-                    }
-                    
                     Spacer()
-                    
-                    Text("Your Story")
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundColor(.white)
-                    
-                    Spacer()
-                    
-                    // Spacer for balance
-                    Color.clear
-                        .frame(width: 44, height: 44)
                 }
-                .padding(.horizontal, 18)
-                .padding(.top, 8)
-                
-                Spacer()
             }
-            
-            // Bottom Action Bar - Always mounted, visibility controlled by opacity
-            VStack {
-                Spacer()
-                BottomActionBarView(
-                    onAddTextClick: {
-                        showTextInputSheet = true
-                        selectedTextOverlayIndex = nil
-                    },
-                    onLocationClick: {
-                        showLocationPicker = true
-                    },
-                    location: location,
-                    onRemoveLocation: {
-                        location = nil
-                    },
-                    visibility: $visibility,
-                    onShareClick: {
-                        handleShareClick()
-                    },
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            CreateStoryTopBar(
+                onBackClick: onBackClick,
+                showTextAndLocation: selectedMediaUrl != nil,
+                location: location,
+                onAddText: {
+                    showTextInputSheet = true
+                    selectedTextOverlayIndex = nil
+                },
+                onLocation: { showLocationPicker = true }
+            )
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if selectedMediaUrl != nil {
+                CreateStoryBottomSection(
+                    onShareTap: { showVisibilityDialog = true },
+                    onSaveTap: { saveComposedStoryToPhotos() },
                     isShareEnabled: isStoryEnabled
                 )
-                .opacity(selectedMediaUrl != nil ? 1.0 : 0.0)
-                .offset(y: selectedMediaUrl != nil ? 0 : 100) // Slide down when hidden
-                .allowsHitTesting(selectedMediaUrl != nil) // Disable interaction when hidden
-                .animation(.easeInOut(duration: 0.2), value: selectedMediaUrl != nil)
             }
-            
-            // Loading Overlay
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black.ignoresSafeArea())
+        .overlay {
             if viewModel.isCreatingStory {
-                ZStack {
-                    Color.black.opacity(0.5)
-                        .ignoresSafeArea()
-                    
-                    VStack(spacing: 16) {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                            .scaleEffect(1.5)
-                        
-                        Text("Creating story...")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(.white)
-                    }
-                    .padding(24)
-                    .background(Color.black.opacity(0.7))
-                    .cornerRadius(12)
+                Color.black.opacity(0.5)
+                    .ignoresSafeArea()
+                VStack(spacing: 16) {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        .scaleEffect(1.5)
+                    Text("Creating story...")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(.white)
                 }
+                .padding(24)
+                .background(Color.black.opacity(0.7))
+                .cornerRadius(12)
             }
         }
         .alert("Error", isPresented: $viewModel.showError) {
@@ -244,25 +199,65 @@ struct CreateStoryView: View {
         } message: {
             Text(viewModel.errorMessage ?? "Unknown error occurred")
         }
-        .sheet(isPresented: $showCamera) {
-            // Camera picker: Allow editing for videos (trim screen), but not for photos
-            MediaPicker(
-                sourceType: imagePickerSourceType,
-                mediaTypes: [UTType.image.identifier, UTType.movie.identifier],
-                allowsEditing: true, // Videos will show trim screen, photos won't show edit screen (iOS handles this)
-                onImagePicked: { image in
-                    saveImageToTempFile(image: image) { url in
-                        if let url = url {
-                            selectedMediaUrl = url
-                            mediaType = .image
+        .overlay {
+            if showSavedToPhotosConfirmation {
+                VStack {
+                    Spacer()
+                    Text("Saved to Photos")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 12)
+                        .background(Color.black.opacity(0.75))
+                        .cornerRadius(8)
+                    Spacer().frame(height: 120)
+                }
+                .allowsHitTesting(false)
+            }
+        }
+        .onChange(of: showSavedToPhotosConfirmation) { newValue in
+            if newValue {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    showSavedToPhotosConfirmation = false
+                }
+            }
+        }
+        .alert("Save failed", isPresented: .init(get: { saveToPhotosError != nil }, set: { if !$0 { saveToPhotosError = nil } })) {
+            Button("OK") { saveToPhotosError = nil }
+        } message: {
+            Text(saveToPhotosError ?? "")
+        }
+        .fullScreenCover(isPresented: $showCamera) {
+            // Theme: black background so status bar and bottom match (no white bars)
+            // Photo is used as captured (no in-app crop). Native camera may support aspect ratio on some devices.
+            ZStack {
+                Color.black.ignoresSafeArea()
+                MediaPicker(
+                    sourceType: imagePickerSourceType,
+                    mediaTypes: [UTType.image.identifier, UTType.movie.identifier],
+                    allowsEditing: false,
+                    onImagePicked: { image in
+                        saveImageToTempFile(image: image) { url in
+                            if let url = url {
+                                selectedMediaUrl = url
+                                mediaType = .image
+                            }
+                            showCamera = false
+                        }
+                    },
+                    onVideoPicked: { url in
+                        saveVideoToTempFile(sourceURL: url) { copiedURL in
+                            if let u = copiedURL {
+                                selectedMediaUrl = u
+                                mediaType = .video
+                                isVideoFromCamera = true
+                            }
+                            showCamera = false
                         }
                     }
-                },
-                onVideoPicked: { url in
-                    selectedMediaUrl = url
-                    mediaType = .video
-                }
-            )
+                )
+            }
+            .preferredColorScheme(.dark)
         }
         .sheet(isPresented: $showImagePicker) {
             // Image picker: Allow editing for videos (trim screen), but not for photos
@@ -281,6 +276,7 @@ struct CreateStoryView: View {
                 onVideoPicked: { url in
                     selectedMediaUrl = url
                     mediaType = .video
+                    isVideoFromCamera = false
                 }
             )
         }
@@ -326,6 +322,19 @@ struct CreateStoryView: View {
         } message: {
             Text("Camera is not available on this device.")
         }
+        .confirmationDialog("Who can see your story?", isPresented: $showVisibilityDialog, titleVisibility: .visible) {
+            Button("Public") {
+                visibility = .public
+                handleShareClick()
+            }
+            Button("My Followers") {
+                visibility = .followers
+                handleShareClick()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Choose visibility for this story.")
+        }
         .onChange(of: selectedPhotos) { newItems in
             Task {
                 for item in newItems {
@@ -333,6 +342,17 @@ struct CreateStoryView: View {
                 }
                 selectedPhotos = []
             }
+        }
+        .sheet(isPresented: $showLocationPicker) {
+            StoryLocationSelectionSheet(
+                onSelected: { loc in
+                    location = loc
+                    locationPositionX = 0.5
+                    locationPositionY = 0.5
+                    showLocationPicker = false
+                },
+                onDismiss: { showLocationPicker = false }
+            )
         }
     }
     
@@ -343,6 +363,7 @@ struct CreateStoryView: View {
         if let movie = try? await item.loadTransferable(type: StoryMovie.self) {
             selectedMediaUrl = movie.url
             mediaType = .video
+            isVideoFromCamera = false
             return
         }
         
@@ -378,6 +399,28 @@ struct CreateStoryView: View {
             } else {
                 DispatchQueue.main.async {
                     completion(nil)
+                }
+            }
+        }
+    }
+    
+    /// Copy video to app-owned temp file so playback is stable (avoids picker lifecycle and "stops in the middle" for camera recordings).
+    private func saveVideoToTempFile(sourceURL: URL, completion: @escaping (URL?) -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let tempURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent("story_video_\(UUID().uuidString)")
+                .appendingPathExtension("mp4")
+            do {
+                if FileManager.default.fileExists(atPath: tempURL.path) {
+                    try FileManager.default.removeItem(at: tempURL)
+                }
+                try FileManager.default.copyItem(at: sourceURL, to: tempURL)
+                DispatchQueue.main.async {
+                    completion(tempURL)
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    completion(sourceURL)
                 }
             }
         }
@@ -440,6 +483,411 @@ struct CreateStoryView: View {
                 print("Failed to create story: \(error.localizedDescription)")
             }
         }
+    }
+    
+    // MARK: - Save composed story to photo library
+    private func saveComposedStoryToPhotos() {
+        guard let mediaUrl = selectedMediaUrl else { return }
+        let mediaTypeValue = mediaType
+        let overlays = textOverlays
+        let loc = location
+        let locX = locationPositionX
+        let locY = locationPositionY
+        
+        Task {
+            let image: UIImage? = await Task.detached(priority: .userInitiated) {
+                CreateStoryView.buildComposedImage(
+                    mediaUrl: mediaUrl,
+                    mediaType: mediaTypeValue,
+                    textOverlays: overlays,
+                    location: loc,
+                    locationPositionX: locX,
+                    locationPositionY: locY
+                )
+            }.value
+            
+            await MainActor.run {
+                guard let image = image else {
+                    saveToPhotosError = "Could not create image"
+                    return
+                }
+                PHPhotoLibrary.requestAuthorization(for: .addOnly) { [image] status in
+                    DispatchQueue.main.async {
+                        guard status == .authorized || status == .limited else {
+                            saveToPhotosError = "Photo library access is required to save."
+                            return
+                        }
+                        PHPhotoLibrary.shared().performChanges({
+                            PHAssetCreationRequest.forAsset().addResource(with: .photo, data: image.pngData()!, options: nil)
+                        }) { success, error in
+                            DispatchQueue.main.async {
+                                if success {
+                                    showSavedToPhotosConfirmation = true
+                                } else {
+                                    saveToPhotosError = error?.localizedDescription ?? "Failed to save to Photos"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    /// Builds a single composited UIImage from media + text overlays + location (for save to Photos).
+    private static func buildComposedImage(
+        mediaUrl: URL,
+        mediaType: MediaType?,
+        textOverlays: [StoryTextOverlay],
+        location: CreateStoryLocation?,
+        locationPositionX: Float,
+        locationPositionY: Float
+    ) -> UIImage? {
+        let baseImage: UIImage?
+        if mediaType == .video {
+            let asset = AVAsset(url: mediaUrl)
+            let generator = AVAssetImageGenerator(asset: asset)
+            generator.appliesPreferredTrackTransform = true
+            generator.maximumSize = CGSize(width: 1080, height: 1920)
+            var time = CMTime.zero
+            guard let cgImage = try? generator.copyCGImage(at: time, actualTime: nil) else { return nil }
+            baseImage = UIImage(cgImage: cgImage)
+        } else {
+            if let data = try? Data(contentsOf: mediaUrl), let img = UIImage(data: data) {
+                baseImage = img
+            } else if let img = UIImage(contentsOfFile: mediaUrl.path) {
+                baseImage = img
+            } else {
+                return nil
+            }
+        }
+        guard let base = baseImage else { return nil }
+        let size = base.size
+        let screenW = Float(UIScreen.main.bounds.width)
+        let screenH = Float(UIScreen.main.bounds.height)
+        let scaleX = size.width / CGFloat(screenW)
+        let scaleY = size.height / CGFloat(screenH)
+        
+        let renderer = UIGraphicsImageRenderer(size: size)
+        let image = renderer.image { ctx in
+            base.draw(at: .zero)
+            let c = ctx.cgContext
+            
+            for overlay in textOverlays {
+                let px = CGFloat(overlay.positionX) * size.width
+                let py = CGFloat(overlay.positionY) * size.height
+                let font = UIFont.boldSystemFont(ofSize: CGFloat(overlay.fontSize * Float(scaleX)))
+                let color = uiColorFromHex(overlay.textColor)
+                let attrs: [NSAttributedString.Key: Any] = [
+                    .font: font,
+                    .foregroundColor: color
+                ]
+                let textSize = (overlay.text as NSString).size(withAttributes: attrs)
+                let rotation = CGFloat(overlay.rotation) * .pi / 180
+                c.saveGState()
+                c.translateBy(x: px + textSize.width / 2, y: py + textSize.height / 2)
+                c.rotate(by: rotation)
+                c.translateBy(x: -textSize.width / 2, y: -textSize.height / 2)
+                (overlay.text as NSString).draw(at: .zero, withAttributes: attrs)
+                c.restoreGState()
+            }
+            
+            if let loc = location {
+                let px = CGFloat(locationPositionX) * size.width
+                let py = CGFloat(locationPositionY) * size.height
+                let name = loc.name as NSString
+                let font = UIFont.systemFont(ofSize: 14 * scaleX)
+                let attrs: [NSAttributedString.Key: Any] = [
+                    .font: font,
+                    .foregroundColor: UIColor.white
+                ]
+                let textSize = name.size(withAttributes: attrs)
+                let pillW = textSize.width + 24 * scaleX
+                let pillH = textSize.height + 16 * scaleY
+                let rect = CGRect(x: px, y: py, width: pillW, height: pillH)
+                let green = UIColor(red: 0.176, green: 0.416, blue: 0.310, alpha: 0.85)
+                let path = UIBezierPath(roundedRect: rect, cornerRadius: min(rect.width, rect.height) / 2)
+                green.setFill()
+                path.fill()
+                name.draw(at: CGPoint(x: px + 12 * scaleX, y: py + 8 * scaleY), withAttributes: attrs)
+            }
+        }
+        return image
+    }
+}
+
+// MARK: - Create Story Top Bar (Back, title, Text + Location icons)
+private struct CreateStoryTopBar: View {
+    let onBackClick: () -> Void
+    let showTextAndLocation: Bool
+    let location: CreateStoryLocation?
+    let onAddText: () -> Void
+    let onLocation: () -> Void
+    
+    var body: some View {
+        HStack {
+            Button(action: onBackClick) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundColor(.white)
+                    .padding(12)
+                    .background(Color.black.opacity(0.3))
+                    .clipShape(Circle())
+            }
+            Spacer()
+            Text("Your Story")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundColor(.white)
+            Spacer()
+            if showTextAndLocation {
+                HStack(spacing: 20) {
+                    Button(action: onAddText) {
+                        Image(systemName: "textformat")
+                            .font(.system(size: 22))
+                            .foregroundColor(.white)
+                    }
+                    Button(action: onLocation) {
+                        Image(systemName: "location.fill")
+                            .font(.system(size: 22))
+                            .foregroundColor(location != nil ? Color(red: 0.176, green: 0.416, blue: 0.310) : .white)
+                    }
+                }
+                .frame(width: 88, height: 44)
+            } else {
+                Color.clear.frame(width: 88, height: 44)
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 12)
+        .background(Color.black.opacity(0.4))
+    }
+}
+
+// MARK: - Looping Video Player (start only when view is visible; support recorded-video mode with play button)
+private final class LoopingVideoPlayerHolder: ObservableObject {
+    let player: AVPlayer
+    private var item: AVPlayerItem?
+    private var endObserver: NSObjectProtocol?
+    private var timeObserver: Any?
+    private let isRecordedFromCamera: Bool
+    
+    @Published var didPlayToEnd = false
+    
+    init(url: URL, isRecordedFromCamera: Bool = false) {
+        self.isRecordedFromCamera = isRecordedFromCamera
+        let playerItem = AVPlayerItem(url: url)
+        item = playerItem
+        player = AVPlayer(playerItem: playerItem)
+        player.isMuted = true
+        endObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: playerItem,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self = self else { return }
+            if self.isRecordedFromCamera {
+                self.player.seek(to: .zero)
+                self.didPlayToEnd = true
+            } else {
+                self.player.seek(to: .zero)
+                self.player.play()
+            }
+        }
+        if !isRecordedFromCamera {
+            let interval = CMTime(seconds: 0.25, preferredTimescale: 600)
+            timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
+                guard let self = self, let item = self.player.currentItem else { return }
+                let duration = item.duration
+                guard duration.seconds.isFinite, duration.seconds > 0.5 else { return }
+                if time.seconds >= duration.seconds - 0.3 {
+                    self.player.seek(to: .zero)
+                    self.player.play()
+                }
+            }
+        }
+    }
+    
+    func startPlayback() {
+        didPlayToEnd = false
+        player.play()
+    }
+    
+    func pausePlayback() {
+        player.pause()
+    }
+    
+    deinit {
+        if let o = endObserver { NotificationCenter.default.removeObserver(o) }
+        if let t = timeObserver { player.removeTimeObserver(t) }
+        player.pause()
+    }
+}
+
+private struct CreateStoryLoopingVideoView: View {
+    let url: URL
+    let isRecordedFromCamera: Bool
+    @StateObject private var holder: LoopingVideoPlayerHolder
+    @State private var showPlayButton: Bool
+    
+    init(url: URL, isRecordedFromCamera: Bool) {
+        self.url = url
+        self.isRecordedFromCamera = isRecordedFromCamera
+        _holder = StateObject(wrappedValue: LoopingVideoPlayerHolder(url: url, isRecordedFromCamera: isRecordedFromCamera))
+        _showPlayButton = State(initialValue: isRecordedFromCamera)
+    }
+    
+    var body: some View {
+        ZStack {
+            VideoPlayer(player: holder.player)
+                .onAppear {
+                    if !isRecordedFromCamera {
+                        DispatchQueue.main.async { holder.startPlayback() }
+                    }
+                }
+                .onDisappear {
+                    holder.pausePlayback()
+                }
+                .onChange(of: holder.didPlayToEnd) { newValue in
+                    if newValue { showPlayButton = true }
+                }
+            if showPlayButton {
+                Color.black.opacity(0.3)
+                    .ignoresSafeArea()
+                Button(action: {
+                    showPlayButton = false
+                    holder.startPlayback()
+                }) {
+                    Image(systemName: "play.circle.fill")
+                        .font(.system(size: 72))
+                        .foregroundColor(.white)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+}
+
+// MARK: - Create Story Media Section (image/video + text overlays in one block)
+private struct CreateStoryMediaSection: View {
+    let mediaUrl: URL
+    let mediaType: MediaType?
+    let isVideoFromCamera: Bool
+    let textOverlays: [StoryTextOverlay]
+    let selectedOverlayId: UUID?
+    let location: CreateStoryLocation?
+    let locationPositionX: Float
+    let locationPositionY: Float
+    let isLocationOverlaySelected: Bool
+    let onLocationOverlaySelect: () -> Void
+    let onLocationPositionChange: (Float, Float) -> Void
+    let onRemoveLocation: () -> Void
+    let onBackgroundTap: () -> Void
+    let onPositionChange: (Int, Float, Float) -> Void
+    let onSizeChange: (Int, Float) -> Void
+    let onRotationChange: (Int, Float) -> Void
+    let onScaleChange: (Int, Float) -> Void
+    let onSelect: (Int) -> Void
+    let onEdit: (Int) -> Void
+    let onDelete: (Int) -> Void
+    
+    var body: some View {
+        ZStack {
+            if mediaType == .image {
+                // Use a layout-neutral container so AsyncImage never drives parent layout
+                // (AsyncImage can report intrinsic size from image dimensions and cause "zoom").
+                // VideoPlayer fills the proposed frame natively; image branch must do the same.
+                Color.clear
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .overlay {
+                        AsyncImage(url: mediaUrl) { phase in
+                            switch phase {
+                            case .empty:
+                                Color.gray.opacity(0.3)
+                            case .success(let image):
+                                image
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                            case .failure:
+                                Color.gray.opacity(0.3)
+                            @unknown default:
+                                Color.gray.opacity(0.3)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .clipped()
+                    }
+            } else {
+                CreateStoryLoopingVideoView(url: mediaUrl, isRecordedFromCamera: isVideoFromCamera)
+                    .id(mediaUrl)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+            }
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture { onBackgroundTap() }
+            ForEach(Array(textOverlays.enumerated()), id: \.element.id) { index, overlay in
+                DraggableTextOverlayView(
+                    overlay: overlay,
+                    isSelected: overlay.id == selectedOverlayId,
+                    onPositionChange: { newX, newY in onPositionChange(index, newX, newY) },
+                    onSizeChange: { newSize in onSizeChange(index, newSize) },
+                    onRotationChange: { newRotation in onRotationChange(index, newRotation) },
+                    onScaleChange: { newScale in onScaleChange(index, newScale) },
+                    onSelect: { onSelect(index) },
+                    onEdit: { onEdit(index) },
+                    onDelete: { onDelete(index) }
+                )
+                .id(overlay.id)
+            }
+            if let loc = location {
+                DraggableLocationOverlayView(
+                    location: loc,
+                    positionX: locationPositionX,
+                    positionY: locationPositionY,
+                    isSelected: isLocationOverlaySelected,
+                    onPositionChange: onLocationPositionChange,
+                    onSelect: onLocationOverlaySelect,
+                    onDelete: onRemoveLocation
+                )
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+// MARK: - Create Story Bottom Section (Share + Save)
+private struct CreateStoryBottomSection: View {
+    let onShareTap: () -> Void
+    let onSaveTap: () -> Void
+    let isShareEnabled: Bool
+    
+    var body: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 12) {
+                Button(action: onShareTap) {
+                    Text("Share")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(isShareEnabled ? Color(red: 0.176, green: 0.416, blue: 0.310) : Color.gray)
+                        .cornerRadius(12)
+                }
+                .disabled(!isShareEnabled)
+                Button(action: onSaveTap) {
+                    Text("Save")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(Color(red: 0.176, green: 0.416, blue: 0.310))
+                        .cornerRadius(12)
+                }
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 20)
+        .background(Color.black.opacity(0.6))
     }
 }
 
@@ -510,12 +958,13 @@ struct DraggableTextOverlayView: View {
     
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            // Text container with border when selected
+            // Text container with border when selected (max width so long text wraps to next line)
             HStack(spacing: 8) {
                 Text(overlay.text)
                     .font(.system(size: max(CGFloat(liveFontSize), 24), weight: .bold))
                     .foregroundColor(colorFromHex(overlay.textColor))
-                    .fixedSize()
+                    .lineLimit(5)
+                    .frame(maxWidth: screenWidthPx * 0.85, alignment: .leading)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
@@ -607,14 +1056,13 @@ struct DraggableTextOverlayView: View {
     // MARK: - Gesture Helpers
     
     private func createTransformGesture() -> some Gesture {
-        // Combined gesture using simultaneous gestures
+        // Update both local state (smooth UI) and parent (model in sync). Never sync from parent during gesture so overlay stays stable.
         let magnification = MagnificationGesture()
             .onChanged { value in
                 isTransforming = true
-                
-                /* ---------- Scale + Size ---------- */
                 if value != 1.0 {
-                    scale = (scale * value).clamped(to: 0.5...3.0)
+                    let damped = 1.0 + (value - 1.0) * 0.45
+                    scale = (scale * damped).clamped(to: 0.5...3.0)
                     onScaleChange(Float(scale))
                     onSizeChange(liveFontSize)
                 }
@@ -626,12 +1074,9 @@ struct DraggableTextOverlayView: View {
         let rotationGesture = RotationGesture()
             .onChanged { value in
                 isTransforming = true
-                
-                /* ---------- Rotation ---------- */
-                // Calculate delta from last rotation value (Angle type)
                 let rotationDeltaRadians = value.radians - lastRotationValue.radians
                 lastRotationValue = value
-                let rotationDeltaDegrees = rotationDeltaRadians * 180.0 / .pi
+                let rotationDeltaDegrees = (rotationDeltaRadians * 180.0 / .pi) * 0.5
                 rotation = (rotation + rotationDeltaDegrees).truncatingRemainder(dividingBy: 360.0)
                 onRotationChange(Float(rotation))
             }
@@ -643,28 +1088,20 @@ struct DraggableTextOverlayView: View {
         let drag = DragGesture()
             .onChanged { value in
                 isTransforming = true
-                
-                /* ---------- Drag (normalized) ---------- */
-                // Divide by scale to account for scaling
                 localOffset = CGSize(
                     width: value.translation.width / scale,
                     height: value.translation.height / scale
                 )
-                
-                // Calculate live position in pixels
                 let livePx = CGPoint(
                     x: basePositionPx.x + localOffset.width,
                     y: basePositionPx.y + localOffset.height
                 )
-                
-                // Update position (normalized)
                 onPositionChange(
                     Float(livePx.x / screenWidthPx).clamped(to: 0...1),
                     Float(livePx.y / screenHeightPx).clamped(to: 0...1)
                 )
             }
             .onEnded { _ in
-                /* ---------- Commit position on gesture end ---------- */
                 basePositionPx = CGPoint(
                     x: basePositionPx.x + localOffset.width,
                     y: basePositionPx.y + localOffset.height
@@ -699,6 +1136,103 @@ struct DraggableTextOverlayView: View {
             )
             localOffset = .zero
         }
+    }
+}
+
+// MARK: - Draggable Location Overlay View
+private struct DraggableLocationOverlayView: View {
+    let location: CreateStoryLocation
+    let positionX: Float
+    let positionY: Float
+    let isSelected: Bool
+    let onPositionChange: (Float, Float) -> Void
+    let onSelect: () -> Void
+    let onDelete: () -> Void
+    
+    private let screenWidthPx = UIScreen.main.bounds.width
+    private let screenHeightPx = UIScreen.main.bounds.height
+    @State private var basePositionPx: CGPoint = .zero
+    @State private var localOffset: CGSize = .zero
+    
+    private var absoluteX: CGFloat {
+        basePositionPx.x + localOffset.width
+    }
+    private var absoluteY: CGFloat {
+        basePositionPx.y + localOffset.height
+    }
+    
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            HStack(spacing: 6) {
+                Image(systemName: "location.fill")
+                    .font(.system(size: 14))
+                    .foregroundColor(Color(red: 0.176, green: 0.416, blue: 0.310))
+                Text(location.name)
+                    .font(.system(size: 14))
+                    .foregroundColor(.white)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color(red: 0.176, green: 0.416, blue: 0.310).opacity(0.85))
+            .cornerRadius(20)
+            .overlay(
+                Group {
+                    if isSelected {
+                        RoundedRectangle(cornerRadius: 20)
+                            .stroke(Color.white, lineWidth: 2)
+                    }
+                }
+            )
+            if isSelected {
+                Button(action: onDelete) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(width: 28, height: 28)
+                        .background(Color.red)
+                        .clipShape(Circle())
+                }
+                .offset(x: 8, y: -8)
+            }
+        }
+        .offset(
+            x: absoluteX - screenWidthPx / 2,
+            y: absoluteY - screenHeightPx / 2
+        )
+        .gesture(
+            DragGesture()
+                .onChanged { value in
+                    localOffset = value.translation
+                    let livePx = CGPoint(x: basePositionPx.x + localOffset.width, y: basePositionPx.y + localOffset.height)
+                    onPositionChange(
+                        Float(livePx.x / screenWidthPx).clamped(to: 0...1),
+                        Float(livePx.y / screenHeightPx).clamped(to: 0...1)
+                    )
+                }
+                .onEnded { _ in
+                    basePositionPx = CGPoint(x: basePositionPx.x + localOffset.width, y: basePositionPx.y + localOffset.height)
+                    localOffset = .zero
+                }
+        )
+        .onTapGesture {
+            onSelect()
+        }
+        .onAppear {
+            basePositionPx = CGPoint(
+                x: CGFloat(positionX) * screenWidthPx,
+                y: CGFloat(positionY) * screenHeightPx
+            )
+        }
+        .onChange(of: positionX) { _ in syncBasePosition() }
+        .onChange(of: positionY) { _ in syncBasePosition() }
+    }
+    
+    private func syncBasePosition() {
+        basePositionPx = CGPoint(
+            x: CGFloat(positionX) * screenWidthPx,
+            y: CGFloat(positionY) * screenHeightPx
+        )
+        localOffset = .zero
     }
 }
 
@@ -919,6 +1453,315 @@ struct RoundedCorner: Shape {
     }
 }
 
+// MARK: - Story Location Selection Sheet (Current + Manual, same as Create Post)
+private struct StoryLocationSelectionSheet: View {
+    @Environment(\.dismiss) var dismiss
+    @State private var selectedTab: StoryLocationTab = .current
+    @State private var allStates: [String] = []
+    @State private var districtsForSelectedState: [String] = []
+    @State private var selectedState: String? = nil
+    @State private var selectedDistrict: String? = nil
+    @State private var villageName: String = ""
+    @State private var isLoadingStates = false
+    @State private var isLoadingDistricts = false
+    @State private var isLoadingLocation = false
+    @State private var locationError: String? = nil
+    
+    private let locationRepository = IOSLocationRepository()
+    let onSelected: (CreateStoryLocation) -> Void
+    let onDismiss: () -> Void
+    
+    private let primaryGreen = Color(red: 0.176, green: 0.416, blue: 0.310)
+    
+    enum StoryLocationTab { case current, manual }
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 0) {
+                HStack(spacing: 0) {
+                    StoryTabButton(title: "Current Location", isSelected: selectedTab == .current, color: primaryGreen) { selectedTab = .current }
+                    StoryTabButton(title: "Manual", isSelected: selectedTab == .manual, color: primaryGreen) { selectedTab = .manual }
+                }
+                .padding(.horizontal, 18)
+                .padding(.top, 16)
+                if selectedTab == .current {
+                    StoryCurrentLocationTab(
+                        locationRepository: locationRepository,
+                        isLoading: $isLoadingLocation,
+                        error: $locationError,
+                        primaryGreen: primaryGreen,
+                        onSuccess: { loc in onSelected(loc); dismiss() }
+                    )
+                } else {
+                    StoryManualLocationTab(
+                        locationRepository: locationRepository,
+                        allStates: $allStates,
+                        districts: $districtsForSelectedState,
+                        selectedState: $selectedState,
+                        selectedDistrict: $selectedDistrict,
+                        villageName: $villageName,
+                        isLoadingStates: $isLoadingStates,
+                        isLoadingDistricts: $isLoadingDistricts,
+                        isLoadingLocation: $isLoadingLocation,
+                        error: $locationError,
+                        primaryGreen: primaryGreen,
+                        onLoadStates: { loadStates() },
+                        onStateSelected: { state in selectState(state) },
+                        onDistrictSelected: { district in selectedDistrict = district },
+                        onSave: { saveManualLocation() }
+                    )
+                }
+            }
+            .navigationTitle("Add Location")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") { onDismiss(); dismiss() }
+                }
+            }
+        }
+        .onAppear { loadStates() }
+    }
+    
+    private func loadStates() {
+        isLoadingStates = true
+        locationError = nil
+        Task {
+            do {
+                let states = try await locationRepository.getStates()
+                await MainActor.run {
+                    allStates = states.sorted()
+                    isLoadingStates = false
+                }
+            } catch {
+                await MainActor.run {
+                    isLoadingStates = false
+                    locationError = "Failed to load states: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+    
+    private func selectState(_ state: String) {
+        selectedState = state
+        selectedDistrict = nil
+        districtsForSelectedState = []
+        isLoadingDistricts = true
+        Task {
+            do {
+                let districts = try await locationRepository.getDistricts(state: state)
+                await MainActor.run {
+                    districtsForSelectedState = districts.sorted()
+                    isLoadingDistricts = false
+                }
+            } catch {
+                await MainActor.run {
+                    isLoadingDistricts = false
+                    locationError = "Failed to load districts: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+    
+    private func saveManualLocation() {
+        guard let state = selectedState, let district = selectedDistrict else {
+            locationError = "Please select state and district"
+            return
+        }
+        let village = villageName.trimmingCharacters(in: .whitespaces)
+        let locationName = village.isEmpty ? "\(district), \(state)" : "\(village), \(district), \(state)"
+        isLoadingLocation = true
+        locationError = nil
+        Task {
+            do {
+                let coordinates = try await locationRepository.forwardGeocode(locationName: locationName)
+                await MainActor.run {
+                    onSelected(CreateStoryLocation(
+                        name: locationName,
+                        latitude: coordinates?.latitude,
+                        longitude: coordinates?.longitude
+                    ))
+                    isLoadingLocation = false
+                    dismiss()
+                }
+            } catch {
+                await MainActor.run {
+                    onSelected(CreateStoryLocation(name: locationName, latitude: nil, longitude: nil))
+                    isLoadingLocation = false
+                    dismiss()
+                }
+            }
+        }
+    }
+}
+
+private struct StoryTabButton: View {
+    let title: String
+    let isSelected: Bool
+    let color: Color
+    let action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 8) {
+                Text(title).font(.system(size: 16, weight: isSelected ? .semibold : .regular)).foregroundColor(isSelected ? color : .secondary)
+                Rectangle().fill(isSelected ? color : Color.clear).frame(height: 2)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+private struct StoryCurrentLocationTab: View {
+    let locationRepository: IOSLocationRepository
+    @Binding var isLoading: Bool
+    @Binding var error: String?
+    let primaryGreen: Color
+    let onSuccess: (CreateStoryLocation) -> Void
+    
+    var body: some View {
+        VStack(spacing: 24) {
+            Spacer()
+            if let err = error {
+                Text(err).font(.system(size: 14)).foregroundColor(.red).padding(.horizontal, 18).padding(.bottom, 8)
+            }
+            Image(systemName: "location.fill").font(.system(size: 64)).foregroundColor(primaryGreen)
+            Text("Use Current Location").font(.system(size: 20, weight: .semibold)).foregroundColor(.primary)
+            Text("We'll use your GPS to find your location").font(.system(size: 13)).foregroundColor(.secondary).multilineTextAlignment(.center).padding(.horizontal, 32)
+            Button(action: useCurrent) {
+                HStack {
+                    if isLoading {
+                        ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .white)).scaleEffect(0.8)
+                        Text("Detecting location...").font(.system(size: 16, weight: .semibold)).foregroundColor(.white)
+                    } else {
+                        Image(systemName: "location.fill").font(.system(size: 24))
+                        Text("Use Current Location").font(.system(size: 16, weight: .semibold)).foregroundColor(.white)
+                    }
+                }
+                .frame(maxWidth: .infinity).frame(height: 56).background(primaryGreen).cornerRadius(18)
+            }
+            .disabled(isLoading)
+            .padding(.horizontal, 18)
+            Spacer()
+        }
+        .padding(.top, 32)
+    }
+    
+    private func useCurrent() {
+        Task {
+            if !locationRepository.hasLocationPermission() {
+                do {
+                    let granted = try await locationRepository.requestLocationPermission()
+                    if !granted.boolValue {
+                        await MainActor.run { error = "Location permission is required to use current location"; isLoading = false }
+                        return
+                    }
+                } catch let requestError {
+                    await MainActor.run { isLoading = false; error = requestError.localizedDescription }
+                    return
+                }
+            }
+            await MainActor.run { isLoading = true; error = nil }
+            do {
+                guard let coordinates = try await locationRepository.getCurrentLocation() else {
+                    await MainActor.run { isLoading = false; error = "Unable to get current location. Please try again." }
+                    return
+                }
+                let name = try await locationRepository.reverseGeocode(latitude: coordinates.latitude, longitude: coordinates.longitude)
+                await MainActor.run {
+                    isLoading = false
+                    onSuccess(CreateStoryLocation(name: name ?? "\(coordinates.latitude), \(coordinates.longitude)", latitude: coordinates.latitude, longitude: coordinates.longitude))
+                }
+            } catch _ {
+                await MainActor.run { isLoading = false; error = "Unable to get location. Please try again." }
+            }
+        }
+    }
+}
+
+private struct StoryManualLocationTab: View {
+    let locationRepository: IOSLocationRepository
+    @Binding var allStates: [String]
+    @Binding var districts: [String]
+    @Binding var selectedState: String?
+    @Binding var selectedDistrict: String?
+    @Binding var villageName: String
+    @Binding var isLoadingStates: Bool
+    @Binding var isLoadingDistricts: Bool
+    @Binding var isLoadingLocation: Bool
+    @Binding var error: String?
+    let primaryGreen: Color
+    let onLoadStates: () -> Void
+    let onStateSelected: (String) -> Void
+    let onDistrictSelected: (String) -> Void
+    let onSave: () -> Void
+    
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                if let err = error { Text(err).font(.system(size: 14)).foregroundColor(.red).padding(.horizontal, 18) }
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("State").font(.system(size: 14, weight: .medium)).foregroundColor(.secondary)
+                    if isLoadingStates {
+                        HStack { ProgressView().scaleEffect(0.8); Text("Loading states...").foregroundColor(.secondary) }
+                            .frame(maxWidth: .infinity, alignment: .leading).padding().background(Color(.systemGray6)).cornerRadius(22)
+                    } else {
+                        Menu {
+                            ForEach(allStates, id: \.self) { state in Button(state) { onStateSelected(state) } }
+                        } label: {
+                            HStack {
+                                Text(selectedState ?? "Select State").font(.system(size: 16)).foregroundColor(selectedState != nil ? .primary : .secondary)
+                                Spacer()
+                                Image(systemName: "chevron.down").font(.system(size: 14)).foregroundColor(.secondary)
+                            }
+                            .padding().frame(maxWidth: .infinity).background(Color(.systemGray6)).cornerRadius(22)
+                        }
+                    }
+                }
+                .padding(.horizontal, 18)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("District").font(.system(size: 14, weight: .medium)).foregroundColor(.secondary)
+                    if isLoadingDistricts {
+                        HStack { ProgressView().scaleEffect(0.8); Text("Loading districts...").foregroundColor(.secondary) }
+                            .frame(maxWidth: .infinity, alignment: .leading).padding().background(Color(.systemGray6)).cornerRadius(22)
+                    } else {
+                        Menu {
+                            ForEach(districts, id: \.self) { district in Button(district) { onDistrictSelected(district) } }
+                        } label: {
+                            HStack {
+                                Text(selectedDistrict ?? (selectedState == nil ? "Select state first" : "Select District")).font(.system(size: 16)).foregroundColor(selectedDistrict != nil ? .primary : .secondary)
+                                Spacer()
+                                Image(systemName: "chevron.down").font(.system(size: 14)).foregroundColor(.secondary)
+                            }
+                            .padding().frame(maxWidth: .infinity).background(Color(.systemGray6)).cornerRadius(22)
+                        }
+                        .disabled(selectedState == nil)
+                    }
+                }
+                .padding(.horizontal, 18)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Village (Optional)").font(.system(size: 14, weight: .medium)).foregroundColor(.secondary)
+                    TextField("Enter village name", text: $villageName)
+                        .font(.system(size: 16)).padding().background(Color(.systemGray6)).cornerRadius(22)
+                }
+                .padding(.horizontal, 18)
+                Button(action: onSave) {
+                    HStack {
+                        if isLoadingLocation {
+                            ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .white)).scaleEffect(0.8)
+                            Text("Confirming...").font(.system(size: 16, weight: .semibold)).foregroundColor(.white)
+                        } else { Text("Save Location").font(.system(size: 16, weight: .semibold)).foregroundColor(.white) }
+                    }
+                    .frame(maxWidth: .infinity).frame(height: 56).background((selectedState != nil && selectedDistrict != nil && !isLoadingLocation) ? primaryGreen : primaryGreen.opacity(0.5)).cornerRadius(18)
+                }
+                .disabled(selectedState == nil || selectedDistrict == nil || isLoadingLocation)
+                .padding(.horizontal, 18)
+                .padding(.top, 8)
+                .padding(.bottom, 32)
+            }
+        }
+    }
+}
+
 // MARK: - Create Story Location
 struct CreateStoryLocation {
     let name: String
@@ -1063,6 +1906,15 @@ private func colorFromHex(_ hex: UInt64) -> Color {
             opacity: 1.0
         )
     }
+}
+
+private func uiColorFromHex(_ hex: UInt64) -> UIColor {
+    let hasAlpha = hex > 0xFFFFFF
+    let r = CGFloat((hex >> 16) & 0xFF) / 255.0
+    let g = CGFloat((hex >> 8) & 0xFF) / 255.0
+    let b = CGFloat(hex & 0xFF) / 255.0
+    let a: CGFloat = hasAlpha ? CGFloat((hex >> 24) & 0xFF) / 255.0 : 1.0
+    return UIColor(red: r, green: g, blue: b, alpha: a)
 }
 
 // Note: MediaPicker is already defined in CreatePostView.swift and can be reused

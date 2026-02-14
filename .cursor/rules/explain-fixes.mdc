@@ -1,0 +1,20 @@
+---
+description: After fixing any compiler/linter error, briefly explain the error and solution in simple technical language
+alwaysApply: true
+---
+
+# Explain Errors and Fixes
+
+Whenever you fix a compiler or linter error, **always** add a very brief explanation so the user can learn. Keep it:
+
+- **Very brief** (2–4 sentences)
+- **Layman-friendly but technical** (no jargon without a one-line plain-English meaning)
+- **Clear** (what was wrong, what we changed, why it works)
+
+## Format
+
+1. **What was wrong**: One sentence on what the error meant (e.g. "Swift thought this closure returned nothing").
+2. **What we did**: One sentence on the concrete change (e.g. "We added an explicit `return` before the View").
+3. **Why it works**: One short sentence on why that fixes it (e.g. "So the compiler knows the closure returns a View, not `()`").
+
+Do this after **each** error you fix in the same response, so the user can learn from every fix.

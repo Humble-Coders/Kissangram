@@ -1,9 +1,19 @@
 package com.kissangram.ui.createstory
 
+import android.annotation.SuppressLint
 import android.Manifest
+import android.content.ContentValues
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -26,12 +36,16 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.FileInputStream
+import java.io.OutputStream
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -51,6 +65,8 @@ import coil.compose.AsyncImage
 import com.kissangram.model.CreateStoryInput
 import com.kissangram.model.CreateStoryLocation
 import com.kissangram.model.MediaType
+import com.kissangram.repository.AndroidLocationRepository
+import com.kissangram.ui.components.FilterableDropdownField
 import com.kissangram.model.PostVisibility
 import com.kissangram.model.StoryTextOverlay
 import com.kissangram.ui.home.BackgroundColor
@@ -85,6 +101,100 @@ private fun createVideoUri(context: Context): Uri {
         "${context.packageName}.fileprovider",
         videoFile
     )
+}
+
+private fun loadBaseBitmap(context: Context, mediaUri: Uri, mediaType: MediaType?): Bitmap? {
+    return when (mediaType) {
+        MediaType.VIDEO -> {
+            val retriever = MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(context, mediaUri)
+                retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+            } finally {
+                retriever.release()
+            }
+        }
+        else -> {
+            context.contentResolver.openInputStream(mediaUri)?.use { BitmapFactory.decodeStream(it) }
+                ?: BitmapFactory.decodeFile(mediaUri.path)
+        }
+    }
+}
+
+private fun buildComposedStoryBitmap(
+    context: Context,
+    mediaUri: Uri,
+    mediaType: MediaType?,
+    textOverlays: List<StoryTextOverlay>,
+    location: CreateStoryLocation?,
+    locationPositionX: Float,
+    locationPositionY: Float
+): Bitmap? {
+    val base = loadBaseBitmap(context, mediaUri, mediaType) ?: return null
+    val w = base.width
+    val h = base.height
+    val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(out)
+    canvas.drawBitmap(base, 0f, 0f, null)
+    base.recycle()
+
+    val textPaint = Paint().apply {
+        isAntiAlias = true
+        textAlign = Paint.Align.LEFT
+    }
+    for (overlay in textOverlays) {
+        val px = overlay.positionX * w
+        val py = overlay.positionY * h
+        val fontSizePx = (overlay.fontSize * (w / 1080f)).coerceIn(12f, 72f)
+        textPaint.textSize = fontSizePx
+        textPaint.color = (overlay.textColor and 0xFFFFFFFFL).toInt()
+        canvas.save()
+        canvas.translate(px, py)
+        canvas.rotate(overlay.rotation)
+        canvas.drawText(overlay.text, 0f, fontSizePx, textPaint)
+        canvas.restore()
+    }
+
+    if (location != null) {
+        val px = locationPositionX * w
+        val py = locationPositionY * h
+        val locPaint = Paint().apply {
+            isAntiAlias = true
+            color = android.graphics.Color.parseColor("#2D6A4F")
+            alpha = (0.85 * 255).toInt()
+        }
+        val textPaintLoc = Paint().apply {
+            isAntiAlias = true
+            color = android.graphics.Color.WHITE
+            textSize = (14 * (w / 1080f))
+        }
+        val name = location.name
+        val textWidth = textPaintLoc.measureText(name)
+        val pillW = textWidth + 24 * (w / 1080f)
+        val pillH = (14 * (w / 1080f)) + 16 * (h / 1920f)
+        val left = px
+        val top = py
+        canvas.drawRoundRect(left, top, left + pillW, top + pillH, pillH / 2, pillH / 2, locPaint)
+        canvas.drawText(name, left + 12 * (w / 1080f), top + pillH / 2 + (textPaintLoc.textSize / 3), textPaintLoc)
+    }
+    return out
+}
+
+private fun saveBitmapToGallery(context: Context, bitmap: Bitmap) {
+    val contentValues = ContentValues().apply {
+        put(MediaStore.Images.Media.DISPLAY_NAME, "kissangram_story_${System.currentTimeMillis()}.png")
+        put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/Kissangram")
+        }
+    }
+    val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
+    uri?.let {
+        context.contentResolver.openOutputStream(it)?.use { stream: OutputStream ->
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
+        }
+    }
+    bitmap.recycle()
 }
 
 // Helper function to convert URI to ByteArray
@@ -126,6 +236,9 @@ fun CreateStoryScreen(
     var mediaType by remember { mutableStateOf<MediaType?>(null) }
     var textOverlays by remember { mutableStateOf<List<StoryTextOverlay>>(emptyList()) }
     var location by remember { mutableStateOf<CreateStoryLocation?>(null) }
+    var locationPositionX by remember { mutableStateOf(0.5f) }
+    var locationPositionY by remember { mutableStateOf(0.5f) }
+    var isLocationOverlaySelected by remember { mutableStateOf(false) }
     var visibility by remember { mutableStateOf(PostVisibility.PUBLIC) }
     var showTextInputDialog by remember { mutableStateOf(false) }
     var showLocationPicker by remember { mutableStateOf(false) }
@@ -136,8 +249,12 @@ fun CreateStoryScreen(
     // Media capture URIs
     var cameraImageUri by remember { mutableStateOf<Uri?>(null) }
     var cameraVideoUri by remember { mutableStateOf<Uri?>(null) }
+    var showVisibilityDialog by remember { mutableStateOf(false) }
+    var isVideoFromCamera by remember { mutableStateOf(false) }
+    var showRecordedVideoPlayOverlay by remember { mutableStateOf(true) }
+    var recordedVideoPlayTrigger by remember { mutableStateOf(0) }
 
-    // Camera launcher
+    // Camera launcher - go directly to Create Story with photo (no crop step)
     val cameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
     ) { success ->
@@ -154,9 +271,10 @@ fun CreateStoryScreen(
         contract = ActivityResultContracts.CaptureVideo()
     ) { success ->
         if (success && cameraVideoUri != null) {
-            // Video was recorded successfully - use directly without trimming
             selectedMediaUri = cameraVideoUri
             mediaType = MediaType.VIDEO
+            isVideoFromCamera = true
+            showRecordedVideoPlayOverlay = true
             cameraVideoUri = null
         }
     }
@@ -174,9 +292,9 @@ fun CreateStoryScreen(
                 else -> MediaType.IMAGE
             }
             
-            // Directly set media for both images and videos
             selectedMediaUri = it
             mediaType = detectedMediaType
+            if (detectedMediaType == MediaType.VIDEO) isVideoFromCamera = false
         }
     }
 
@@ -228,186 +346,10 @@ fun CreateStoryScreen(
             .fillMaxSize()
             .background(Color.Black)
     ) {
-        // Media Preview (Full Screen)
-        if (selectedMediaUri != null) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .pointerInput(selectedOverlayId) {
-                        detectTapGestures(
-                            onTap = {
-                                // Deselect all overlays when tapping background
-                                selectedOverlayId = null
-                            }
-                        )
-                    }
-            ) {
-                // Show video preview for videos, image for images
-                if (mediaType == MediaType.VIDEO && selectedMediaUri != null) {
-                    VideoPreviewPlayer(
-                        videoUri = selectedMediaUri!!,
-                        modifier = Modifier.fillMaxSize(),
-                        autoPlay = true,
-                        looping = true,
-                        muted = true
-                    )
-                } else {
-                    AsyncImage(
-                        model = selectedMediaUri,
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
-                }
-
-                // Text Overlays - CHANGED: Update by ID instead of index
-                textOverlays.forEach { overlay ->
-                    DraggableTextOverlay(
-                        overlay = overlay,
-                        isSelected = overlay.id == selectedOverlayId,
-                        onPositionChange = { newX, newY ->
-                            textOverlays = textOverlays.map {
-                                if (it.id == overlay.id) {
-                                    it.copy(positionX = newX, positionY = newY)
-                                } else {
-                                    it
-                                }
-                            }
-                        },
-                        onSizeChange = { newSize ->
-                            textOverlays = textOverlays.map {
-                                if (it.id == overlay.id) {
-                                    it.copy(fontSize = newSize)
-                                } else {
-                                    it
-                                }
-                            }
-                        },
-                        onRotationChange = { newRotation ->
-                            textOverlays = textOverlays.map {
-                                if (it.id == overlay.id) {
-                                    it.copy(rotation = newRotation)
-                                } else {
-                                    it
-                                }
-                            }
-                        },
-                        onScaleChange = { newScale ->
-                            textOverlays = textOverlays.map {
-                                if (it.id == overlay.id) {
-                                    it.copy(scale = newScale)
-                                } else {
-                                    it
-                                }
-                            }
-                        },
-                        onSelect = {
-                            selectedOverlayId = overlay.id
-                        },
-                        onEdit = {
-                            selectedOverlayIdForEdit = overlay.id
-                            showTextInputDialog = true
-                        },
-                        onDelete = {
-                            textOverlays = textOverlays.filter { it.id != overlay.id }
-                            if (selectedOverlayId == overlay.id) {
-                                selectedOverlayId = null
-                            }
-                        }
-                    )
-                }
-            }
-        } else {
-            // Empty state - show media selection options
-            Column(
-                modifier = Modifier.fillMaxSize(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Text(
-                    text = "Create Your Story",
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-                Spacer(modifier = Modifier.height(32.dp))
-
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        // Camera Button (Image)
-                        MediaSelectionButton(
-                            icon = Icons.Default.Add,
-                            label = "Camera",
-                            onClick = {
-                                when {
-                                    ContextCompat.checkSelfPermission(
-                                        context,
-                                        Manifest.permission.CAMERA
-                                    ) == PackageManager.PERMISSION_GRANTED -> {
-                                        val uri = createImageUri(context)
-                                        cameraImageUri = uri
-                                        cameraLauncher.launch(uri)
-                                    }
-                                    else -> {
-                                        cameraImageUri = createImageUri(context)
-                                        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-                                    }
-                                }
-                            }
-                        )
-
-                        // Gallery Button
-                        MediaSelectionButton(
-                            icon = Icons.Default.Add,
-                            label = "Gallery",
-                            onClick = {
-                                // Launch without specifying type to allow both images and videos
-                                galleryLauncher.launch(PickVisualMediaRequest())
-                            }
-                        )
-                    }
-                    
-                    // Video Record Button
-                    MediaSelectionButton(
-                        icon = Icons.Default.Add,
-                        label = "Record Video",
-                        onClick = {
-                            // Check permissions
-                            val hasCamera = ContextCompat.checkSelfPermission(
-                                context,
-                                Manifest.permission.CAMERA
-                            ) == PackageManager.PERMISSION_GRANTED
-                            val hasAudio = ContextCompat.checkSelfPermission(
-                                context,
-                                Manifest.permission.RECORD_AUDIO
-                            ) == PackageManager.PERMISSION_GRANTED
-                            
-                            if (hasCamera && hasAudio) {
-                                // Create video URI and launch camera app
-                                val uri = createVideoUri(context)
-                                cameraVideoUri = uri
-                                videoLauncher.launch(uri)
-                            } else {
-                                // Request missing permissions
-                                if (!hasCamera) {
-                                    cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-                                }
-                                if (!hasAudio) {
-                                    audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                                }
-                            }
-                        }
-                    )
-                }
-            }
-        }
-
-        // Top Bar
+    Column(
+        modifier = Modifier.fillMaxSize()
+    ) {
+        // 1. Top bar: Back, screen name, Text + Location (when media selected)
         TopAppBar(
             title = {
                 Text(
@@ -426,58 +368,350 @@ fun CreateStoryScreen(
                     )
                 }
             },
+            actions = {
+                if (selectedMediaUri != null) {
+                    IconButton(onClick = {
+                        showTextInputDialog = true
+                        selectedOverlayIdForEdit = null
+                    }) {
+                        Icon(
+                            imageVector = Icons.Default.TextFields,
+                            contentDescription = "Add Text",
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                    IconButton(onClick = { showLocationPicker = true }) {
+                        Icon(
+                            imageVector = Icons.Default.LocationOn,
+                            contentDescription = "Location",
+                            tint = if (location != null) PrimaryGreen else Color.White,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+            },
             colors = TopAppBarDefaults.topAppBarColors(
                 containerColor = Color.Transparent
             ),
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Color.Black.copy(alpha = 0.3f))
+                .background(Color.Black.copy(alpha = 0.4f))
         )
 
-        // Bottom Action Bar
         if (selectedMediaUri != null) {
-            BottomActionBar(
-                onAddTextClick = {
-                    showTextInputDialog = true
-                    selectedOverlayIdForEdit = null
-                },
-                onLocationClick = {
-                    showLocationPicker = true
-                },
-                location = location,
-                onRemoveLocation = {
-                    location = null
-                },
-                visibility = visibility,
-                onVisibilitySelected = { visibility = it },
-                onShareClick = {
-                    // Convert URI to ByteArray and build CreateStoryInput
-                    selectedMediaUri?.let { uri ->
-                        scope.launch {
-                            try {
-                                // Show loading immediately
-                                // Note: isLoading is managed by parent (App.kt), 
-                                // but we trigger onStoryClick which sets it
-                                val mediaData = uriToByteArray(context, uri)
-                                val input = CreateStoryInput(
-                                    mediaData = mediaData,
-                                    mediaType = mediaType,
-                                    thumbnailData = null,
-                                    textOverlays = textOverlays,
-                                    location = location,
-                                    visibility = visibility
-                                )
-                                // This will trigger isLoading = true in App.kt
-                                onStoryClick(input)
-                            } catch (e: Exception) {
-                                // Handle error - could show a snackbar
-                                e.printStackTrace()
+            // 2. Media section (image/video + text overlays) — constrain height so image never pushes top/bottom off (same as video)
+            BoxWithConstraints(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .pointerInput(selectedOverlayId, isLocationOverlaySelected) {
+                        detectTapGestures(
+                            onTap = {
+                                selectedOverlayId = null
+                                isLocationOverlaySelected = false
+                            }
+                        )
+                    }
+            ) {
+                if (mediaType == MediaType.VIDEO && selectedMediaUri != null) {
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        VideoPreviewPlayer(
+                            videoUri = selectedMediaUri!!,
+                            modifier = Modifier.fillMaxSize(),
+                            autoPlay = !isVideoFromCamera,
+                            looping = !isVideoFromCamera,
+                            muted = true,
+                            playTrigger = if (isVideoFromCamera) recordedVideoPlayTrigger else 0,
+                            onPlaybackEnded = if (isVideoFromCamera) ({ showRecordedVideoPlayOverlay = true }) else null
+                        )
+                        if (isVideoFromCamera && showRecordedVideoPlayOverlay) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(Color.Black.copy(alpha = 0.3f))
+                                    .clickable(enabled = false) { },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                IconButton(
+                                    onClick = {
+                                        showRecordedVideoPlayOverlay = false
+                                        recordedVideoPlayTrigger++
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.PlayArrow,
+                                        contentDescription = "Play",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(72.dp)
+                                    )
+                                }
                             }
                         }
                     }
+                } else {
+                    AsyncImage(
+                        model = selectedMediaUri,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .then(Modifier.size(maxWidth, maxHeight)),
+                        contentScale = ContentScale.Crop
+                    )
+                }
+                textOverlays.forEach { overlay ->
+                    DraggableTextOverlay(
+                        overlay = overlay,
+                        isSelected = overlay.id == selectedOverlayId,
+                        onPositionChange = { newX, newY ->
+                            textOverlays = textOverlays.map {
+                                if (it.id == overlay.id) it.copy(positionX = newX, positionY = newY) else it
+                            }
+                        },
+                        onSizeChange = { newSize ->
+                            textOverlays = textOverlays.map {
+                                if (it.id == overlay.id) it.copy(fontSize = newSize) else it
+                            }
+                        },
+                        onRotationChange = { newRotation ->
+                            textOverlays = textOverlays.map {
+                                if (it.id == overlay.id) it.copy(rotation = newRotation) else it
+                            }
+                        },
+                        onScaleChange = { newScale ->
+                            textOverlays = textOverlays.map {
+                                if (it.id == overlay.id) it.copy(scale = newScale) else it
+                            }
+                        },
+                        onSelect = { selectedOverlayId = overlay.id },
+                        onEdit = {
+                            selectedOverlayIdForEdit = overlay.id
+                            showTextInputDialog = true
+                        },
+                        onDelete = {
+                            textOverlays = textOverlays.filter { it.id != overlay.id }
+                            if (selectedOverlayId == overlay.id) selectedOverlayId = null
+                        }
+                    )
+                }
+                location?.let { loc ->
+                    DraggableLocationOverlay(
+                        location = loc,
+                        positionX = locationPositionX,
+                        positionY = locationPositionY,
+                        isSelected = isLocationOverlaySelected,
+                        onPositionChange = { x, y ->
+                            locationPositionX = x
+                            locationPositionY = y
+                        },
+                        onSelect = { selectedOverlayId = null; isLocationOverlaySelected = true },
+                        onDelete = {
+                            location = null
+                            isLocationOverlaySelected = false
+                        }
+                    )
+                }
+            }
+
+            // 3. Bottom section: Share + Save
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color.Black.copy(alpha = 0.6f))
+                    .padding(horizontal = 24.dp)
+                    .padding(vertical = 20.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Button(
+                        onClick = { showVisibilityDialog = true },
+                        enabled = isStoryEnabled,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = if (isStoryEnabled) PrimaryGreen else Color.Gray)
+                    ) {
+                        Text(
+                            text = "Share",
+                            color = Color.White,
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    Button(
+                        onClick = {
+                            val uri = selectedMediaUri ?: return@Button
+                            val type = mediaType
+                            val overlays = textOverlays
+                            val loc = location
+                            val locX = locationPositionX
+                            val locY = locationPositionY
+                            scope.launch(Dispatchers.IO) {
+                                val bitmap = buildComposedStoryBitmap(
+                                    context = context,
+                                    mediaUri = uri,
+                                    mediaType = type,
+                                    textOverlays = overlays,
+                                    location = loc,
+                                    locationPositionX = locX,
+                                    locationPositionY = locY
+                                )
+                                if (bitmap != null) {
+                                    saveBitmapToGallery(context, bitmap)
+                                    withContext(Dispatchers.Main) {
+                                        snackbarHostState.showSnackbar("Saved to Gallery")
+                                    }
+                                } else {
+                                    withContext(Dispatchers.Main) {
+                                        snackbarHostState.showSnackbar("Could not create image")
+                                    }
+                                }
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen)
+                    ) {
+                        Text(
+                            text = "Save",
+                            color = Color.White,
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+        } else {
+            // Empty state: media selection options
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = "Create Your Story",
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                Spacer(modifier = Modifier.height(32.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    MediaSelectionButton(
+                        icon = Icons.Default.Add,
+                        label = "Camera",
+                        onClick = {
+                            when {
+                                ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED -> {
+                                    val uri = createImageUri(context)
+                                    cameraImageUri = uri
+                                    cameraLauncher.launch(uri)
+                                }
+                                else -> {
+                                    cameraImageUri = createImageUri(context)
+                                    cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                                }
+                            }
+                        }
+                    )
+                    MediaSelectionButton(
+                        icon = Icons.Default.Add,
+                        label = "Gallery",
+                        onClick = { galleryLauncher.launch(PickVisualMediaRequest()) }
+                    )
+                    MediaSelectionButton(
+                        icon = Icons.Default.Add,
+                        label = "Record Video",
+                        onClick = {
+                            val hasCamera = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+                            val hasAudio = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                            if (hasCamera && hasAudio) {
+                                val uri = createVideoUri(context)
+                                cameraVideoUri = uri
+                                videoLauncher.launch(uri)
+                            } else {
+                                if (!hasCamera) cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                                if (!hasAudio) audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                            }
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+        // Visibility dialog, loading overlay, snackbar (on top of Column)
+        if (showVisibilityDialog) {
+            AlertDialog(
+                onDismissRequest = { showVisibilityDialog = false },
+                confirmButton = {},
+                title = { Text("Who can see your story?", color = TextPrimary) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(
+                            onClick = {
+                                showVisibilityDialog = false
+                                visibility = PostVisibility.PUBLIC
+                                selectedMediaUri?.let { uri ->
+                                    scope.launch {
+                                        try {
+                                            val mediaData = uriToByteArray(context, uri)
+                                            val input = CreateStoryInput(
+                                                mediaData = mediaData,
+                                                mediaType = mediaType,
+                                                thumbnailData = null,
+                                                textOverlays = textOverlays,
+                                                location = location,
+                                                visibility = visibility
+                                            )
+                                            onStoryClick(input)
+                                        } catch (e: Exception) { e.printStackTrace() }
+                                    }
+                                }
+                            }
+                        ) { Text("Public", color = PrimaryGreen) }
+                        TextButton(
+                            onClick = {
+                                showVisibilityDialog = false
+                                visibility = PostVisibility.FOLLOWERS
+                                selectedMediaUri?.let { uri ->
+                                    scope.launch {
+                                        try {
+                                            val mediaData = uriToByteArray(context, uri)
+                                            val input = CreateStoryInput(
+                                                mediaData = mediaData,
+                                                mediaType = mediaType,
+                                                thumbnailData = null,
+                                                textOverlays = textOverlays,
+                                                location = location,
+                                                visibility = visibility
+                                            )
+                                            onStoryClick(input)
+                                        } catch (e: Exception) { e.printStackTrace() }
+                                    }
+                                }
+                            }
+                        ) { Text("My Followers", color = PrimaryGreen) }
+                    }
                 },
-                isShareEnabled = isStoryEnabled,
-                modifier = Modifier.align(Alignment.BottomCenter)
+                dismissButton = {
+                    TextButton(onClick = { showVisibilityDialog = false }) {
+                        Text("Cancel", color = TextSecondary)
+                    }
+                },
+                containerColor = BackgroundColor
+            )
+        }
+
+        if (showLocationPicker) {
+            StoryLocationSelectionBottomSheet(
+                onDismiss = { showLocationPicker = false },
+                onLocationSelected = { loc ->
+                    location = loc
+                    locationPositionX = 0.5f
+                    locationPositionY = 0.5f
+                    showLocationPicker = false
+                }
             )
         }
         
@@ -528,7 +762,7 @@ fun CreateStoryScreen(
             hostState = snackbarHostState,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 80.dp) // Above bottom action bar
+                .padding(bottom = 32.dp)
         )
     }
 
@@ -578,6 +812,275 @@ fun CreateStoryScreen(
                 selectedOverlayIdForEdit = null
             }
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun StoryLocationSelectionBottomSheet(
+    onDismiss: () -> Unit,
+    onLocationSelected: (CreateStoryLocation) -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val locationRepository = remember { AndroidLocationRepository(context) }
+
+    var selectedTab by remember { mutableStateOf(0) }
+    var states by remember { mutableStateOf<List<String>>(emptyList()) }
+    var districts by remember { mutableStateOf<List<String>>(emptyList()) }
+    var selectedState by remember { mutableStateOf<String?>(null) }
+    var selectedDistrict by remember { mutableStateOf<String?>(null) }
+    var villageName by remember { mutableStateOf("") }
+    var isLoadingStates by remember { mutableStateOf(false) }
+    var isLoadingDistricts by remember { mutableStateOf(false) }
+    var isLoadingLocation by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(Unit) {
+        isLoadingStates = true
+        try {
+            states = locationRepository.getStates().sorted()
+        } catch (e: Exception) {
+            error = "Failed to load states: ${e.message}"
+        }
+        isLoadingStates = false
+    }
+
+    LaunchedEffect(selectedState) {
+        selectedState?.let { state ->
+            selectedDistrict = null
+            districts = emptyList()
+            isLoadingDistricts = true
+            try {
+                districts = locationRepository.getDistricts(state).sorted()
+            } catch (e: Exception) {
+                error = "Failed to load districts: ${e.message}"
+            }
+            isLoadingDistricts = false
+        }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = BackgroundColor,
+        dragHandle = {
+            Box(
+                modifier = Modifier
+                    .width(40.dp)
+                    .height(4.dp)
+                    .padding(vertical = 12.dp)
+                    .background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(2.dp))
+            )
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp)
+                .padding(bottom = 32.dp)
+        ) {
+            Spacer(modifier = Modifier.height(18.dp))
+            Text(
+                text = "Add Location",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary,
+                modifier = Modifier.padding(bottom = 20.dp)
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 20.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                TabButton(label = "Current Location", isSelected = selectedTab == 0, modifier = Modifier.weight(1f)) { selectedTab = 0 }
+                TabButton(label = "Manual", isSelected = selectedTab == 1, modifier = Modifier.weight(1f)) { selectedTab = 1 }
+            }
+            when (selectedTab) {
+                0 -> {
+                    StoryCurrentLocationTabContent(
+                        isLoading = isLoadingLocation,
+                        error = error,
+                        onUseCurrentLocation = {
+                            scope.launch {
+                                if (!locationRepository.hasLocationPermission()) {
+                                    error = "Location permission is required to use current location"
+                                    return@launch
+                                }
+                                isLoadingLocation = true
+                                error = null
+                                try {
+                                    @SuppressLint("MissingPermission")
+                                    val coordinates = locationRepository.getCurrentLocation()
+                                    if (coordinates == null) {
+                                        isLoadingLocation = false
+                                        error = "Unable to get current location. Please try again."
+                                        return@launch
+                                    }
+                                    val locationName = locationRepository.reverseGeocode(coordinates.latitude, coordinates.longitude)
+                                    isLoadingLocation = false
+                                    onLocationSelected(
+                                        CreateStoryLocation(
+                                            name = locationName ?: "${coordinates.latitude}, ${coordinates.longitude}",
+                                            latitude = coordinates.latitude,
+                                            longitude = coordinates.longitude
+                                        )
+                                    )
+                                    onDismiss()
+                                } catch (e: Exception) {
+                                    isLoadingLocation = false
+                                    error = "Unable to get location: ${e.message}"
+                                }
+                            }
+                        }
+                    )
+                }
+                1 -> {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        if (error != null) {
+                            Text(text = error!!, fontSize = 14.sp, color = Color(0xFFFF6B6B))
+                        }
+                        FilterableDropdownField(
+                            label = "State",
+                            items = states,
+                            selectedItem = selectedState,
+                            onItemSelected = { selectedState = it },
+                            isLoading = isLoadingStates,
+                            enabled = !isLoadingStates,
+                            placeholder = "Select State",
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        FilterableDropdownField(
+                            label = "District",
+                            items = districts,
+                            selectedItem = selectedDistrict,
+                            onItemSelected = { selectedDistrict = it },
+                            isLoading = isLoadingDistricts,
+                            enabled = selectedState != null && !isLoadingDistricts,
+                            placeholder = if (selectedState == null) "Select state first" else "Select District",
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(text = "Village (Optional)", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = TextSecondary)
+                            OutlinedTextField(
+                                value = villageName,
+                                onValueChange = { villageName = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                placeholder = { Text("Enter village name", color = TextPrimary.copy(alpha = 0.5f)) },
+                                singleLine = true,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedContainerColor = BackgroundColor,
+                                    unfocusedContainerColor = BackgroundColor,
+                                    focusedBorderColor = PrimaryGreen,
+                                    unfocusedBorderColor = Color.Black.copy(alpha = 0.1f)
+                                ),
+                                shape = RoundedCornerShape(22.dp),
+                                textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp, color = TextPrimary)
+                            )
+                        }
+                        Button(
+                            onClick = {
+                                val state = selectedState
+                                val district = selectedDistrict
+                                if (state == null || district == null) {
+                                    error = "Please select state and district"
+                                    return@Button
+                                }
+                                val village = villageName.trim()
+                                val locationName = if (village.isEmpty()) "$district, $state" else "$village, $district, $state"
+                                scope.launch {
+                                    isLoadingLocation = true
+                                    error = null
+                                    try {
+                                        val coordinates = locationRepository.forwardGeocode(locationName)
+                                        isLoadingLocation = false
+                                        onLocationSelected(
+                                            CreateStoryLocation(
+                                                name = locationName,
+                                                latitude = coordinates?.latitude,
+                                                longitude = coordinates?.longitude
+                                            )
+                                        )
+                                        onDismiss()
+                                    } catch (e: Exception) {
+                                        isLoadingLocation = false
+                                        onLocationSelected(CreateStoryLocation(name = locationName, latitude = null, longitude = null))
+                                        onDismiss()
+                                    }
+                                }
+                            },
+                            enabled = selectedState != null && selectedDistrict != null && !isLoadingLocation,
+                            modifier = Modifier.fillMaxWidth().height(56.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen, disabledContainerColor = PrimaryGreen.copy(alpha = 0.5f)),
+                            shape = RoundedCornerShape(18.dp)
+                        ) {
+                            if (isLoadingLocation) {
+                                CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White, strokeWidth = 2.dp)
+                                Spacer(Modifier.width(12.dp))
+                                Text("Confirming...", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                            } else {
+                                Text("Save Location", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TabButton(
+    label: String,
+    isSelected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = modifier.height(48.dp).clickable(onClick = onClick),
+        shape = RoundedCornerShape(14.dp),
+        color = if (isSelected) PrimaryGreen else BackgroundColor,
+        border = if (isSelected) null else BorderStroke(1.18.dp, PrimaryGreen.copy(alpha = 0.13f))
+    ) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(text = label, fontSize = 16.sp, fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal, color = if (isSelected) Color.White else TextSecondary)
+        }
+    }
+}
+
+@Composable
+private fun StoryCurrentLocationTabContent(
+    isLoading: Boolean,
+    error: String?,
+    onUseCurrentLocation: () -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        if (error != null) {
+            Text(text = error, fontSize = 14.sp, color = Color(0xFFFF6B6B), modifier = Modifier.padding(bottom = 8.dp))
+        }
+        Button(
+            onClick = onUseCurrentLocation,
+            enabled = !isLoading,
+            modifier = Modifier.fillMaxWidth().height(56.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen, disabledContainerColor = PrimaryGreen.copy(alpha = 0.5f)),
+            shape = RoundedCornerShape(18.dp)
+        ) {
+            if (isLoading) {
+                CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White, strokeWidth = 2.dp)
+                Spacer(Modifier.width(12.dp))
+                Text("Detecting location...", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+            } else {
+                Icon(imageVector = Icons.Default.LocationOn, contentDescription = null, modifier = Modifier.size(24.dp), tint = Color.White)
+                Spacer(Modifier.width(12.dp))
+                Text("Use Current Location", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+            }
+        }
+        Text(text = "We'll use your GPS to find your location", fontSize = 13.sp, color = TextSecondary, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
     }
 }
 
@@ -660,8 +1163,9 @@ private fun DraggableTextOverlay(
 
     Box(
         modifier = Modifier
-            .offset { IntOffset(absoluteX.toInt(), absoluteY.toInt()) }
             .graphicsLayer {
+                translationX = absoluteX
+                translationY = absoluteY
                 scaleX = scale
                 scaleY = scale
                 rotationZ = rotation
@@ -673,31 +1177,24 @@ private fun DraggableTextOverlay(
                 detectTransformGestures(
                     onGesture = { _, pan, zoom, rotationDelta ->
                         isTransforming = true
-
-                        /* ---------- Drag ---------- */
                         localOffset += pan
-
                         val livePx = basePositionPx + localOffset
                         onPositionChange(
                             (livePx.x / screenWidthPx).coerceIn(0f, 1f),
                             (livePx.y / screenHeightPx).coerceIn(0f, 1f)
                         )
-
-                        /* ---------- Scale + Size ---------- */
                         if (zoom != 1f) {
-                            scale = (scale * zoom).coerceIn(0.5f, 3f)
+                            val damped = 1f + (zoom - 1f) * 0.45f
+                            scale = (scale * damped).coerceIn(0.5f, 3f)
                             onScaleChange(scale)
-                            onSizeChange(liveFontSize)
+                            onSizeChange((baseFontSize * scale).coerceIn(12f, 72f))
                         }
-
-                        /* ---------- Rotation ---------- */
                         if (rotationDelta != 0f) {
-                            rotation = (rotation + rotationDelta) % 360f
+                            rotation = (rotation + rotationDelta * 0.5f) % 360f
                             onRotationChange(rotation)
                         }
                     },
                     onEnd = {
-                        // Commit position
                         basePositionPx += localOffset
                         localOffset = Offset.Zero
                         isTransforming = false
@@ -721,6 +1218,7 @@ private fun DraggableTextOverlay(
         Box {
             Row(
                 modifier = Modifier
+                    .widthIn(max = (config.screenWidthDp * 0.85f).dp)
                     .background(
                         Color.Black.copy(alpha = 0.6f),
                         RoundedCornerShape(8.dp)
@@ -737,7 +1235,8 @@ private fun DraggableTextOverlay(
                     color = Color(overlay.textColor),
                     fontSize = liveFontSize.sp,
                     fontWeight = FontWeight.Bold,
-                    maxLines = 3
+                    maxLines = 5,
+                    softWrap = true
                 )
             }
 
@@ -769,6 +1268,106 @@ private fun DraggableTextOverlay(
         baseFontSize = overlay.fontSize
         scale = overlay.scale
         rotation = overlay.rotation
+    }
+}
+
+@Composable
+private fun DraggableLocationOverlay(
+    location: CreateStoryLocation,
+    positionX: Float,
+    positionY: Float,
+    isSelected: Boolean,
+    onPositionChange: (Float, Float) -> Unit,
+    onSelect: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val density = LocalDensity.current
+    val config = LocalConfiguration.current
+    val screenWidthPx = with(density) { config.screenWidthDp.dp.toPx() }
+    val screenHeightPx = with(density) { config.screenHeightDp.dp.toPx() }
+
+    var basePositionPx by remember(location.name) {
+        mutableStateOf(
+            Offset(
+                positionX * screenWidthPx,
+                positionY * screenHeightPx
+            )
+        )
+    }
+    var localOffset by remember { mutableStateOf(Offset.Zero) }
+
+    val absoluteX = basePositionPx.x + localOffset.x
+    val absoluteY = basePositionPx.y + localOffset.y
+
+    Box(
+        modifier = Modifier
+            .graphicsLayer {
+                translationX = absoluteX
+                translationY = absoluteY
+            }
+            .pointerInput(isSelected) {
+                if (!isSelected) return@pointerInput
+                detectTransformGestures(
+                    onGesture = { _, pan, _, _ ->
+                        localOffset += pan
+                        val livePx = basePositionPx + localOffset
+                        onPositionChange(
+                            (livePx.x / screenWidthPx).coerceIn(0f, 1f),
+                            (livePx.y / screenHeightPx).coerceIn(0f, 1f)
+                        )
+                    },
+                    onEnd = {
+                        basePositionPx += localOffset
+                        localOffset = Offset.Zero
+                    }
+                )
+            }
+            .pointerInput(Unit) {
+                detectTapGestures(onTap = { onSelect() })
+            }
+    ) {
+        Row(
+            modifier = Modifier
+                .background(
+                    PrimaryGreen.copy(alpha = 0.85f),
+                    RoundedCornerShape(20.dp)
+                )
+                .then(
+                    if (isSelected)
+                        Modifier.border(2.dp, Color.White, RoundedCornerShape(20.dp))
+                    else Modifier
+                )
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.LocationOn,
+                contentDescription = null,
+                tint = Color(0xFF2D6A4F),
+                modifier = Modifier.size(14.dp)
+            )
+            Text(
+                text = location.name,
+                color = Color.White,
+                fontSize = 14.sp
+            )
+        }
+        if (isSelected) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(8.dp, (-8).dp)
+                    .size(28.dp)
+                    .background(Color.Red, CircleShape)
+                    .pointerInput(Unit) {
+                        detectTapGestures { onDelete() }
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Default.Close, null, tint = Color.White, modifier = Modifier.size(14.dp))
+            }
+        }
     }
 }
 
