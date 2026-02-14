@@ -1289,9 +1289,14 @@ service cloud.firestore {
                     && resource.data.authorId == request.auth.uid;
       
       match /views/{userId} {
-        allow read: if isAuthenticated() 
-                    && get(/databases/$(database)/documents/stories/$(storyId)).data.authorId == request.auth.uid;
+        allow read: if isAuthenticated() && isOwner(userId);  // Users can read their own view status
         allow create: if isAuthenticated() && isOwner(userId);
+      }
+      
+      match /likes/{userId} {
+        allow read: if isAuthenticated();  // Anyone can check if a story is liked
+        allow create: if isAuthenticated() && isOwner(userId);
+        allow delete: if isAuthenticated() && isOwner(userId);
       }
     }
     

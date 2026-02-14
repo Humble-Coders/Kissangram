@@ -35,7 +35,7 @@ class HomeViewModel: ObservableObject {
         let userRepository = FirestoreUserRepository(authRepository: authRepository)
         self.feedRepository = FirestoreFeedRepository(authRepository: authRepository)
         self.postRepository = FirestorePostRepository(authRepository: authRepository, userRepository: userRepository)
-        self.storyRepository = FirestoreStoryRepository()
+        self.storyRepository = FirestoreStoryRepository(authRepository: authRepository)
 
         self.getHomeFeedUseCase = GetHomeFeedUseCase(feedRepository: feedRepository)
         self.getStoryBarUseCase = GetStoryBarUseCase(storyRepository: storyRepository)

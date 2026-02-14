@@ -20,12 +20,15 @@ class CreateStoryViewModel: ObservableObject {
     
     // Repositories - instantiated once and reused
     private let storageRepository = IOSStorageRepository()
-    private let storyRepository = FirestoreStoryRepository()
     private let preferencesRepository = IOSPreferencesRepository()
     
     // Lazy repositories that depend on others
     private lazy var authRepository: AuthRepository = {
         IOSAuthRepository(preferencesRepository: preferencesRepository)
+    }()
+    
+    private lazy var storyRepository: StoryRepository = {
+        FirestoreStoryRepository(authRepository: authRepository)
     }()
     
     private lazy var userRepository: UserRepository = {

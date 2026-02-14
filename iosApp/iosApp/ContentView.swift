@@ -22,8 +22,8 @@ struct ContentView: View {
         switch currentScreen {
         case .home, .search, .createPost, .reels, .profile:
             return true
-        case .editProfile, .createStory:
-            return false // Don't show bottom nav on edit profile and create story
+        case .editProfile, .createStory, .story:
+            return false // Don't show bottom nav on edit profile, create story, and story viewer
         default:
             return false
         }
@@ -147,8 +147,10 @@ struct ContentView: View {
                 }
             } else {
                 ZStack {
-                    // Only ignore safe areas for fullscreen screens like CreateStory
+                    // Only ignore safe areas for fullscreen screens like CreateStory and Story
                     if case .createStory = currentScreen {
+                        Color.appBackground.ignoresSafeArea()
+                    } else if case .story = currentScreen {
                         Color.appBackground.ignoresSafeArea()
                     } else {
                         Color.appBackground
@@ -158,6 +160,8 @@ struct ContentView: View {
                     if case .editProfile = currentScreen {
                         mainAppContent
                     } else if case .createStory = currentScreen {
+                        mainAppContent
+                    } else if case .story = currentScreen {
                         mainAppContent
                     } else if case .userProfile = currentScreen {
                         mainAppContent
@@ -350,6 +354,12 @@ struct ContentView: View {
                 initialPost: post,
                 onBackClick: { navigateBack() },
                 onNavigateToProfile: { userId in navigateTo(.userProfile(userId: userId)) }
+            )
+            
+        case .story(let userId):
+            StoryView(
+                userId: userId,
+                onBackClick: { navigateBack() }
             )
             
         default:

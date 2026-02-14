@@ -321,7 +321,7 @@ private fun NavigationGraph(navController: NavHostController, startDestination: 
             }
             val storageRepository = remember { AndroidStorageRepository(context.applicationContext) }
             val userRepository = remember { FirestoreUserRepository(authRepository = authRepository) }
-            val storyRepository = remember { FirestoreStoryRepository() }
+            val storyRepository = remember { FirestoreStoryRepository(authRepository = authRepository) }
             val createStoryUseCase = remember {
                 CreateStoryUseCase(
                     storageRepository = storageRepository,
@@ -466,7 +466,10 @@ private fun NavigationGraph(navController: NavHostController, startDestination: 
             arguments = listOf(navArgument("userId") { defaultValue = "" })
         ) { backStackEntry ->
             val userId = backStackEntry.arguments?.getString("userId") ?: ""
-            PlaceholderScreen("Story: $userId")
+            com.kissangram.ui.story.StoryScreen(
+                userId = userId,
+                onBackClick = { navController.popBackStack() }
+            )
         }
         
         composable(Screen.NOTIFICATIONS) {

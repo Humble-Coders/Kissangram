@@ -5,6 +5,9 @@ import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FirebaseFirestore
 import com.kissangram.model.*
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import com.google.firebase.firestore.Query
 import java.util.Date
 
 /**
@@ -15,7 +18,8 @@ class FirestoreStoryRepository(
     private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance(
         com.google.firebase.FirebaseApp.getInstance(),
         DATABASE_NAME
-    )
+    ),
+    private val authRepository: AuthRepository
 ) : StoryRepository {
     
     private val storiesCollection
@@ -68,9 +72,170 @@ class FirestoreStoryRepository(
     }
     
     override suspend fun getStoryBar(): List<UserStories> {
-        // TODO: Implement story bar retrieval (query stories from followed users, group by author)
-        // Return empty until implemented so home screen shows real feed without dummy story data
-        return emptyList()
+        Log.d(TAG, "getStoryBar: start")
+        val currentUserId = authRepository.getCurrentUserId()
+        if (currentUserId == null) {
+            Log.w(TAG, "getStoryBar: currentUserId is null, returning empty list")
+            return emptyList()
+        }
+        Log.d(TAG, "getStoryBar: currentUserId=${currentUserId.take(8)}...")
+        
+        return try {
+            // Query storiesFeed subcollection ordered by createdAt DESC
+            val storiesFeedRef = firestore
+                .collection("users")
+                .document(currentUserId)
+                .collection("storiesFeed")
+                .orderBy("createdAt", Query.Direction.DESCENDING)
+            
+            val snapshot = storiesFeedRef.get().await()
+            val rawCount = snapshot.documents.size
+            Log.d(TAG, "getStoryBar: fetched $rawCount story documents")
+            
+            if (rawCount == 0) {
+                return emptyList()
+            }
+            
+            val currentTime = System.currentTimeMillis()
+            
+            // Filter expired stories and parse to Story objects
+            val stories = snapshot.documents
+                .mapNotNull { doc ->
+                    try {
+                        // Check if story is expired
+                        val expiresAt = doc.getTimestamp("expiresAt")?.toDate()?.time
+                        if (expiresAt != null && expiresAt < currentTime) {
+                            Log.d(TAG, "getStoryBar: skipping expired story ${doc.id}")
+                            return@mapNotNull null
+                        }
+                        
+                        doc.toStory()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "getStoryBar: failed to parse story ${doc.id}", e)
+                        null
+                    }
+                }
+            
+            Log.d(TAG, "getStoryBar: parsed ${stories.size} valid stories (after filtering expired)")
+            
+            if (stories.isEmpty()) {
+                return emptyList()
+            }
+            
+            // Batch check views and likes
+            val storyIds = stories.map { it.id }
+            val viewedStoryIds = batchCheckViews(storyIds, currentUserId)
+            val likedStoryIds = batchCheckLikes(storyIds, currentUserId)
+            
+            // Update stories with view/like status
+            val storiesWithStatus = stories.map { story ->
+                story.copy(
+                    isViewedByMe = viewedStoryIds.contains(story.id),
+                    isLikedByMe = likedStoryIds.contains(story.id)
+                )
+            }
+            
+            // Group stories by authorId
+            val storiesByAuthor = storiesWithStatus.groupBy { it.authorId }
+            Log.d(TAG, "getStoryBar: grouped into ${storiesByAuthor.size} authors")
+            
+            // Create UserStories objects
+            val userStoriesList = storiesByAuthor.map { (authorId, authorStories) ->
+                val firstStory = authorStories.first()
+                val sortedStories = authorStories.sortedByDescending { it.createdAt }
+                val hasUnviewedStories = authorStories.any { !it.isViewedByMe }
+                val latestStoryTime = authorStories.maxOfOrNull { it.createdAt } ?: 0L
+                
+                UserStories(
+                    userId = authorId,
+                    userName = firstStory.authorName,
+                    userProfileImageUrl = firstStory.authorProfileImageUrl,
+                    userRole = firstStory.authorRole,
+                    userVerificationStatus = firstStory.authorVerificationStatus,
+                    stories = sortedStories,
+                    hasUnviewedStories = hasUnviewedStories,
+                    latestStoryTime = latestStoryTime
+                )
+            }
+            
+            // Sort by latestStoryTime DESC
+            val sortedUserStories = userStoriesList.sortedByDescending { it.latestStoryTime }
+            
+            Log.d(TAG, "getStoryBar: returning ${sortedUserStories.size} user stories")
+            sortedUserStories
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "getStoryBar: failed", e)
+            emptyList() // Return empty list on error
+        }
+    }
+    
+    /**
+     * Batch check which stories are viewed by the current user.
+     */
+    private suspend fun batchCheckViews(storyIds: List<String>, userId: String): Set<String> = coroutineScope {
+        if (storyIds.isEmpty()) return@coroutineScope emptySet()
+        
+        try {
+            val results = storyIds.map { storyId ->
+                async {
+                    try {
+                        val viewDoc = firestore
+                            .collection("stories")
+                            .document(storyId)
+                            .collection("views")
+                            .document(userId)
+                            .get()
+                            .await()
+                        if (viewDoc.exists()) storyId else null
+                    } catch (e: Exception) {
+                        Log.e(TAG, "batchCheckViews: failed for storyId=$storyId", e)
+                        null
+                    }
+                }
+            }
+            
+            val viewedStoryIds = results.mapNotNull { it.await() }.toSet()
+            Log.d(TAG, "batchCheckViews: checked ${storyIds.size} stories, found ${viewedStoryIds.size} viewed")
+            viewedStoryIds
+        } catch (e: Exception) {
+            Log.e(TAG, "batchCheckViews: failed", e)
+            emptySet()
+        }
+    }
+    
+    /**
+     * Batch check which stories are liked by the current user.
+     */
+    private suspend fun batchCheckLikes(storyIds: List<String>, userId: String): Set<String> = coroutineScope {
+        if (storyIds.isEmpty()) return@coroutineScope emptySet()
+        
+        try {
+            val results = storyIds.map { storyId ->
+                async {
+                    try {
+                        val likeDoc = firestore
+                            .collection("stories")
+                            .document(storyId)
+                            .collection("likes")
+                            .document(userId)
+                            .get()
+                            .await()
+                        if (likeDoc.exists()) storyId else null
+                    } catch (e: Exception) {
+                        Log.e(TAG, "batchCheckLikes: failed for storyId=$storyId", e)
+                        null
+                    }
+                }
+            }
+            
+            val likedStoryIds = results.mapNotNull { it.await() }.toSet()
+            Log.d(TAG, "batchCheckLikes: checked ${storyIds.size} stories, found ${likedStoryIds.size} liked")
+            likedStoryIds
+        } catch (e: Exception) {
+            Log.e(TAG, "batchCheckLikes: failed", e)
+            emptySet()
+        }
     }
     
     override suspend fun getStoriesForUser(userId: String): List<Story> {
@@ -79,8 +244,46 @@ class FirestoreStoryRepository(
     }
     
     override suspend fun markStoryAsViewed(storyId: String) {
-        // TODO: Implement mark story as viewed
-        throw UnsupportedOperationException("Not yet implemented")
+        val currentUserId = authRepository.getCurrentUserId()
+        if (currentUserId == null) {
+            Log.w(TAG, "markStoryAsViewed: currentUserId is null")
+            return
+        }
+        
+        try {
+            // Check if already viewed to avoid duplicate writes
+            val viewDocRef = firestore
+                .collection("stories")
+                .document(storyId)
+                .collection("views")
+                .document(currentUserId)
+            
+            val existingView = viewDocRef.get().await()
+            if (existingView.exists()) {
+                Log.d(TAG, "markStoryAsViewed: story $storyId already viewed by user")
+                return
+            }
+            
+            // Create view document
+            val viewData = mapOf(
+                "id" to currentUserId,
+                "viewedAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()
+            )
+            
+            viewDocRef.set(viewData).await()
+            
+            // Increment viewsCount on the story document
+            firestore
+                .collection("stories")
+                .document(storyId)
+                .update("viewsCount", com.google.firebase.firestore.FieldValue.increment(1))
+                .await()
+            
+            Log.d(TAG, "markStoryAsViewed: marked story $storyId as viewed")
+        } catch (e: Exception) {
+            Log.e(TAG, "markStoryAsViewed: failed for storyId=$storyId", e)
+            throw Exception("Failed to mark story as viewed: ${e.message}", e)
+        }
     }
     
     override suspend fun getMyStories(): List<Story> {
