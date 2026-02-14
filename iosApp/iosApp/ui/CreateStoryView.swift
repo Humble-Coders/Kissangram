@@ -325,11 +325,19 @@ struct CreateStoryView: View {
         .confirmationDialog("Who can see your story?", isPresented: $showVisibilityDialog, titleVisibility: .visible) {
             Button("Public") {
                 visibility = .public
-                handleShareClick()
+                showVisibilityDialog = false  // Dismiss dialog first
+                // Small delay to ensure dialog dismisses before loader appears
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    handleShareClick()
+                }
             }
             Button("My Followers") {
                 visibility = .followers
-                handleShareClick()
+                showVisibilityDialog = false  // Dismiss dialog first
+                // Small delay to ensure dialog dismisses before loader appears
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    handleShareClick()
+                }
             }
             Button("Cancel", role: .cancel) { }
         } message: {
@@ -434,6 +442,9 @@ struct CreateStoryView: View {
             return
         }
         
+        // Set loading state immediately to show loader right away
+        viewModel.isCreatingStory = true
+        
         Task {
             do {
                 // Convert local MediaType to Shared.MediaType
@@ -511,23 +522,32 @@ struct CreateStoryView: View {
                     saveToPhotosError = "Could not create image"
                     return
                 }
-                PHPhotoLibrary.requestAuthorization(for: .addOnly) { [image] status in
+                
+                // Convert image to data safely
+                guard let imageData = image.pngData() else {
+                    saveToPhotosError = "Could not convert image to data"
+                    return
+                }
+                
+                PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
                     DispatchQueue.main.async {
                         guard status == .authorized || status == .limited else {
-                            saveToPhotosError = "Photo library access is required to save."
+                            self.saveToPhotosError = "Photo library access is required to save. Please enable it in Settings."
                             return
                         }
+                        
                         PHPhotoLibrary.shared().performChanges({
-                            PHAssetCreationRequest.forAsset().addResource(with: .photo, data: image.pngData()!, options: nil)
-                        }) { success, error in
+                            let request = PHAssetCreationRequest.forAsset()
+                            request.addResource(with: .photo, data: imageData, options: nil)
+                        }, completionHandler: { success, error in
                             DispatchQueue.main.async {
                                 if success {
-                                    showSavedToPhotosConfirmation = true
+                                    self.showSavedToPhotosConfirmation = true
                                 } else {
-                                    saveToPhotosError = error?.localizedDescription ?? "Failed to save to Photos"
+                                    self.saveToPhotosError = error?.localizedDescription ?? "Failed to save to Photos"
                                 }
                             }
-                        }
+                        })
                     }
                 }
             }
@@ -957,42 +977,45 @@ struct DraggableTextOverlayView: View {
     }
     
     var body: some View {
-        ZStack(alignment: .topTrailing) {
-            // Text container with border when selected (max width so long text wraps to next line)
-            HStack(spacing: 8) {
-                Text(overlay.text)
-                    .font(.system(size: max(CGFloat(liveFontSize), 24), weight: .bold))
-                    .foregroundColor(colorFromHex(overlay.textColor))
-                    .lineLimit(5)
-                    .frame(maxWidth: screenWidthPx * 0.85, alignment: .leading)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(Color.black.opacity(0.6))
-            .cornerRadius(8)
-            .overlay(
-                // White border when selected
-                Group {
-                    if isSelected {
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color.white, lineWidth: 2)
-                    }
-                }
-            )
-            
-            // Delete button - only visible when selected
-            if isSelected {
-                Button(action: onDelete) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.white)
-                        .frame(width: 32, height: 32)
-                        .background(Color.red)
-                        .clipShape(Circle())
-                }
-                .offset(x: 12, y: -12)
-            }
+        // Text container (matches Android Row)
+        HStack {
+            Text(overlay.text)
+                .font(.system(size: CGFloat(liveFontSize), weight: .bold))
+                .foregroundColor(colorFromHex(overlay.textColor))
+                .lineLimit(5)
+                .fixedSize(horizontal: false, vertical: true)
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(Color.black.opacity(0.6))
+        .cornerRadius(8)
+        .overlay(
+            // White border when selected (matches Android: 2dp white border)
+            Group {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.white, lineWidth: 2)
+                }
+            }
+        )
+        .frame(maxWidth: screenWidthPx * 0.85, alignment: .leading) // Match Android: 85% of screen width
+        .overlay(
+            // Delete button positioned relative to text container (matches Android)
+            Group {
+                if isSelected {
+                    Button(action: onDelete) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
+                    .frame(width: 32, height: 32)
+                    .background(Color.red)
+                    .clipShape(Circle())
+                    .offset(x: 12, y: -12) // Match Android: offset(12.dp, (-12).dp)
+                }
+            },
+            alignment: .topTrailing
+        )
         .offset(
             x: absoluteX - screenWidthPx / 2,
             y: absoluteY - screenHeightPx / 2
@@ -1013,13 +1036,12 @@ struct DraggableTextOverlayView: View {
             onEdit()
         }
         .onAppear {
-            // Initialize base values
+            // Initialize base values (matches Android initialization)
             basePositionPx = CGPoint(
                 x: CGFloat(overlay.positionX) * screenWidthPx,
                 y: CGFloat(overlay.positionY) * screenHeightPx
             )
-            // Ensure font size is at least 24 for visibility
-            baseFontSize = max(overlay.fontSize, 24)
+            baseFontSize = overlay.fontSize // Match Android: use fontSize directly
             scale = max(CGFloat(overlay.scale), 1.0)
             rotation = Double(overlay.rotation)
         }

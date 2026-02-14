@@ -46,6 +46,7 @@ class EditProfileViewModel: ObservableObject {
     @Published var isLoadingStates: Bool = false
     @Published var isLoadingDistricts: Bool = false
     @Published var isLoadingCrops: Bool = false
+    @Published var isLoadingLocation: Bool = false
     @Published var isSaving: Bool = false
     @Published var isUploadingImage: Bool = false
     
@@ -54,6 +55,7 @@ class EditProfileViewModel: ObservableObject {
     @Published var statesError: String? = nil
     @Published var districtsError: String? = nil
     @Published var cropsError: String? = nil
+    @Published var locationError: String? = nil
     @Published var saveError: String? = nil
     
     // Success state
@@ -171,6 +173,124 @@ class EditProfileViewModel: ObservableObject {
         selectedState = nil
         selectedDistrict = nil
         districts = []
+    }
+    
+    /// Use current GPS location to automatically set state and district
+    func useCurrentLocation() {
+        guard !isLoadingLocation else { return }
+        
+        isLoadingLocation = true
+        locationError = nil
+        
+        Task {
+            // Check location permission
+            if !locationRepository.hasLocationPermission() {
+                do {
+                    let granted = try await locationRepository.requestLocationPermission()
+                    if !granted.boolValue {
+                        await MainActor.run {
+                            self.isLoadingLocation = false
+                            self.locationError = "Location permission is required to use current location"
+                        }
+                        return
+                    }
+                } catch {
+                    await MainActor.run {
+                        self.isLoadingLocation = false
+                        self.locationError = "Failed to request location permission: \(error.localizedDescription)"
+                    }
+                    return
+                }
+            }
+            
+            do {
+                // Get GPS coordinates
+                guard let coordinates = try await locationRepository.getCurrentLocation() else {
+                    await MainActor.run {
+                        self.isLoadingLocation = false
+                        self.locationError = "Unable to get current location. Please try again."
+                    }
+                    return
+                }
+                
+                // Reverse geocode to get location name
+                let locationName = try await locationRepository.reverseGeocode(
+                    latitude: coordinates.latitude,
+                    longitude: coordinates.longitude
+                )
+                
+                guard let locationName = locationName else {
+                    await MainActor.run {
+                        self.isLoadingLocation = false
+                        self.locationError = "Unable to get location name. Please try manual selection."
+                    }
+                    return
+                }
+                
+                // Parse location name to extract state and district
+                // Format is typically "District, State" or "State" or "District"
+                let parts = locationName.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+                
+                // Just set the location parts directly without matching to lists
+                // If format is "District, State", set district and state
+                // If only one part, assume it's the state
+                if parts.count >= 2 {
+                    // Format: "District, State"
+                    let districtName = parts[0]
+                    let stateName = parts[1]
+                    
+                    await MainActor.run {
+                        self.selectedState = stateName
+                        self.selectedDistrict = districtName
+                        self.districts = [] // Clear districts, will be loaded when state is set
+                    }
+                    
+                    // Load districts for the state (so dropdown works)
+                    do {
+                        let fetchedDistricts = try await locationRepository.getDistricts(state: stateName)
+                        await MainActor.run {
+                            self.districts = fetchedDistricts
+                            self.isLoadingLocation = false
+                            self.locationError = nil
+                        }
+                    } catch {
+                        await MainActor.run {
+                            self.isLoadingLocation = false
+                            self.locationError = nil // Still set the values even if districts load fails
+                        }
+                    }
+                } else if parts.count == 1 {
+                    // Only one part, assume it's the state
+                    await MainActor.run {
+                        self.selectedState = parts[0]
+                        self.selectedDistrict = nil
+                        self.districts = []
+                        self.isLoadingLocation = false
+                        self.locationError = nil
+                    }
+                    
+                    // Try to load districts for the state
+                    do {
+                        let fetchedDistricts = try await locationRepository.getDistricts(state: parts[0])
+                        await MainActor.run {
+                            self.districts = fetchedDistricts
+                        }
+                    } catch {
+                        // Ignore error, just set the state
+                    }
+                } else {
+                    await MainActor.run {
+                        self.isLoadingLocation = false
+                        self.locationError = "Invalid location format"
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    self.isLoadingLocation = false
+                    self.locationError = "Failed to get location: \(error.localizedDescription)"
+                }
+            }
+        }
     }
     
     /// Load all available crops from Firestore

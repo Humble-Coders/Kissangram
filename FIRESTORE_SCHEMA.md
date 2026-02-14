@@ -54,6 +54,7 @@ ROOT COLLECTIONS
 │       ├── followers/{followerId}
 │       ├── following/{followingId}
 │       ├── feed/{postId}
+│       ├── storiesFeed/{storyId}
 │       ├── savedPosts/{postId}
 │       ├── notifications/{notificationId}
 │       └── blockedUsers/{blockedUserId}
@@ -276,6 +277,46 @@ Populated by the `onPostCreate` Cloud Function (fan-out). Each document is a cop
 
 - **Read**: Owner only (each user reads their own feed).
 - **Create/Update/Delete**: Cloud Functions only (client cannot write).
+
+#### Subcollection: Stories Feed
+
+**Path:** `/users/{userId}/storiesFeed/{storyId}`
+
+Populated by the `onStoryCreate` Cloud Function (fan-out). Each document is a copy of a story for the stories feed. Document ID = storyId.
+
+```javascript
+{
+  id: "story123",
+  authorId: "user123",
+  authorName: "Rajesh Kumar",
+  authorUsername: "rajesh_farmer",
+  authorProfileImageUrl: "https://...",
+  authorRole: "farmer",
+  authorVerificationStatus: "unverified",
+  media: {
+    url: "https://...",
+    type: "image",  // "image" | "video"
+    thumbnailUrl: null,
+  },
+  textOverlay: {
+    text: "Morning at the farm!",
+    position: { x: 0.5, y: 0.8 },
+  },
+  location: {
+    name: "Ludhiana, Punjab",
+  },
+  visibility: "public",  // "public" | "followers"
+  viewsCount: 0,
+  likesCount: 0,
+  createdAt: Timestamp,
+  expiresAt: Timestamp,  // createdAt + 24 hours
+  isActive: true,
+}
+```
+
+- **Read**: Owner only (each user reads their own stories feed).
+- **Create/Update/Delete**: Cloud Functions only (client cannot write).
+- **Note**: Both "public" and "followers" visibility stories are distributed to followers' feeds. "Public" means the story is viewable on the author's profile by anyone, but still only appears in followers' feeds.
 
 ---
 
@@ -902,8 +943,9 @@ Fields: topics (Arrays), membersCount (Descending)
 | `onUserProfileUpdate` | `users/{userId}` update | Sync denormalized user data across collections |
 | `onFollow` | `users/{userId}/followers/{followerId}` create | Update follower/following counts, send notification |
 | `onUnfollow` | `users/{userId}/followers/{followerId}` delete | Update follower/following counts |
-| `onPostCreate` | `posts/{postId}` create | Update user's postsCount, notify tagged experts |
+| `onPostCreate` | `posts/{postId}` create | Update user's postsCount, fan-out to followers' feeds |
 | `onPostDelete` | `posts/{postId}` delete/update | Update user's postsCount |
+| `onStoryCreate` | `stories/{storyId}` create | Fan-out story to followers' storiesFeed |
 | `onLike` | `posts/{postId}/likes/{userId}` create | Update likesCount, send notification |
 | `onUnlike` | `posts/{postId}/likes/{userId}` delete | Update likesCount |
 | `onComment` | `posts/{postId}/comments/{commentId}` create | Update commentsCount/repliesCount, send notification |
@@ -1199,6 +1241,12 @@ service cloud.firestore {
       
       // Feed (fan-out from onPostCreate; read-only for owner, write by Cloud Functions only)
       match /feed/{postId} {
+        allow read: if isOwner(userId);
+        allow create, update, delete: if false;
+      }
+      
+      // Stories Feed (fan-out from onStoryCreate; read-only for owner, write by Cloud Functions only)
+      match /storiesFeed/{storyId} {
         allow read: if isOwner(userId);
         allow create, update, delete: if false;
       }

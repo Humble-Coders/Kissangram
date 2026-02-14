@@ -193,6 +193,117 @@ class EditProfileViewModel(
     }
     
     /**
+     * Use current GPS location to automatically set state and district
+     */
+    fun useCurrentLocation() {
+        viewModelScope.launch {
+            if (!locationRepository.hasLocationPermission()) {
+                _uiState.value = _uiState.value.copy(
+                    locationError = "Location permission is required. Please grant location permission in settings."
+                )
+                return@launch
+            }
+            
+            _uiState.value = _uiState.value.copy(
+                isLoadingLocation = true,
+                locationError = null
+            )
+            
+            try {
+                // Get GPS coordinates
+                @SuppressLint("MissingPermission")
+                val coordinates = locationRepository.getCurrentLocation()
+                
+                if (coordinates == null) {
+                    _uiState.value = _uiState.value.copy(
+                        isLoadingLocation = false,
+                        locationError = "Unable to get current location. Please try again."
+                    )
+                    return@launch
+                }
+                
+                // Reverse geocode to get location name
+                val locationName = locationRepository.reverseGeocode(
+                    coordinates.latitude,
+                    coordinates.longitude
+                )
+                
+                if (locationName == null) {
+                    _uiState.value = _uiState.value.copy(
+                        isLoadingLocation = false,
+                        locationError = "Unable to get location name. Please try manual selection."
+                    )
+                    return@launch
+                }
+                
+                // Parse location name to extract state and district
+                // Format is typically "District, State" or "State" or "District"
+                val parts = locationName.split(",").map { it.trim() }
+                
+                // Just set the location parts directly without matching to lists
+                // If format is "District, State", set district and state
+                // If only one part, assume it's the state
+                if (parts.size >= 2) {
+                    // Format: "District, State"
+                    val districtName = parts[0]
+                    val stateName = parts[1]
+                    
+                    _uiState.value = _uiState.value.copy(
+                        selectedState = stateName,
+                        selectedDistrict = districtName,
+                        districts = emptyList() // Clear districts, will be loaded when state is set
+                    )
+                    
+                    // Load districts for the state (so dropdown works)
+                    try {
+                        val fetchedDistricts = getDistrictsUseCase(stateName)
+                        _uiState.value = _uiState.value.copy(
+                            districts = fetchedDistricts,
+                            isLoadingLocation = false,
+                            locationError = null
+                        )
+                    } catch (e: Exception) {
+                        // Still set the values even if districts load fails
+                        _uiState.value = _uiState.value.copy(
+                            isLoadingLocation = false,
+                            locationError = null
+                        )
+                    }
+                } else if (parts.size == 1) {
+                    // Only one part, assume it's the state
+                    _uiState.value = _uiState.value.copy(
+                        selectedState = parts[0],
+                        selectedDistrict = null,
+                        districts = emptyList(),
+                        isLoadingLocation = false,
+                        locationError = null
+                    )
+                    
+                    // Try to load districts for the state
+                    try {
+                        val fetchedDistricts = getDistrictsUseCase(parts[0])
+                        _uiState.value = _uiState.value.copy(
+                            districts = fetchedDistricts
+                        )
+                    } catch (e: Exception) {
+                        // Ignore error, just set the state
+                    }
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        isLoadingLocation = false,
+                        locationError = "Invalid location format"
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isLoadingLocation = false,
+                    locationError = "Failed to get location: ${e.message}"
+                )
+            }
+        }
+    }
+    
+    /**
      * Load all available crops from Firestore
      */
     fun loadCrops() {
@@ -428,6 +539,7 @@ data class EditProfileUiState(
     val isLoadingStates: Boolean = false,
     val isLoadingDistricts: Boolean = false,
     val isLoadingCrops: Boolean = false,
+    val isLoadingLocation: Boolean = false,
     val isSaving: Boolean = false,
     val isUploadingImage: Boolean = false,
     
@@ -436,6 +548,7 @@ data class EditProfileUiState(
     val statesError: String? = null,
     val districtsError: String? = null,
     val cropsError: String? = null,
+    val locationError: String? = null,
     val saveError: String? = null,
     
     // Success state

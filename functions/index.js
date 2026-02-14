@@ -24,6 +24,20 @@ function buildFeedEntry(postData, postId) {
 }
 
 /**
+ * Build story feed entry from story data (copy fields; omit client-only fields).
+ * @param {object} storyData - Raw story document from snap.data()
+ * @param {string} storyId - Story document ID
+ * @returns {object} Feed document for users/{userId}/storiesFeed/{storyId}
+ */
+function buildStoryFeedEntry(storyData, storyId) {
+  const entry = { ...storyData };
+  entry.id = storyId;
+  delete entry.isViewedByMe;
+  delete entry.isLikedByMe;
+  return entry;
+}
+
+/**
  * Fan-out: when a post is created, copy it to the author's feed and to each follower's feed.
  * Also increments the author's postsCount.
  * Uses 2nd gen so we can attach to the "kissangram" database (1st gen requires (default) only).
@@ -615,5 +629,80 @@ exports.onCommentUpdate = onDocumentUpdated(
     }
 
     return null;
+  }
+);
+
+/**
+ * Fan-out: when a story is created, copy it to the author's storiesFeed and to each follower's storiesFeed.
+ * Uses 2nd gen so we can attach to the "kissangram" database (1st gen requires (default) only).
+ * Note: Both "public" and "followers" visibility stories go to followers' feeds.
+ * "Public" just means the story is viewable on the author's profile by anyone.
+ */
+exports.onStoryCreate = onDocumentCreated(
+  {
+    document: "stories/{storyId}",
+    database: "kissangram",
+  },
+  async (event) => {
+    const snapshot = event.data;
+    if (!snapshot) {
+      console.warn("onStoryCreate: no data");
+      return null;
+    }
+    const storyId = event.params.storyId;
+    const storyData = snapshot.data();
+    const authorId = storyData.authorId;
+
+    if (!authorId) {
+      console.warn("onStoryCreate: story missing authorId", { storyId });
+      return null;
+    }
+
+    try {
+      const storyFeedEntry = buildStoryFeedEntry(storyData, storyId);
+
+      // Get all follower IDs from users/{authorId}/followers
+      const followersSnap = await db
+        .collection("users")
+        .doc(authorId)
+        .collection("followers")
+        .get();
+
+      const recipientIds = followersSnap.docs.map((d) => d.id);
+      // Always include the author in their own storiesFeed
+      if (!recipientIds.includes(authorId)) {
+        recipientIds.push(authorId);
+      }
+      // If no followers, at least add to author's feed
+      if (recipientIds.length === 0) {
+        recipientIds.push(authorId);
+      }
+
+      // Batch writes: users/{userId}/storiesFeed/{storyId}.set(storyFeedEntry), max 500 per batch
+      for (let i = 0; i < recipientIds.length; i += BATCH_SIZE) {
+        const chunk = recipientIds.slice(i, i + BATCH_SIZE);
+        const batch = db.batch();
+        for (const userId of chunk) {
+          const storiesFeedRef = db
+            .collection("users")
+            .doc(userId)
+            .collection("storiesFeed")
+            .doc(storyId);
+          batch.set(storiesFeedRef, storyFeedEntry);
+        }
+        await batch.commit();
+      }
+
+      console.log("onStoryCreate: fan-out complete", {
+        storyId,
+        authorId,
+        recipientCount: recipientIds.length,
+        visibility: storyData.visibility,
+      });
+      return null;
+    } catch (err) {
+      console.error("onStoryCreate failed", { storyId, authorId, err });
+      throw err;
+    }
   }
 );

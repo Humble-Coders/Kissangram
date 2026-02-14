@@ -329,6 +329,9 @@ fun CreateStoryScreen(
 
     val isStoryEnabled = selectedMediaUri != null
     
+    // Store parent's isLoading prop to avoid shadowing with local isLoading
+    val parentIsLoading = isLoading
+    
     // Error Snackbar
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(errorMessage) {
@@ -338,6 +341,19 @@ fun CreateStoryScreen(
                 duration = SnackbarDuration.Long
             )
             onDismissError()
+        }
+    }
+    
+    // Sync local isLoading with parent's isLoading prop
+    // Use either local or parent's loading state (whichever is true)
+    val showLoadingOverlay = remember(parentIsLoading, isLoading) { isLoading || parentIsLoading }
+    
+    // Reset local isLoading when parent's isLoading becomes false (completion)
+    LaunchedEffect(parentIsLoading) {
+        if (!parentIsLoading) {
+            // Parent's loading completed, reset local state after a small delay
+            kotlinx.coroutines.delay(100)
+            isLoading = false
         }
     }
 
@@ -655,6 +671,7 @@ fun CreateStoryScreen(
                                 selectedMediaUri?.let { uri ->
                                     scope.launch {
                                         try {
+                                            isLoading = true  // Show loader immediately
                                             val mediaData = uriToByteArray(context, uri)
                                             val input = CreateStoryInput(
                                                 mediaData = mediaData,
@@ -665,7 +682,10 @@ fun CreateStoryScreen(
                                                 visibility = visibility
                                             )
                                             onStoryClick(input)
-                                        } catch (e: Exception) { e.printStackTrace() }
+                                        } catch (e: Exception) { 
+                                            isLoading = false  // Hide loader on error
+                                            e.printStackTrace() 
+                                        }
                                     }
                                 }
                             }
@@ -677,6 +697,7 @@ fun CreateStoryScreen(
                                 selectedMediaUri?.let { uri ->
                                     scope.launch {
                                         try {
+                                            isLoading = true  // Show loader immediately
                                             val mediaData = uriToByteArray(context, uri)
                                             val input = CreateStoryInput(
                                                 mediaData = mediaData,
@@ -687,7 +708,10 @@ fun CreateStoryScreen(
                                                 visibility = visibility
                                             )
                                             onStoryClick(input)
-                                        } catch (e: Exception) { e.printStackTrace() }
+                                        } catch (e: Exception) { 
+                                            isLoading = false  // Hide loader on error
+                                            e.printStackTrace() 
+                                        }
                                     }
                                 }
                             }
@@ -716,7 +740,7 @@ fun CreateStoryScreen(
         }
         
         // Full Screen Loading Overlay
-        if (isLoading) {
+        if (showLoadingOverlay) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -835,6 +859,43 @@ private fun StoryLocationSelectionBottomSheet(
     var isLoadingDistricts by remember { mutableStateOf(false) }
     var isLoadingLocation by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    
+    // Location permission launcher
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            // Permission granted, trigger location fetch
+            scope.launch {
+                isLoadingLocation = true
+                error = null
+                try {
+                    @SuppressLint("MissingPermission")
+                    val coordinates = locationRepository.getCurrentLocation()
+                    if (coordinates == null) {
+                        isLoadingLocation = false
+                        error = "Unable to get current location. Please try again."
+                        return@launch
+                    }
+                    val locationName = locationRepository.reverseGeocode(coordinates.latitude, coordinates.longitude)
+                    isLoadingLocation = false
+                    onLocationSelected(
+                        CreateStoryLocation(
+                            name = locationName ?: "${coordinates.latitude}, ${coordinates.longitude}",
+                            latitude = coordinates.latitude,
+                            longitude = coordinates.longitude
+                        )
+                    )
+                    onDismiss()
+                } catch (e: Exception) {
+                    isLoadingLocation = false
+                    error = "Unable to get location: ${e.message}"
+                }
+            }
+        } else {
+            error = "Location permission is required to use current location"
+        }
+    }
 
     LaunchedEffect(Unit) {
         isLoadingStates = true
@@ -900,34 +961,36 @@ private fun StoryLocationSelectionBottomSheet(
                         isLoading = isLoadingLocation,
                         error = error,
                         onUseCurrentLocation = {
-                            scope.launch {
-                                if (!locationRepository.hasLocationPermission()) {
-                                    error = "Location permission is required to use current location"
-                                    return@launch
-                                }
-                                isLoadingLocation = true
-                                error = null
-                                try {
-                                    @SuppressLint("MissingPermission")
-                                    val coordinates = locationRepository.getCurrentLocation()
-                                    if (coordinates == null) {
+                            if (!locationRepository.hasLocationPermission()) {
+                                // Request location permission
+                                locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+                            } else {
+                                // Permission already granted, fetch location
+                                scope.launch {
+                                    isLoadingLocation = true
+                                    error = null
+                                    try {
+                                        @SuppressLint("MissingPermission")
+                                        val coordinates = locationRepository.getCurrentLocation()
+                                        if (coordinates == null) {
+                                            isLoadingLocation = false
+                                            error = "Unable to get current location. Please try again."
+                                            return@launch
+                                        }
+                                        val locationName = locationRepository.reverseGeocode(coordinates.latitude, coordinates.longitude)
                                         isLoadingLocation = false
-                                        error = "Unable to get current location. Please try again."
-                                        return@launch
-                                    }
-                                    val locationName = locationRepository.reverseGeocode(coordinates.latitude, coordinates.longitude)
-                                    isLoadingLocation = false
-                                    onLocationSelected(
-                                        CreateStoryLocation(
-                                            name = locationName ?: "${coordinates.latitude}, ${coordinates.longitude}",
-                                            latitude = coordinates.latitude,
-                                            longitude = coordinates.longitude
+                                        onLocationSelected(
+                                            CreateStoryLocation(
+                                                name = locationName ?: "${coordinates.latitude}, ${coordinates.longitude}",
+                                                latitude = coordinates.latitude,
+                                                longitude = coordinates.longitude
+                                            )
                                         )
-                                    )
-                                    onDismiss()
-                                } catch (e: Exception) {
-                                    isLoadingLocation = false
-                                    error = "Unable to get location: ${e.message}"
+                                        onDismiss()
+                                    } catch (e: Exception) {
+                                        isLoadingLocation = false
+                                        error = "Unable to get location: ${e.message}"
+                                    }
                                 }
                             }
                         }

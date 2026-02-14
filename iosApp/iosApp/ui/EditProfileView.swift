@@ -487,6 +487,41 @@ struct LocationSection: View {
                     .foregroundColor(.textPrimary)
             }
             
+            // Use Current Location Button
+            if let error = viewModel.locationError {
+                Text(error)
+                    .font(.system(size: 13.5))
+                    .foregroundColor(.red)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 8)
+            }
+            
+            Button(action: {
+                viewModel.useCurrentLocation()
+            }) {
+                HStack {
+                    if viewModel.isLoadingLocation {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            .scaleEffect(0.8)
+                        Text("Detecting location...")
+                            .font(.system(size: 16.875, weight: .semibold))
+                            .foregroundColor(.white)
+                    } else {
+                        Image(systemName: "location.fill")
+                            .font(.system(size: 20))
+                        Text("Use Current Location")
+                            .font(.system(size: 16.875, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 50)
+                .background(Color.primaryGreen)
+                .cornerRadius(22)
+            }
+            .disabled(viewModel.isLoadingLocation)
+            
             // State Picker
             VStack(alignment: .leading, spacing: 9) {
                 Text("State")
@@ -619,6 +654,41 @@ struct LocationSectionWithVillage: View {
                     .font(.system(size: 16.875, weight: .bold))
                     .foregroundColor(.textPrimary)
             }
+            
+            // Use Current Location Button
+            if let error = viewModel.locationError {
+                Text(error)
+                    .font(.system(size: 13.5))
+                    .foregroundColor(.red)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 8)
+            }
+            
+            Button(action: {
+                viewModel.useCurrentLocation()
+            }) {
+                HStack {
+                    if viewModel.isLoadingLocation {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            .scaleEffect(0.8)
+                        Text("Detecting location...")
+                            .font(.system(size: 16.875, weight: .semibold))
+                            .foregroundColor(.white)
+                    } else {
+                        Image(systemName: "location.fill")
+                            .font(.system(size: 20))
+                        Text("Use Current Location")
+                            .font(.system(size: 16.875, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 50)
+                .background(Color.primaryGreen)
+                .cornerRadius(22)
+            }
+            .disabled(viewModel.isLoadingLocation)
             
             // State Picker
             VStack(alignment: .leading, spacing: 9) {

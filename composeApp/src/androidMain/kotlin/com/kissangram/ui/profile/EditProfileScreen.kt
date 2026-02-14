@@ -464,7 +464,10 @@ fun LocationSection(
     onDistrictSelected: (String) -> Unit,
     isLoadingDistricts: Boolean,
     village: String = "",
-    onVillageChange: (String) -> Unit = {}
+    onVillageChange: (String) -> Unit = {},
+    isLoadingLocation: Boolean = false,
+    locationError: String? = null,
+    onUseCurrentLocation: () -> Unit = {}
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -494,6 +497,59 @@ fun LocationSection(
                     fontWeight = FontWeight.Bold,
                     color = TextPrimary
                 )
+            }
+
+            // Error message
+            if (locationError != null) {
+                Text(
+                    text = locationError,
+                    fontSize = 13.sp,
+                    color = Color(0xFFFF6B6B),
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
+            }
+
+            // Use Current Location Button
+            Button(
+                onClick = onUseCurrentLocation,
+                enabled = !isLoadingLocation,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = PrimaryGreen,
+                    disabledContainerColor = PrimaryGreen.copy(alpha = 0.5f)
+                ),
+                shape = RoundedCornerShape(18.dp)
+            ) {
+                if (isLoadingLocation) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        color = Color.White,
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        text = "Detecting location...",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.LocationOn,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = Color.White
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        text = "Use Current Location",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White
+                    )
+                }
             }
 
             // State Dropdown
@@ -1342,7 +1398,10 @@ fun EditProfileScreen(
                             onDistrictSelected = { viewModel.onDistrictSelected(it) },
                             isLoadingDistricts = uiState.isLoadingDistricts,
                             village = uiState.village,
-                            onVillageChange = { viewModel.updateVillage(it) }
+                            onVillageChange = { viewModel.updateVillage(it) },
+                            isLoadingLocation = uiState.isLoadingLocation,
+                            locationError = uiState.locationError,
+                            onUseCurrentLocation = { viewModel.useCurrentLocation() }
                         )
 
                         Spacer(Modifier.height(16.dp))
