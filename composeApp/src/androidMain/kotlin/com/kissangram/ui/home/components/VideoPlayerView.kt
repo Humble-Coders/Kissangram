@@ -29,6 +29,7 @@ import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import com.kissangram.model.PostMedia
 import com.kissangram.util.CloudinaryUrlTransformer
+import com.kissangram.util.ExoPlayerCache
 
 /**
  * Video player component for feed videos
@@ -48,15 +49,8 @@ fun VideoPlayerView(
     var isMuted by remember { mutableStateOf(true) }
     var showThumbnail by remember { mutableStateOf(true) }
     
-    val exoPlayer = remember {
-        ExoPlayer.Builder(context).build().apply {
-            val videoUri = Uri.parse(media.url)
-            val mediaItem = MediaItem.fromUri(videoUri)
-            setMediaItem(mediaItem)
-            repeatMode = Player.REPEAT_MODE_ONE
-            volume = if (isMuted) 0f else 1f
-            prepare()
-        }
+    val exoPlayer = remember(media.url) {
+        ExoPlayerCache.getPlayer(context, media.url)
     }
     
     // Handle visibility and auto-play
@@ -89,10 +83,10 @@ fun VideoPlayerView(
         exoPlayer.volume = if (isMuted) 0f else 1f
     }
     
-    // Cleanup on dispose
+    // Pause on dispose—player stays in cache for reuse when scrolling back
     DisposableEffect(Unit) {
         onDispose {
-            exoPlayer.release()
+            exoPlayer.pause()
         }
     }
     
@@ -149,18 +143,11 @@ fun VideoPlayerView(
                     .fillMaxSize()
                     .clickable { onTap() },
                 update = { view ->
-                    // Update player if URL changes
-                    val currentUri = view.player?.currentMediaItem?.requestMetadata?.mediaUri
-                    val newUri = Uri.parse(media.url)
-                    if (currentUri != newUri) {
-                        val mediaItem = MediaItem.fromUri(newUri)
-                        exoPlayer.setMediaItem(mediaItem)
-                        exoPlayer.prepare()
-                        if (isVisible && autoPlay) {
-                            exoPlayer.play()
-                            isPlaying = true
-                            showThumbnail = false
-                        }
+                    view.player = exoPlayer
+                    if (isVisible && autoPlay && !exoPlayer.isPlaying) {
+                        exoPlayer.play()
+                        isPlaying = true
+                        showThumbnail = false
                     }
                 }
             )

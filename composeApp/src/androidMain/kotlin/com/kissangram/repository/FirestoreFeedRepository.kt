@@ -24,8 +24,9 @@ class FirestoreFeedRepository(
 ) : FeedRepository {
 
     private var lastDocumentSnapshot: DocumentSnapshot? = null
+    private var cachedPosts: List<Post>? = null
 
-    override suspend fun getHomeFeed(page: Int, pageSize: Int): List<Post> {
+    override suspend fun getHomeFeed(page: Int, pageSize: Int, forceRefresh: Boolean): List<Post> {
         Log.d(TAG, "getHomeFeed: page=$page pageSize=$pageSize")
         val currentUserId = authRepository.getCurrentUserId()
         if (currentUserId == null) {
@@ -35,6 +36,12 @@ class FirestoreFeedRepository(
         Log.d(TAG, "getHomeFeed: currentUserId=${currentUserId.take(8)}...")
         require(page >= 0) { "Page must be non-negative" }
         require(pageSize in 1..50) { "Page size must be between 1 and 50" }
+
+        // Return cached page 0 when not forcing refresh (avoids reload on tab return)
+        if (page == 0 && !forceRefresh && cachedPosts != null) {
+            Log.d(TAG, "getHomeFeed: returning cached posts (${cachedPosts!!.size})")
+            return cachedPosts!!
+        }
 
         return try {
             var query: Query = firestore
@@ -75,14 +82,28 @@ class FirestoreFeedRepository(
                 emptySet()
             }
             
-            // Update posts with correct isLikedByMe value
+            // Batch-fetch likesCount from posts collection (source of truth; feed copies are stale)
+            val likesCountByPostId = if (postsWithIds.isNotEmpty()) {
+                batchFetchLikesCount(postsWithIds.map { it.id })
+            } else {
+                emptyMap()
+            }
+            
+            // Update posts with correct isLikedByMe and likesCount from posts collection
             val list = postsWithIds.map { post ->
-                post.copy(isLikedByMe = likedPostIds.contains(post.id))
+                val freshLikesCount = likesCountByPostId[post.id] ?: post.likesCount
+                post.copy(
+                    isLikedByMe = likedPostIds.contains(post.id),
+                    likesCount = freshLikesCount
+                )
             }
             
             Log.d(TAG, "getHomeFeed: parsed list.size=${list.size} (raw=$rawCount), liked=${likedPostIds.size}")
             if (snapshot.documents.isNotEmpty()) {
                 lastDocumentSnapshot = snapshot.documents.last()
+            }
+            if (page == 0) {
+                cachedPosts = list
             }
             list
         } catch (e: Exception) {
@@ -92,11 +113,39 @@ class FirestoreFeedRepository(
     }
 
     override suspend fun refreshFeed(): List<Post> {
-        Log.d(TAG, "refreshFeed: clearing cursor, fetching page 0")
+        Log.d(TAG, "refreshFeed: clearing cursor, forcing refresh")
         lastDocumentSnapshot = null
-        return getHomeFeed(0, DEFAULT_PAGE_SIZE)
+        return getHomeFeed(0, DEFAULT_PAGE_SIZE, forceRefresh = true)
     }
 
+    /**
+     * Batch-fetch likesCount from posts collection (source of truth).
+     * Feed documents have stale likesCount; posts collection is updated by Cloud Functions on like/unlike.
+     */
+    private suspend fun batchFetchLikesCount(postIds: List<String>): Map<String, Int> = coroutineScope {
+        if (postIds.isEmpty()) return@coroutineScope emptyMap()
+        try {
+            val results = postIds.map { postId ->
+                async {
+                    try {
+                        val doc = firestore.collection("posts").document(postId).get().await()
+                        if (doc.exists()) {
+                            val count = (doc.getLong("likesCount") ?: 0L).toInt()
+                            postId to count
+                        } else null
+                    } catch (e: Exception) {
+                        Log.e(TAG, "batchFetchLikesCount: failed for postId=$postId", e)
+                        null
+                    }
+                }
+            }
+            results.mapNotNull { it.await() }.toMap()
+        } catch (e: Exception) {
+            Log.e(TAG, "batchFetchLikesCount: failed", e)
+            emptyMap()
+        }
+    }
+    
     /**
      * Batch check which posts are liked by the current user.
      * Uses parallel coroutines for efficient batch fetching.
@@ -142,7 +191,7 @@ class FirestoreFeedRepository(
             val authorId = getString("authorId") ?: return null
             val authorName = getString("authorName") ?: return null
             val authorUsername = getString("authorUsername") ?: return null
-            val authorProfileImageUrl = getString("authorProfileImageUrl")
+            val authorProfileImageUrl = getString("authorProfileImageUrl")?.takeIf { it.isNotBlank() }
             val authorRoleStr = getString("authorRole") ?: "farmer"
             val authorVerificationStatusStr = getString("authorVerificationStatus") ?: "unverified"
             val typeStr = getString("type") ?: "normal"

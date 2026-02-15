@@ -40,8 +40,7 @@ fun HomeScreen(
     onNavigateToProfile: (String) -> Unit = {},
     onNavigateToStory: (String) -> Unit = {},
     onNavigateToCreateStory: () -> Unit = {},
-    onNavigateToPostDetail: (String) -> Unit = {},
-    onNavigateToComments: (String, Post) -> Unit = { _, _ -> }
+    onNavigateToPostDetail: (String, Post?) -> Unit = { _, _ -> }
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val listState = rememberLazyListState()
@@ -156,15 +155,21 @@ fun HomeScreen(
                     key = { _, post -> post.id }
                 ) { index, post ->
                     val isVisible = visiblePostIndices.contains(index)
+                    val isOwnPost = post.authorId == uiState.currentUserId
+                    val isFollowingAuthor = uiState.authorIdToIsFollowing[post.authorId] == true
                     PostCard(
                         post = post,
                         isVisible = isVisible,
-                        onLikeClick = { viewModel.onLikePost(post.id) }, // Returns Boolean
-                        onCommentClick = { onNavigateToComments(post.id, post) },
+                        isOwnPost = isOwnPost,
+                        isFollowingAuthor = isFollowingAuthor,
+                        onLikeClick = { viewModel.onLikePost(post.id) },
+                        onCommentClick = { onNavigateToPostDetail(post.id, post) },
                         onShareClick = { /* Share */ },
                         onSaveClick = { viewModel.onSavePost(post.id) },
                         onAuthorClick = { onNavigateToProfile(post.authorId) },
-                        onPostClick = { onNavigateToPostDetail(post.id) }
+                        onPostClick = { onNavigateToPostDetail(post.id, post) },
+                        onFollowClick = { viewModel.onFollow(post.authorId) },
+                        onUnfollowClick = { viewModel.unfollowAndRemovePosts(post.authorId) }
                     )
                 }
 

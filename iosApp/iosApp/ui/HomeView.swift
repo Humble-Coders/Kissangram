@@ -19,15 +19,14 @@ private let homeViewLog = Logger(subsystem: "com.kissangram", category: "HomeVie
 
 struct HomeView: View {
     @StateObject private var viewModel = HomeViewModel()
-    @State private var visiblePostIndices: Set<Int> = []
+    @StateObject private var visibilityTracker = DebouncedVisibilityTracker(batchIntervalMs: 80)
     
     var onNavigateToNotifications: () -> Void = {}
     var onNavigateToMessages: () -> Void = {}
     var onNavigateToProfile: (String) -> Void = { _ in }
     var onNavigateToStory: (String) -> Void = { _ in }
     var onNavigateToCreateStory: () -> Void = {}
-    var onNavigateToPostDetail: (String) -> Void = { _ in }
-    var onNavigateToComments: (String, Post) -> Void = { _, _ in }
+    var onNavigateToPostDetail: (String, Post?) -> Void = { _, _ in }
     
     var body: some View {
         NavigationStack {
@@ -76,19 +75,23 @@ struct HomeView: View {
                                 ForEach(Array(viewModel.posts.enumerated()), id: \.element.id) { index, post in
                                     PostCardView(
                                         post: post,
-                                        isVisible: visiblePostIndices.contains(index),
+                                        isVisible: visibilityTracker.visibleIndices.contains(index),
+                                        isOwnPost: post.authorId == viewModel.currentUserId,
+                                        isFollowingAuthor: viewModel.authorIdToIsFollowing[post.authorId] == true,
                                         onLikeClick: { viewModel.onLikePost(post.id) },
-                                        onCommentClick: { onNavigateToComments(post.id, post) },
+                                        onCommentClick: { onNavigateToPostDetail(post.id, post) },
                                         onShareClick: {},
                                         onSaveClick: { viewModel.onSavePost(post.id) },
                                         onAuthorClick: { onNavigateToProfile(post.authorId) },
-                                        onPostClick: { onNavigateToPostDetail(post.id) }
+                                        onPostClick: { onNavigateToPostDetail(post.id, post) },
+                                        onFollowClick: { viewModel.onFollow(authorId: post.authorId) },
+                                        onUnfollowClick: { viewModel.unfollowAndRemovePosts(authorId: post.authorId) }
                                     )
                                     .onAppear {
-                                        visiblePostIndices.insert(index)
+                                        visibilityTracker.markAppeared(index)
                                     }
                                     .onDisappear {
-                                        visiblePostIndices.remove(index)
+                                        visibilityTracker.markDisappeared(index)
                                     }
                                 }
                                 
@@ -231,14 +234,10 @@ struct StoryCard: View {
             VStack(spacing: 0) {
                 ZStack(alignment: .topLeading) {
                     if let story = userStory.stories.first,
-                       let url = URL(string: story.media.url) {
-                        AsyncImage(url: url) { image in
-                            image.resizable().aspectRatio(contentMode: .fill)
-                        } placeholder: {
-                            Color.gray.opacity(0.3)
-                        }
-                        .frame(width: 120, height: 126)
-                        .clipped()
+                       let url = URL(string: ensureHttps(story.media.url)) {
+                        CachedImageView(url: url)
+                            .frame(width: 120, height: 126)
+                            .clipped()
                     } else {
                         Color.gray.opacity(0.3).frame(width: 120, height: 126)
                     }
@@ -346,37 +345,46 @@ struct CreateStoryCard: View {
 struct PostCardView: View {
     let post: Post
     let isVisible: Bool
-    let onLikeClick: () -> Bool // Returns true if request was accepted
+    let isOwnPost: Bool
+    let isFollowingAuthor: Bool
+    let onLikeClick: () -> Bool
     let onCommentClick: () -> Void
     let onShareClick: () -> Void
     let onSaveClick: () -> Void
     let onAuthorClick: () -> Void
     let onPostClick: () -> Void
+    let onFollowClick: () -> Void
+    let onUnfollowClick: () -> Void
     
-    // ⚡ INSTAGRAM APPROACH: Local state for instant visual feedback
-    // Updates immediately on click, before ViewModel processes the request
     @State private var localLikedState: Bool
     @State private var localLikesCount: Int32
     
     init(
         post: Post,
         isVisible: Bool,
-        onLikeClick: @escaping () -> Bool, // Returns true if request was accepted
+        isOwnPost: Bool = false,
+        isFollowingAuthor: Bool = false,
+        onLikeClick: @escaping () -> Bool,
         onCommentClick: @escaping () -> Void,
         onShareClick: @escaping () -> Void,
         onSaveClick: @escaping () -> Void,
         onAuthorClick: @escaping () -> Void,
-        onPostClick: @escaping () -> Void
+        onPostClick: @escaping () -> Void,
+        onFollowClick: @escaping () -> Void = {},
+        onUnfollowClick: @escaping () -> Void = {}
     ) {
         self.post = post
         self.isVisible = isVisible
+        self.isOwnPost = isOwnPost
+        self.isFollowingAuthor = isFollowingAuthor
         self.onLikeClick = onLikeClick
         self.onCommentClick = onCommentClick
         self.onShareClick = onShareClick
         self.onSaveClick = onSaveClick
         self.onAuthorClick = onAuthorClick
         self.onPostClick = onPostClick
-        // Initialize local state from post
+        self.onFollowClick = onFollowClick
+        self.onUnfollowClick = onUnfollowClick
         _localLikedState = State(initialValue: post.isLikedByMe)
         _localLikesCount = State(initialValue: post.likesCount)
     }
@@ -384,7 +392,14 @@ struct PostCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Author Header
-            PostAuthorHeader(post: post, onAuthorClick: onAuthorClick)
+            PostAuthorHeader(
+                post: post,
+                isOwnPost: isOwnPost,
+                isFollowingAuthor: isFollowingAuthor,
+                onAuthorClick: onAuthorClick,
+                onFollowClick: onFollowClick,
+                onUnfollowClick: onUnfollowClick
+            )
                 .padding(.horizontal, 16)
                 .padding(.top, 16)
 
@@ -485,36 +500,24 @@ struct PostCardView: View {
 
 struct PostAuthorHeader: View {
     let post: Post
+    let isOwnPost: Bool
+    let isFollowingAuthor: Bool
     let onAuthorClick: () -> Void
+    let onFollowClick: () -> Void
+    let onUnfollowClick: () -> Void
+
+    @State private var showUnfollowMenu = false
 
     var body: some View {
         HStack(spacing: 0) {
             Button(action: onAuthorClick) {
                 HStack(spacing: 11) {
-                    ZStack {
-                        Circle()
-                            .fill(LinearGradient(
-                                colors: [.primaryGreen, .accentYellow],
-                                startPoint: .top, endPoint: .bottom
-                            ))
-                            .frame(width: 45, height: 45)
-                        if let urlString = post.authorProfileImageUrl,
-                           let url = URL(string: urlString) {
-                            AsyncImage(url: url) { image in
-                                image.resizable().aspectRatio(contentMode: .fill)
-                            } placeholder: {
-                                Text(String(post.authorName.prefix(1)).uppercased())
-                                    .font(.system(size: 20, weight: .semibold))
-                                    .foregroundColor(.white)
-                            }
-                            .frame(width: 41, height: 41)
-                            .clipShape(Circle())
-                        } else {
-                            Text(String(post.authorName.prefix(1)).uppercased())
-                                .font(.system(size: 20, weight: .semibold))
-                                .foregroundColor(.white)
-                        }
-                    }
+                    ProfileImageLoader(
+                        authorId: post.authorId,
+                        authorName: post.authorName,
+                        authorProfileImageUrl: post.authorProfileImageUrl,
+                        size: 45
+                    )
 
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 7) {
@@ -546,15 +549,30 @@ struct PostAuthorHeader: View {
 
             Spacer(minLength: 8)
 
-            if post.authorRole != .expert {
-                Button(action: {}) {
-                    Text("+ Follow")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 19)
-                        .padding(.vertical, 12)
-                        .background(Color.primaryGreen)
-                        .cornerRadius(25)
+            if !isOwnPost && post.authorRole != .expert {
+                if isFollowingAuthor {
+                    Menu {
+                        Button(role: .destructive, action: {
+                            onUnfollowClick()
+                        }) {
+                            Text("Unfollow")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 20, weight: .medium))
+                            .foregroundColor(.textPrimary)
+                            .frame(width: 44, height: 44)
+                    }
+                } else {
+                    Button(action: onFollowClick) {
+                        Text("+ Follow")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 19)
+                            .padding(.vertical, 12)
+                            .background(Color.primaryGreen)
+                            .cornerRadius(25)
+                    }
                 }
             }
         }
@@ -714,7 +732,7 @@ struct PostTextContent: View {
         // Stop any existing playback
         stopPlayback()
         
-        guard let url = URL(string: voiceCaption.url) else {
+        guard let url = URL(string: ensureHttps(voiceCaption.url)) else {
             print("Invalid voice caption URL: \(voiceCaption.url)")
             return
         }
@@ -797,7 +815,7 @@ struct PostActionBar: View {
         HStack {
             ActionButton(
                 icon: post.isLikedByMe ? "heart.fill" : "heart",
-                label: "Like",
+                label: "\(post.likesCount)",
                 color: post.isLikedByMe ? .errorRed : .textSecondary,
                 action: onLikeClick
             )

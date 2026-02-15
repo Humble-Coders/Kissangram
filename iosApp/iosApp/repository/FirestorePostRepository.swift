@@ -285,6 +285,72 @@ final class FirestorePostRepository: PostRepository {
         return comments
     }
     
+    func getReplies(postId: String, parentCommentId: String, page: Int32, pageSize: Int32) async throws -> [Comment] {
+        guard page >= 0 else { return [] }
+        guard pageSize >= 1, pageSize <= 50 else { return [] }
+        
+        let commentsCollection = postsCollection.document(postId).collection("comments")
+        let replyKey = "\(postId)_\(parentCommentId)"
+        
+        var query: Query = commentsCollection
+            .whereField("isActive", isEqualTo: true)
+            .whereField("parentCommentId", isEqualTo: parentCommentId)
+            .order(by: "createdAt", descending: false)
+            .limit(to: Int(pageSize))
+        
+        if page > 0 {
+            guard let optionalSnap = lastCommentSnapshots[replyKey],
+                  let lastSnap = optionalSnap else {
+                return []
+            }
+            query = query.start(afterDocument: lastSnap)
+        } else {
+            lastCommentSnapshots[replyKey] = nil
+        }
+        
+        let snapshot = try await query.getDocuments()
+        let documents = snapshot.documents
+        
+        let repliesWithIds = documents.compactMap { doc -> Comment? in
+            toComment(from: doc, isLikedByMe: false)
+        }
+        
+        let currentUserId = try await authRepository.getCurrentUserId()
+        let likedCommentIds = if let userId = currentUserId, !repliesWithIds.isEmpty {
+            try await batchCheckCommentLikes(commentIds: repliesWithIds.map { $0.id }, postId: postId, userId: userId)
+        } else {
+            Set<String>()
+        }
+        
+        let comments = repliesWithIds.map { comment in
+            Comment(
+                id: comment.id,
+                postId: comment.postId,
+                authorId: comment.authorId,
+                authorName: comment.authorName,
+                authorUsername: comment.authorUsername,
+                authorProfileImageUrl: comment.authorProfileImageUrl,
+                authorRole: comment.authorRole,
+                authorVerificationStatus: comment.authorVerificationStatus,
+                text: comment.text,
+                voiceComment: comment.voiceComment,
+                parentCommentId: comment.parentCommentId,
+                repliesCount: comment.repliesCount,
+                likesCount: comment.likesCount,
+                isLikedByMe: likedCommentIds.contains(comment.id),
+                isExpertAnswer: comment.isExpertAnswer,
+                isBestAnswer: comment.isBestAnswer,
+                createdAt: comment.createdAt
+            )
+        }
+        
+        if let lastDoc = documents.last {
+            lastCommentSnapshots[replyKey] = lastDoc
+        }
+        
+        return comments
+    }
+    
     func addComment(postId: String, text: String, parentCommentId: String?) async throws -> Comment {
         guard let currentUserId = try await authRepository.getCurrentUserId() else {
             throw NSError(domain: "FirestorePostRepository", code: 401, userInfo: [NSLocalizedDescriptionKey: "User must be authenticated to add comment"])

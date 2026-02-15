@@ -36,7 +36,11 @@ final class MockPostRepository: PostRepository {
     
     func getComments(postId: String, page: Int32, pageSize: Int32) async throws -> [Comment] {
         try? await Task.sleep(nanoseconds: 400_000_000)
-        // Return empty list - use FirestorePostRepository for actual data
+        return []
+    }
+    
+    func getReplies(postId: String, parentCommentId: String, page: Int32, pageSize: Int32) async throws -> [Comment] {
+        try? await Task.sleep(nanoseconds: 400_000_000)
         return []
     }
     

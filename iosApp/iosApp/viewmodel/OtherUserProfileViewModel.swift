@@ -5,7 +5,9 @@ import Shared
 @MainActor
 class OtherUserProfileViewModel: ObservableObject {
     @Published var user: User?
+    @Published var posts: [Post] = []
     @Published var isLoading = false
+    @Published var isLoadingPosts = false
     @Published var isFollowLoading = false
     @Published var isFollowing = false
     @Published var error: String?
@@ -13,6 +15,7 @@ class OtherUserProfileViewModel: ObservableObject {
     private let prefs = IOSPreferencesRepository()
     private lazy var authRepo = IOSAuthRepository(preferencesRepository: prefs)
     private lazy var userRepo = FirestoreUserRepository(authRepository: authRepo)
+    private lazy var postRepo = FirestorePostRepository(authRepository: authRepo, userRepository: userRepo)
     private lazy var followRepo = IOSFollowRepository(authRepository: authRepo, userRepository: userRepo)
     private lazy var followUserUseCase = FollowUserUseCase(followRepository: followRepo)
 
@@ -39,6 +42,9 @@ class OtherUserProfileViewModel: ObservableObject {
                     self.isFollowing = followingStatus.boolValue
                     self.isLoading = false
                 }
+                
+                // Load user's posts
+                await loadPosts(userId: userId)
             } catch {
                 await MainActor.run {
                     self.isLoading = false
@@ -109,6 +115,22 @@ class OtherUserProfileViewModel: ObservableObject {
                     self.isFollowLoading = false
                     self.error = "Failed to \(isCurrentlyFollowing ? "unfollow" : "follow") user"
                 }
+            }
+        }
+    }
+    
+    private func loadPosts(userId: String) async {
+        await MainActor.run { isLoadingPosts = true }
+        do {
+            let loadedPosts = try await postRepo.getPostsByUser(userId: userId, page: 0, pageSize: 30)
+            await MainActor.run {
+                self.posts = loadedPosts
+                self.isLoadingPosts = false
+            }
+        } catch {
+            await MainActor.run {
+                self.posts = []
+                self.isLoadingPosts = false
             }
         }
     }

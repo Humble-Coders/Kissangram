@@ -37,18 +37,23 @@ import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.runtime.DisposableEffect
 import coil.compose.AsyncImage
 import com.kissangram.model.*
+import com.kissangram.ui.components.ProfileImageLoader
 import com.kissangram.ui.home.*
 
 @Composable
 fun PostCard(
     post: Post,
     isVisible: Boolean = true,
+    isOwnPost: Boolean = false,
+    isFollowingAuthor: Boolean = false,
     onLikeClick: () -> Boolean, // Returns true if request was accepted
     onCommentClick: () -> Unit,
     onShareClick: () -> Unit,
     onSaveClick: () -> Unit,
     onAuthorClick: () -> Unit,
-    onPostClick: () -> Unit
+    onPostClick: () -> Unit,
+    onFollowClick: () -> Unit = {},
+    onUnfollowClick: () -> Unit = {}
 ) {
     // ⚡ INSTAGRAM APPROACH: Local state for instant visual feedback
     // Updates immediately on click, but only if ViewModel accepts the request
@@ -77,7 +82,11 @@ fun PostCard(
             // Author Header
             PostAuthorHeader(
                 post = post,
-                onAuthorClick = onAuthorClick
+                isOwnPost = isOwnPost,
+                isFollowingAuthor = isFollowingAuthor,
+                onAuthorClick = onAuthorClick,
+                onFollowClick = onFollowClick,
+                onUnfollowClick = onUnfollowClick
             )
             
             Spacer(modifier = Modifier.height(10.dp))
@@ -142,8 +151,13 @@ fun PostCard(
 @Composable
 private fun PostAuthorHeader(
     post: Post,
-    onAuthorClick: () -> Unit
+    isOwnPost: Boolean,
+    isFollowingAuthor: Boolean,
+    onAuthorClick: () -> Unit,
+    onFollowClick: () -> Unit,
+    onUnfollowClick: () -> Unit
 ) {
+    var showUnfollowMenu by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -157,45 +171,13 @@ private fun PostAuthorHeader(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.weight(1f)
         ) {
-            // Avatar with gradient border
-            Box(
-                modifier = Modifier
-                    .size(45.dp)
-                    .background(
-                        Brush.verticalGradient(listOf(PrimaryGreen, AccentYellow)),
-                        CircleShape
-                    )
-                    .padding(2.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                if (post.authorProfileImageUrl != null) {
-                    AsyncImage(
-                        model = post.authorProfileImageUrl,
-                        contentDescription = null,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clip(CircleShape),
-                        contentScale = ContentScale.Crop
-                    )
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(
-                                Brush.verticalGradient(listOf(PrimaryGreen, AccentYellow)),
-                                CircleShape
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = post.authorName.firstOrNull()?.uppercase() ?: "",
-                            color = Color.White,
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
-            }
+            // Avatar - fetches profile image asynchronously when not in post
+            ProfileImageLoader(
+                authorId = post.authorId,
+                authorName = post.authorName,
+                authorProfileImageUrl = post.authorProfileImageUrl,
+                size = 45.dp
+            )
             
             Spacer(modifier = Modifier.width(11.dp))
             
@@ -245,19 +227,45 @@ private fun PostAuthorHeader(
             }
         }
         
-        // Follow button (if not own post and not following)
-        if (post.authorRole != UserRole.EXPERT) {
-            Button(
-                onClick = { /* Follow */ },
-                colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen),
-                shape = RoundedCornerShape(50),
-                contentPadding = PaddingValues(horizontal = 19.dp, vertical = 12.dp)
-            ) {
-                Text(
-                    text = "+ Follow",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
+        // Follow / 3-dot menu (if not own post and not expert)
+        if (!isOwnPost && post.authorRole != UserRole.EXPERT) {
+            if (isFollowingAuthor) {
+                Box {
+                    IconButton(onClick = { showUnfollowMenu = true }) {
+                        Icon(
+                            Icons.Outlined.MoreVert,
+                            contentDescription = "More options",
+                            tint = TextPrimary
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = showUnfollowMenu,
+                        onDismissRequest = { showUnfollowMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = {
+                                Text("Unfollow", color = Color(0xFFBC4749))
+                            },
+                            onClick = {
+                                showUnfollowMenu = false
+                                onUnfollowClick()
+                            }
+                        )
+                    }
+                }
+            } else {
+                Button(
+                    onClick = onFollowClick,
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen),
+                    shape = RoundedCornerShape(50),
+                    contentPadding = PaddingValues(horizontal = 19.dp, vertical = 12.dp)
+                ) {
+                    Text(
+                        text = "+ Follow",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
             }
         }
     }
@@ -588,10 +596,10 @@ private fun PostActionBar(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Like
+        // Like - show count only
         ActionButton(
             icon = if (post.isLikedByMe) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder,
-            label = "Like",
+            label = post.likesCount.toString(),
             tint = if (post.isLikedByMe) ErrorRed else TextSecondary,
             onClick = onLikeClick
         )

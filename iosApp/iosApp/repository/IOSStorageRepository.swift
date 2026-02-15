@@ -28,33 +28,36 @@ public final class IOSStorageRepository: StorageRepository {
         self.cloudinary = CLDCloudinary(configuration: config)
     }
     
-    /// Upload a profile image for the given user.
+    /// Upload a profile image for the given user to Cloudinary.
     /// - Parameters:
     ///   - userId: The user's ID
     ///   - imageData: The image data as KotlinByteArray
-    /// - Returns: The download URL of the uploaded image
+    /// - Returns: The Cloudinary HTTPS URL of the uploaded image
     public func uploadProfileImage(userId: String, imageData: KotlinByteArray) async throws -> String {
-        // Convert KotlinByteArray to Data
         let data = imageData.toData()
         
-        // Create reference: profile_images/{userId}/profile_{timestamp}.jpg
-        let timestamp = Int(Date().timeIntervalSince1970 * 1000)
-        let fileName = "profile_\(timestamp).jpg"
-        let storageRef = storage.reference()
-            .child(folderProfileImages)
-            .child(userId)
-            .child(fileName)
+        let params = CLDUploadRequestParams()
+        params.setFolder(folderProfileImages)
+        params.setPublicId("profile_\(userId)_\(Int(Date().timeIntervalSince1970 * 1000))")
         
-        // Create metadata
-        let metadata = StorageMetadata()
-        metadata.contentType = "image/jpeg"
-        
-        // Upload the image
-        _ = try await storageRef.putDataAsync(data, metadata: metadata)
-        
-        // Get the download URL
-        let downloadUrl = try await storageRef.downloadURL()
-        return downloadUrl.absoluteString
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, Error>) in
+            cloudinary.createUploader().signedUpload(
+                data: data,
+                params: params,
+                progress: { _ in },
+                completionHandler: { result, error in
+                    if let error = error {
+                        continuation.resume(throwing: error)
+                    } else if let secureUrl = result?.secureUrl {
+                        continuation.resume(returning: self.ensureHttps(secureUrl))
+                    } else if let url = result?.url {
+                        continuation.resume(returning: self.ensureHttps(url))
+                    } else {
+                        continuation.resume(throwing: NSError(domain: "IOSStorageRepository", code: 500, userInfo: [NSLocalizedDescriptionKey: "Upload succeeded but no URL returned"]))
+                    }
+                }
+            )
+        }
     }
     
     /// Delete a profile image for the given user.
@@ -190,6 +193,8 @@ public final class IOSStorageRepository: StorageRepository {
         // Upload main media file
         let params = CLDUploadRequestParams()
         params.setFolder("posts")
+        // Cloudinary requires resource_type for video uploads; defaults to "image" which causes 400 for video data
+        params.setResourceType(mediaType == Shared.MediaType.video ? .video : .image)
         
         let mediaUrl = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, Error>) in
             cloudinary.createUploader().signedUpload(

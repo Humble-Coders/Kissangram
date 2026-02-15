@@ -167,7 +167,10 @@ class FirestoreUserRepository(
             updates[FIELD_SEARCH_KEYWORDS] = buildSearchKeywords(it, currentUsername)
         }
         bio?.let { updates[FIELD_BIO] = it }
-        profileImageUrl?.let { updates[FIELD_PROFILE_IMAGE_URL] = it }
+        profileImageUrl?.let {
+            updates[FIELD_PROFILE_IMAGE_URL] = it
+            Log.d(TAG, "updateFullProfile: Including profileImageUrl (length=${it.length})")
+        }
         
         // Role
         role?.let { updates[FIELD_ROLE] = roleToFirestore(it) }
@@ -186,7 +189,7 @@ class FirestoreUserRepository(
         crops?.let { updates[FIELD_EXPERTISE] = it }
         
         if (updates.size > 1) {
-            Log.d(TAG, "updateFullProfile: Updating ${updates.size} fields")
+            Log.d(TAG, "updateFullProfile: Updating ${updates.size} fields: ${updates.keys}")
             try {
                 withTimeout(30_000L) {
                     usersCollection.document(userId).update(updates).await()

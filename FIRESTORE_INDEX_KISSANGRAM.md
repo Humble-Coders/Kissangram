@@ -33,3 +33,25 @@ gcloud firestore indexes composite create \
 ```
 
 The index may take a few minutes to build. After it is **Enabled**, the home feed query will use it.
+
+---
+
+## Comment replies index
+
+Required for `getReplies(postId, parentCommentId)` — querying replies under a parent comment.
+
+- **Collection group**: `comments` (subcollection under `posts/{postId}/comments`)
+- **Query scope**: Collection
+- **Fields**:
+  - `parentCommentId` — Ascending
+  - `isActive` — Ascending
+  - `createdAt` — Ascending
+
+### Firebase Console
+
+1. Open Firebase Console → Firestore Database.
+2. Select the **kissangram** database.
+3. Indexes → Composite → Create index.
+4. Collection ID: `comments` (ensure you're indexing the subcollection under posts)
+5. Add fields: `parentCommentId` (Ascending), `isActive` (Ascending), `createdAt` (Ascending)
+6. Create.

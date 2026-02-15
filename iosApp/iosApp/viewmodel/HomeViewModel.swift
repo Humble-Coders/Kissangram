@@ -8,17 +8,21 @@ class HomeViewModel: ObservableObject {
     private static let log = Logger(subsystem: "com.kissangram", category: "HomeViewModel")
     private let prefs = IOSPreferencesRepository()
     private let authRepository: AuthRepository
+    private let followRepository: FollowRepository
     private let feedRepository: FeedRepository
     private let postRepository: PostRepository
     private let storyRepository: StoryRepository
 
     private let getHomeFeedUseCase: GetHomeFeedUseCase
+    private let followUserUseCase: FollowUserUseCase
     private let getStoryBarUseCase: GetStoryBarUseCase
     private let likePostUseCase: LikePostUseCase
     private let savePostUseCase: SavePostUseCase
 
     @Published var stories: [UserStories] = []
     @Published var posts: [Post] = []
+    @Published var authorIdToIsFollowing: [String: Bool] = [:]
+    @Published var currentUserId: String?
     @Published var isLoading = false
     @Published var isRefreshing = false
     @Published var isLoadingMore = false
@@ -33,12 +37,14 @@ class HomeViewModel: ObservableObject {
     init() {
         self.authRepository = IOSAuthRepository(preferencesRepository: prefs)
         let userRepository = FirestoreUserRepository(authRepository: authRepository)
+        self.followRepository = IOSFollowRepository(authRepository: authRepository, userRepository: userRepository)
         self.feedRepository = FirestoreFeedRepository(authRepository: authRepository)
         self.postRepository = FirestorePostRepository(authRepository: authRepository, userRepository: userRepository)
         self.storyRepository = FirestoreStoryRepository(authRepository: authRepository)
 
         self.getHomeFeedUseCase = GetHomeFeedUseCase(feedRepository: feedRepository)
         self.getStoryBarUseCase = GetStoryBarUseCase(storyRepository: storyRepository)
+        self.followUserUseCase = FollowUserUseCase(followRepository: followRepository)
         self.likePostUseCase = LikePostUseCase(postRepository: postRepository)
         self.savePostUseCase = SavePostUseCase(postRepository: postRepository)
 
@@ -54,13 +60,22 @@ class HomeViewModel: ObservableObject {
         Self.log.debug("loadContent: start")
         do {
             async let storiesResult = storyRepository.getStoryBar()
-            async let postsResult = feedRepository.getHomeFeed(page: 0, pageSize: 20)
+            async let postsResult = feedRepository.getHomeFeed(page: 0, pageSize: 20, forceRefresh: false)
             
             let (loadedStories, loadedPosts) = try await (storiesResult, postsResult)
             
             Self.log.debug("loadContent: stories=\(loadedStories.count) posts=\(loadedPosts.count) firstPostId=\(loadedPosts.first?.id ?? "nil")")
+            let userId = try? await authRepository.getCurrentUserId()
+            var followingMap: [String: Bool] = [:]
+            for authorId in Set(loadedPosts.map { $0.authorId }).filter({ $0 != userId }) {
+                if let isFollowing = try? await followRepository.isFollowing(userId: authorId) {
+                    followingMap[authorId] = isFollowing.boolValue
+                }
+            }
             self.stories = loadedStories
             self.posts = loadedPosts
+            self.authorIdToIsFollowing = followingMap
+            self.currentUserId = userId
             self.currentPage = 0
             self.isLoading = false
             Self.log.debug("loadContent: success")
@@ -76,12 +91,21 @@ class HomeViewModel: ObservableObject {
         Self.log.debug("refreshFeed: start")
         do {
             async let storiesResult = storyRepository.getStoryBar()
-            async let postsResult = feedRepository.getHomeFeed(page: 0, pageSize: 20)
+            async let postsResult = feedRepository.getHomeFeed(page: 0, pageSize: 20, forceRefresh: true)
             
             let (loadedStories, loadedPosts) = try await (storiesResult, postsResult)
             Self.log.debug("refreshFeed: stories=\(loadedStories.count) posts=\(loadedPosts.count)")
+            let userId = try? await authRepository.getCurrentUserId()
+            var followingMap: [String: Bool] = [:]
+            for authorId in Set(loadedPosts.map { $0.authorId }).filter({ $0 != userId }) {
+                if let isFollowing = try? await followRepository.isFollowing(userId: authorId) {
+                    followingMap[authorId] = isFollowing.boolValue
+                }
+            }
             self.stories = loadedStories
             self.posts = loadedPosts
+            self.authorIdToIsFollowing = followingMap
+            self.currentUserId = userId
             self.currentPage = 0
             self.isRefreshing = false
         } catch {
@@ -96,10 +120,18 @@ class HomeViewModel: ObservableObject {
         let page = currentPage + 1
         Self.log.debug("loadMorePosts: currentPage=\(self.currentPage) nextPage=\(page)")
         do {
-            let newPosts = try await feedRepository.getHomeFeed(page: page, pageSize: 20)
+            let newPosts = try await feedRepository.getHomeFeed(page: page, pageSize: 20, forceRefresh: false)
             Self.log.debug("loadMorePosts: newPosts=\(newPosts.count)")
             if !newPosts.isEmpty {
+                let userId = try? await authRepository.getCurrentUserId()
+                var newFollowingMap = self.authorIdToIsFollowing
+                for authorId in Set(newPosts.map { $0.authorId }).filter({ $0 != userId && !newFollowingMap.keys.contains($0) }) {
+                    if let isFollowing = try? await followRepository.isFollowing(userId: authorId) {
+                        newFollowingMap[authorId] = isFollowing.boolValue
+                    }
+                }
                 self.posts.append(contentsOf: newPosts)
+                self.authorIdToIsFollowing = newFollowingMap
                 self.currentPage += 1
             } else {
                 self.hasMorePosts = false
@@ -233,6 +265,33 @@ class HomeViewModel: ObservableObject {
                 Self.log.error("onSavePost: failed for postId=\(postId), error=\(error.localizedDescription)")
                 // Revert on failure
                 self.posts[index] = post
+            }
+        }
+    }
+
+    func onFollow(authorId: String) {
+        Task {
+            do {
+                try await followUserUseCase.invoke(userId: authorId, isCurrentlyFollowing: false)
+                await MainActor.run {
+                    authorIdToIsFollowing[authorId] = true
+                }
+            } catch {
+                Self.log.error("onFollow: failed for authorId=\(authorId)")
+            }
+        }
+    }
+
+    func unfollowAndRemovePosts(authorId: String) {
+        Task {
+            do {
+                try await followUserUseCase.invoke(userId: authorId, isCurrentlyFollowing: true)
+                await MainActor.run {
+                    posts = posts.filter { $0.authorId != authorId }
+                    authorIdToIsFollowing[authorId] = false
+                }
+            } catch {
+                Self.log.error("unfollowAndRemovePosts: failed for authorId=\(authorId)")
             }
         }
     }

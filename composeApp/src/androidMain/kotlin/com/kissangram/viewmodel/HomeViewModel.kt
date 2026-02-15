@@ -7,10 +7,12 @@ import com.kissangram.model.Post
 import com.kissangram.model.UserStories
 import com.kissangram.repository.AndroidAuthRepository
 import com.kissangram.repository.AndroidPreferencesRepository
+import com.kissangram.repository.AndroidFollowRepository
 import com.kissangram.repository.FirestoreFeedRepository
 import com.kissangram.repository.FirestoreStoryRepository
 import com.kissangram.repository.FirestorePostRepository
 import com.kissangram.repository.FirestoreUserRepository
+import com.kissangram.usecase.FollowUserUseCase
 import com.kissangram.usecase.GetHomeFeedUseCase
 import com.kissangram.usecase.GetStoryBarUseCase
 import com.kissangram.usecase.LikePostUseCase
@@ -35,6 +37,10 @@ class HomeViewModel(
         preferencesRepository = AndroidPreferencesRepository(application)
     )
     private val userRepository = FirestoreUserRepository(authRepository = authRepository)
+    private val followRepository = AndroidFollowRepository(
+        authRepository = authRepository,
+        userRepository = userRepository
+    )
     private val feedRepository = FirestoreFeedRepository(authRepository = authRepository)
     private val postRepository = FirestorePostRepository(
         authRepository = authRepository,
@@ -47,6 +53,7 @@ class HomeViewModel(
     private val getStoryBarUseCase = GetStoryBarUseCase(storyRepository)
     private val likePostUseCase = LikePostUseCase(postRepository)
     private val savePostUseCase = SavePostUseCase(postRepository)
+    private val followUserUseCase = FollowUserUseCase(followRepository)
     
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
@@ -68,11 +75,17 @@ class HomeViewModel(
             try {
                 val stories = getStoryBarUseCase()
                 Log.d(TAG, "loadContent: stories count=${stories.size}")
-                val posts = getHomeFeedUseCase(page = 0)
+                val posts = getHomeFeedUseCase(page = 0, forceRefresh = false)
                 Log.d(TAG, "loadContent: posts count=${posts.size}, firstId=${posts.firstOrNull()?.id}")
+                val authorIds = posts.map { it.authorId }.distinct().filter { it != userId }
+                val followingMap = authorIds.associateWith { aid ->
+                    try { followRepository.isFollowing(aid) } catch (e: Exception) { false }
+                }
                 _uiState.value = _uiState.value.copy(
                     stories = stories,
                     posts = posts,
+                    authorIdToIsFollowing = followingMap,
+                    currentUserId = userId,
                     isLoading = false
                 )
                 Log.d(TAG, "loadContent: success, uiState.posts.size=${_uiState.value.posts.size}")
@@ -92,11 +105,18 @@ class HomeViewModel(
             _uiState.value = _uiState.value.copy(isRefreshing = true)
             try {
                 val stories = getStoryBarUseCase()
-                val posts = getHomeFeedUseCase(page = 0)
+                val posts = getHomeFeedUseCase(page = 0, forceRefresh = true)
                 Log.d(TAG, "refreshFeed: stories=${stories.size}, posts=${posts.size}")
+                val userId = authRepository.getCurrentUserId()
+                val authorIds = posts.map { it.authorId }.distinct().filter { it != userId }
+                val followingMap = authorIds.associateWith { aid ->
+                    try { followRepository.isFollowing(aid) } catch (e: Exception) { false }
+                }
                 _uiState.value = _uiState.value.copy(
                     stories = stories,
                     posts = posts,
+                    authorIdToIsFollowing = followingMap,
+                    currentUserId = userId,
                     isRefreshing = false
                 )
             } catch (e: Exception) {
@@ -119,8 +139,15 @@ class HomeViewModel(
                 val newPosts = getHomeFeedUseCase(page = currentPage + 1)
                 Log.d(TAG, "loadMorePosts: got ${newPosts.size} new posts")
                 if (newPosts.isNotEmpty()) {
+                    val userId = authRepository.getCurrentUserId()
+                    val newAuthorIds = newPosts.map { it.authorId }.distinct().filter { it != userId }
+                        .filter { aid -> !_uiState.value.authorIdToIsFollowing.containsKey(aid) }
+                    val newFollowingMap = newAuthorIds.associateWith { aid ->
+                        try { followRepository.isFollowing(aid) } catch (e: Exception) { false }
+                    }
                     _uiState.value = _uiState.value.copy(
                         posts = _uiState.value.posts + newPosts,
+                        authorIdToIsFollowing = _uiState.value.authorIdToIsFollowing + newFollowingMap,
                         currentPage = currentPage + 1,
                         isLoadingMore = false
                     )
@@ -229,6 +256,34 @@ class HomeViewModel(
             }
         }
     }
+
+    fun onFollow(authorId: String) {
+        viewModelScope.launch {
+            try {
+                followUserUseCase(authorId, false)
+                _uiState.value = _uiState.value.copy(
+                    authorIdToIsFollowing = _uiState.value.authorIdToIsFollowing + (authorId to true)
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "onFollow: failed for authorId=$authorId", e)
+            }
+        }
+    }
+
+    fun unfollowAndRemovePosts(authorId: String) {
+        viewModelScope.launch {
+            try {
+                followUserUseCase(authorId, true)
+                val updatedPosts = _uiState.value.posts.filter { it.authorId != authorId }
+                _uiState.value = _uiState.value.copy(
+                    posts = updatedPosts,
+                    authorIdToIsFollowing = _uiState.value.authorIdToIsFollowing + (authorId to false)
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "unfollowAndRemovePosts: failed for authorId=$authorId", e)
+            }
+        }
+    }
     
     /**
      * Upload India states and districts data to Firestore.
@@ -317,6 +372,8 @@ class HomeViewModel(
 data class HomeUiState(
     val stories: List<UserStories> = emptyList(),
     val posts: List<Post> = emptyList(),
+    val authorIdToIsFollowing: Map<String, Boolean> = emptyMap(),
+    val currentUserId: String? = null,
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
     val isLoadingMore: Boolean = false,

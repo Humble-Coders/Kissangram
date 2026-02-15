@@ -1,6 +1,7 @@
 import Foundation
 import os.log
 import Shared
+import UIKit
 
 @MainActor
 class CommentsViewModel: ObservableObject {
@@ -30,8 +31,14 @@ class CommentsViewModel: ObservableObject {
     @Published var showDeleteDialog = false
     @Published var selectedCommentForDelete: Comment?
     @Published var deleteReason = ""
+    @Published var expandedReplies: Set<String> = []
+    @Published var repliesByParentId: [String: [Comment]] = [:]
+    @Published var loadingRepliesFor: Set<String> = []
+    @Published var isListening = false
+    @Published var isProcessing = false
     
     private var currentPage: Int32 = 0
+    private let speechRepository = IOSSpeechRepository()
     private let pageSize: Int32 = 20
     private var postsBeingProcessed = Set<String>() // Track ongoing like operations
     
@@ -126,6 +133,64 @@ class CommentsViewModel: ObservableObject {
         newCommentText = text
     }
     
+    func startSpeechRecognition() async {
+        guard !isListening, !isProcessing else { return }
+        
+        isListening = true
+        error = nil
+        
+        let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+        impactFeedback.impactOccurred()
+        
+        do {
+            if !speechRepository.hasPermission() {
+                let granted = try await speechRepository.requestPermission()
+                if !granted.boolValue {
+                    isListening = false
+                    error = "Speech recognition permission is required"
+                    return
+                }
+            }
+            
+            Task {
+                do {
+                    try await speechRepository.startListeningWithUpdates { [weak self] recognizedText in
+                        guard let self = self else { return }
+                        self.newCommentText = recognizedText.trimmingCharacters(in: .whitespaces)
+                    }
+                } catch {
+                    if !error.localizedDescription.contains("cancelled") {
+                        self.error = (error as? Error)?.localizedDescription ?? "Speech recognition error"
+                    }
+                    self.isListening = false
+                }
+            }
+        } catch {
+            self.error = (error as? Error)?.localizedDescription ?? "Speech recognition error"
+            isListening = false
+        }
+    }
+    
+    func stopSpeechRecognition() async {
+        guard isListening else { return }
+        
+        let impactFeedback = UIImpactFeedbackGenerator(style: .light)
+        impactFeedback.impactOccurred()
+        
+        isListening = false
+        isProcessing = true
+        
+        let initialText = speechRepository.stopListeningSync()
+        newCommentText = initialText.trimmingCharacters(in: .whitespaces)
+        
+        try? await Task.sleep(nanoseconds: 3_500_000_000)
+        
+        let finalText = speechRepository.getAccumulatedText()
+        newCommentText = finalText.trimmingCharacters(in: .whitespaces)
+        
+        isProcessing = false
+    }
+    
     func postComment() async {
         let text = newCommentText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !isPostingComment else { return }
@@ -137,13 +202,10 @@ class CommentsViewModel: ObservableObject {
         isPostingComment = true
         error = nil
         
-        do {
-            // Get current user for optimistic update
-            let currentUser = try await userRepository.getCurrentUser()
-            let currentUserId = try await authRepository.getCurrentUserId() ?? ""
-            
-            // Optimistic update: add comment to list immediately
-            let optimisticComment = Comment(
+        // Build optimistic comment (before try so it's in scope for catch)
+        let currentUser = try? await userRepository.getCurrentUser()
+        let currentUserId = (try? await authRepository.getCurrentUserId()) ?? ""
+        let optimisticComment = Comment(
                 id: "temp_\(Int64(Date().timeIntervalSince1970 * 1000))",
                 postId: postId,
                 authorId: currentUserId,
@@ -161,18 +223,44 @@ class CommentsViewModel: ObservableObject {
                 isExpertAnswer: false,
                 isBestAnswer: false,
                 createdAt: Int64(Date().timeIntervalSince1970 * 1000)
-            )
-            
-            let updatedComments: [Comment]
+        )
+        
+        do {
             if parentCommentId == nil {
-                // Top-level comment: add at the beginning
-                updatedComments = [optimisticComment] + comments
+                self.comments = [optimisticComment] + comments
             } else {
-                // Reply: for now, just add to list (we'll handle nested display later)
-                updatedComments = comments + [optimisticComment]
+                var existingReplies = repliesByParentId[parentCommentId!] ?? []
+                existingReplies.append(optimisticComment)
+                self.repliesByParentId[parentCommentId!] = existingReplies
+                self.expandedReplies.insert(parentCommentId!)
+                // Update parent's repliesCount in comments list
+                if let idx = comments.firstIndex(where: { $0.id == parentCommentId }) {
+                    let parent = comments[idx]
+                    var updatedCommentsList = comments
+                    updatedCommentsList[idx] = Comment(
+                        id: parent.id,
+                        postId: parent.postId,
+                        authorId: parent.authorId,
+                        authorName: parent.authorName,
+                        authorUsername: parent.authorUsername,
+                        authorProfileImageUrl: parent.authorProfileImageUrl,
+                        authorRole: parent.authorRole,
+                        authorVerificationStatus: parent.authorVerificationStatus,
+                        text: parent.text,
+                        voiceComment: parent.voiceComment,
+                        parentCommentId: parent.parentCommentId,
+                        repliesCount: parent.repliesCount + 1,
+                        likesCount: parent.likesCount,
+                        isLikedByMe: parent.isLikedByMe,
+                        isExpertAnswer: parent.isExpertAnswer,
+                        isBestAnswer: parent.isBestAnswer,
+                        createdAt: parent.createdAt
+                    )
+                    self.comments = updatedCommentsList
+                } else {
+                    self.comments = comments
+                }
             }
-            
-            self.comments = updatedComments
             self.newCommentText = ""
             self.replyingToComment = nil
             
@@ -181,18 +269,89 @@ class CommentsViewModel: ObservableObject {
             Self.log.debug("postComment: comment created with id=\(createdComment.id)")
             
             // Replace optimistic comment with real one
-            let finalComments = updatedComments.map { comment in
-                comment.id == optimisticComment.id ? createdComment : comment
+            if parentCommentId == nil {
+                self.comments = comments.map { $0.id == optimisticComment.id ? createdComment : $0 }
+            } else {
+                var parentReplies = repliesByParentId[parentCommentId!] ?? []
+                if let idx = parentReplies.firstIndex(where: { $0.id == optimisticComment.id }) {
+                    parentReplies[idx] = createdComment
+                    self.repliesByParentId[parentCommentId!] = parentReplies
+                }
             }
-            
-            self.comments = finalComments
             self.isPostingComment = false
         } catch {
             Self.log.error("postComment: error=\(error.localizedDescription)")
             // Revert optimistic update
+            if parentCommentId == nil {
+                self.comments = comments.filter { $0.id != optimisticComment.id }
+            } else {
+                var parentReplies = repliesByParentId[parentCommentId!] ?? []
+                parentReplies.removeAll { $0.id == optimisticComment.id }
+                if parentReplies.isEmpty {
+                    repliesByParentId.removeValue(forKey: parentCommentId!)
+                } else {
+                    repliesByParentId[parentCommentId!] = parentReplies
+                }
+                if let idx = comments.firstIndex(where: { $0.id == parentCommentId }) {
+                    let parent = comments[idx]
+                    var list = comments
+                    list[idx] = Comment(
+                        id: parent.id,
+                        postId: parent.postId,
+                        authorId: parent.authorId,
+                        authorName: parent.authorName,
+                        authorUsername: parent.authorUsername,
+                        authorProfileImageUrl: parent.authorProfileImageUrl,
+                        authorRole: parent.authorRole,
+                        authorVerificationStatus: parent.authorVerificationStatus,
+                        text: parent.text,
+                        voiceComment: parent.voiceComment,
+                        parentCommentId: parent.parentCommentId,
+                        repliesCount: max(0, parent.repliesCount - 1),
+                        likesCount: parent.likesCount,
+                        isLikedByMe: parent.isLikedByMe,
+                        isExpertAnswer: parent.isExpertAnswer,
+                        isBestAnswer: parent.isBestAnswer,
+                        createdAt: parent.createdAt
+                    )
+                    self.comments = list
+                }
+            }
             self.isPostingComment = false
             self.error = "Failed to post comment: \(error.localizedDescription)"
-            self.newCommentText = text // Restore text so user can retry
+            self.newCommentText = text
+        }
+    }
+    
+    func loadReplies(parentCommentId: String) async {
+        guard !loadingRepliesFor.contains(parentCommentId) else { return }
+        
+        await MainActor.run { loadingRepliesFor.insert(parentCommentId) }
+        
+        do {
+            let replies = try await postRepository.getReplies(postId: postId, parentCommentId: parentCommentId, page: 0, pageSize: 50)
+            await MainActor.run {
+                let currentReplies = repliesByParentId[parentCommentId] ?? []
+                var seen = Set<String>()
+                let merged = (currentReplies + replies).filter { seen.insert($0.id).inserted }
+                repliesByParentId[parentCommentId] = merged
+                expandedReplies.insert(parentCommentId)
+                loadingRepliesFor.remove(parentCommentId)
+            }
+        } catch {
+            Self.log.error("loadReplies: error=\(error.localizedDescription)")
+            await MainActor.run {
+                loadingRepliesFor.remove(parentCommentId)
+                self.error = "Failed to load replies: \(error.localizedDescription)"
+            }
+        }
+    }
+    
+    func toggleReplies(parentCommentId: String) {
+        if expandedReplies.contains(parentCommentId) {
+            expandedReplies.remove(parentCommentId)
+        } else {
+            Task { await loadReplies(parentCommentId: parentCommentId) }
         }
     }
     

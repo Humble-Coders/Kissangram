@@ -27,10 +27,7 @@ struct CommentsView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // Scrollable content
                 commentsScrollView
-                
-                // Bottom Input Bar (fixed at bottom, moves with keyboard automatically)
                 inputBar
             }
             .background(Color.appBackground)
@@ -40,14 +37,14 @@ struct CommentsView: View {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: onBackClick) {
                         Image(systemName: "chevron.left")
-                            .font(.system(size: 20, weight: .semibold))
+                            .font(.system(size: 18, weight: .semibold))
                             .foregroundColor(.textPrimary)
                     }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: { /* Menu */ }) {
                         Image(systemName: "ellipsis")
-                            .font(.system(size: 20))
+                            .font(.system(size: 18, weight: .semibold))
                             .foregroundColor(.textPrimary)
                     }
                 }
@@ -86,7 +83,7 @@ struct CommentsView: View {
                     replyIndicator
                     commentsSection(proxy: proxy)
                 }
-                .padding(.bottom, 20) // Minimal padding for the input bar
+                .padding(.bottom, 20)
             }
             .scrollDismissesKeyboard(.interactively)
             .onChange(of: viewModel.comments.count) { newCount in
@@ -127,14 +124,13 @@ struct CommentsView: View {
     @ViewBuilder
     private func commentsSection(proxy: ScrollViewProxy) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Comments Heading
             Text("Comments (\(viewModel.comments.count))")
-                .font(.system(size: 17, weight: .semibold))
+                .font(.system(size: 16, weight: .semibold))
                 .foregroundColor(.textPrimary)
-                .padding(.horizontal, 18)
-                .padding(.vertical, 18)
+                .padding(.horizontal, 16)
+                .padding(.top, 20)
+                .padding(.bottom, 12)
             
-            // Comments List
             if viewModel.isLoading && viewModel.comments.isEmpty {
                 loadingView
             } else if viewModel.comments.isEmpty && !viewModel.isLoading {
@@ -157,17 +153,17 @@ struct CommentsView: View {
     }
     
     private var emptyStateView: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 16) {
             Spacer()
             Image(systemName: "bubble.left.and.bubble.right")
-                .font(.system(size: 64))
-                .foregroundColor(.textSecondary.opacity(0.5))
+                .font(.system(size: 56))
+                .foregroundColor(.textSecondary.opacity(0.3))
             Text("No comments yet")
-                .font(.system(size: 18, weight: .medium))
-                .foregroundColor(.textSecondary)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundColor(.textPrimary)
             Text("Be the first to comment!")
-                .font(.system(size: 14))
-                .foregroundColor(.textSecondary.opacity(0.7))
+                .font(.system(size: 15))
+                .foregroundColor(.textSecondary)
             Spacer()
         }
         .frame(maxWidth: .infinity)
@@ -175,32 +171,51 @@ struct CommentsView: View {
     }
     
     private var commentsList: some View {
-        LazyVStack(spacing: 18) {
+        LazyVStack(spacing: 0) {
             ForEach(Array(viewModel.comments.enumerated()), id: \.element.id) { index, comment in
-                CommentRow(
-                    comment: comment,
-                    currentUserId: currentUserId,
-                    onAuthorClick: { onNavigateToProfile(comment.authorId) },
-                    onReplyClick: {
-                        handleReplyClick(comment: comment)
-                    },
-                    onDeleteClick: { viewModel.showDeleteConfirmation(comment) }
-                )
+                VStack(alignment: .leading, spacing: 0) {
+                    CommentRow(
+                        comment: comment,
+                        currentUserId: currentUserId,
+                        isTopLevel: true,
+                        onAuthorClick: { onNavigateToProfile(comment.authorId) },
+                        onReplyClick: { handleReplyClick(comment: comment) },
+                        onDeleteClick: { viewModel.showDeleteConfirmation(comment) },
+                        onViewRepliesClick: {
+                            if comment.repliesCount > 0 {
+                                viewModel.toggleReplies(parentCommentId: comment.id)
+                            }
+                        },
+                        isRepliesExpanded: viewModel.expandedReplies.contains(comment.id),
+                        replies: viewModel.repliesByParentId[comment.id] ?? [],
+                        isLoadingReplies: viewModel.loadingRepliesFor.contains(comment.id),
+                        currentUserIdForReplies: currentUserId,
+                        onAuthorClickForReplies: onNavigateToProfile,
+                        onReplyClickForReplies: { handleReplyClick(comment: $0) },
+                        onDeleteClickForReplies: { viewModel.showDeleteConfirmation($0) }
+                    )
+                    
+                    if index < viewModel.comments.count - 1 {
+                        Rectangle()
+                            .fill(Color.black.opacity(0.06))
+                            .frame(height: 0.5)
+                            .padding(.leading, 69)
+                            .padding(.vertical, 12)
+                    }
+                }
                 .id(comment.id)
                 .onAppear {
                     handleCommentAppear(index: index)
                 }
             }
             
-            // Loading more indicator
             if viewModel.isLoadingMore {
                 ProgressView()
                     .progressViewStyle(CircularProgressViewStyle(tint: .primaryGreen))
-                    .padding()
+                    .padding(.vertical, 20)
             }
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 16)
     }
     
     private var inputBar: some View {
@@ -208,36 +223,31 @@ struct CommentsView: View {
             text: viewModel.newCommentText,
             replyingTo: viewModel.replyingToComment,
             isPosting: viewModel.isPostingComment,
+            isListening: viewModel.isListening,
+            isProcessing: viewModel.isProcessing,
             onTextChange: { viewModel.onCommentTextChange($0) },
-            onPostClick: {
-                handlePostClick()
-            },
-            onCancelReply: {
-                viewModel.cancelReply()
-            }
+            onPostClick: { handlePostClick() },
+            onCancelReply: { viewModel.cancelReply() },
+            onStartSpeech: { Task { await viewModel.startSpeechRecognition() } },
+            onStopSpeech: { Task { await viewModel.stopSpeechRecognition() } }
         )
     }
     
     private func handleReplyClick(comment: Comment) {
-        // Haptic feedback for native iOS feel
         let generator = UIImpactFeedbackGenerator(style: .light)
         generator.impactOccurred()
-        
         viewModel.startReply(comment)
     }
     
     private func handlePostClick() {
-        // Haptic feedback for native iOS feel
         let generator = UINotificationFeedbackGenerator()
         generator.notificationOccurred(.success)
-        
         Task {
             await viewModel.postComment()
         }
     }
     
     private func handleCommentAppear(index: Int) {
-        // Load more when scrolling near bottom
         if index >= viewModel.comments.count - 3 &&
            viewModel.hasMoreComments &&
            !viewModel.isLoadingMore {
@@ -248,7 +258,6 @@ struct CommentsView: View {
     }
     
     private func handleCommentsCountChange(newCount: Int, proxy: ScrollViewProxy) {
-        // Auto-scroll to newest comment (first in list) after posting
         if newCount > 0 && !viewModel.isPostingComment {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 if let firstComment = viewModel.comments.first {
@@ -267,8 +276,6 @@ private struct PostHeaderSection: View {
     let onAuthorClick: () -> Void
     let onLikeClick: () -> Bool
     
-    // ⚡ INSTAGRAM APPROACH: Local state for instant visual feedback
-    // Updates immediately on click, but only if ViewModel accepts the request
     @State private var localLikedState: Bool
     @State private var localLikesCount: Int32
     
@@ -276,103 +283,66 @@ private struct PostHeaderSection: View {
         self.post = post
         self.onAuthorClick = onAuthorClick
         self.onLikeClick = onLikeClick
-        // Initialize local state from post
         _localLikedState = State(initialValue: post.isLikedByMe)
         _localLikesCount = State(initialValue: post.likesCount)
     }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Author Header
-            HStack(spacing: 13) {
+            HStack(spacing: 12) {
                 Button(action: onAuthorClick) {
-                    ZStack {
-                        Circle()
-                            .fill(LinearGradient(
-                                colors: [.primaryGreen, .accentYellow],
-                                startPoint: .top, endPoint: .bottom
-                            ))
-                            .frame(width: 50, height: 50)
-                        if let urlString = post.authorProfileImageUrl,
-                           let url = URL(string: urlString) {
-                            AsyncImage(url: url) { image in
-                                image.resizable().aspectRatio(contentMode: .fill)
-                            } placeholder: {
-                                Text(String(post.authorName.prefix(1)).uppercased())
-                                    .font(.system(size: 20, weight: .semibold))
-                                    .foregroundColor(.white)
-                            }
-                            .frame(width: 46, height: 46)
-                            .clipShape(Circle())
-                        } else {
-                            Text(String(post.authorName.prefix(1)).uppercased())
-                                .font(.system(size: 20, weight: .semibold))
-                                .foregroundColor(.white)
-                        }
-                    }
+                    ProfileImageLoader(
+                        authorId: post.authorId,
+                        authorName: post.authorName,
+                        authorProfileImageUrl: post.authorProfileImageUrl,
+                        size: 48
+                    )
                 }
                 .buttonStyle(PlainButtonStyle())
                 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(post.authorName)
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(.system(size: 16, weight: .semibold))
                         .foregroundColor(.textPrimary)
                     
-                    HStack(spacing: 7) {
+                    HStack(spacing: 6) {
                         Image(systemName: "location.fill")
-                            .font(.system(size: 16))
+                            .font(.system(size: 12))
                             .foregroundColor(.textSecondary)
                         Text(post.location?.name ?? "Location not set")
-                            .font(.system(size: 15))
+                            .font(.system(size: 14))
                             .foregroundColor(.textSecondary)
                     }
                 }
                 
                 Spacer()
             }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 18)
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            .padding(.bottom, 12)
             
-            // Post Media - Use MediaCarousel for multiple media support
             if !post.media.isEmpty {
                 MediaCarousel(
                     media: post.media,
                     onMediaClick: { /* TODO: Open media viewer */ },
                     isVisible: true
                 )
+                .padding(.horizontal, 16)
             }
             
-            // Action Bar
-            HStack(spacing: 4) {
+            HStack(spacing: 0) {
                 ActionButton(
                     icon: localLikedState ? "heart.fill" : "heart",
-                    label: "Like (\(localLikesCount))",
+                    label: "\(localLikesCount)",
                     color: localLikedState ? .errorRed : .textSecondary
                 ) {
-                    // ⚡ Update local state IMMEDIATELY (before ViewModel call)
-                    // This gives instant visual feedback with zero perceived lag
                     let newLikedState = !localLikedState
                     let newLikesCount = newLikedState ? localLikesCount + 1 : localLikesCount - 1
-                    
-                    // Call ViewModel first to check if it accepts the request
                     let accepted = onLikeClick()
-                    
-                    // Only update local state if ViewModel accepted the request
-                    // This prevents sync issues when rapid clicks are ignored
                     if accepted {
                         localLikedState = newLikedState
                         localLikesCount = newLikesCount
                     }
-                    // If not accepted (already processing), local state stays as-is
-                    // onChange will sync it with actual post state when request completes
-                }
-                
-                ActionButton(
-                    icon: "bubble.right",
-                    label: "Comment",
-                    color: .textSecondary
-                ) {
-                    // Already in comments
                 }
                 
                 ActionButton(
@@ -382,58 +352,54 @@ private struct PostHeaderSection: View {
                 ) {
                     // TODO
                 }
+                
+                Spacer()
             }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 12)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
             .onChange(of: post.isLikedByMe) { newValue in
-                // Sync local state with actual post state when it changes (from ViewModel or refresh)
                 localLikedState = newValue
             }
             .onChange(of: post.likesCount) { newValue in
-                // Sync local state with actual post state when it changes
                 localLikesCount = newValue
             }
             
-            // Post Text - Use PostTextContent for voice caption playback support
             if !post.text.isEmpty || post.voiceCaption != nil {
                 PostTextContent(
                     text: post.text,
                     voiceCaption: post.voiceCaption,
                     onReadMore: { /* TODO: Expand text */ }
                 )
-                .padding(.horizontal, 18)
-                .padding(.vertical, 18)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
             }
             
-            // Crop Tags
             if !post.crops.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 9) {
+                    HStack(spacing: 8) {
                         ForEach(post.crops, id: \.self) { crop in
                             Text(crop)
-                                .font(.system(size: 15, weight: .semibold))
+                                .font(.system(size: 14, weight: .medium))
                                 .foregroundColor(.textPrimary)
-                                .padding(.horizontal, 15)
-                                .padding(.vertical, 10)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
                                 .background(Color.accentYellow.opacity(0.08))
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 18)
-                                        .stroke(Color.accentYellow.opacity(0.19), lineWidth: 1)
+                                    RoundedRectangle(cornerRadius: 16)
+                                        .stroke(Color.accentYellow.opacity(0.2), lineWidth: 1)
                                 )
-                                .cornerRadius(18)
+                                .cornerRadius(16)
                         }
                     }
-                    .padding(.horizontal, 18)
+                    .padding(.horizontal, 16)
                 }
-                .padding(.bottom, 18)
+                .padding(.bottom, 16)
             }
             
-            // Divider
             Rectangle()
-                .fill(Color.black.opacity(0.05))
-                .frame(height: 1)
+                .fill(Color.black.opacity(0.08))
+                .frame(height: 8)
         }
-        .background(Color.white)
     }
 }
 
@@ -441,74 +407,86 @@ private struct PostHeaderSection: View {
 private struct CommentRow: View {
     let comment: Comment
     let currentUserId: String?
+    let isTopLevel: Bool
     let onAuthorClick: () -> Void
     let onReplyClick: () -> Void
     let onDeleteClick: () -> Void
+    var onViewRepliesClick: (() -> Void)? = nil
+    var isRepliesExpanded: Bool = false
+    var replies: [Comment] = []
+    var isLoadingReplies: Bool = false
+    var currentUserIdForReplies: String? = nil
+    var onAuthorClickForReplies: ((String) -> Void)? = nil
+    var onReplyClickForReplies: ((Comment) -> Void)? = nil
+    var onDeleteClickForReplies: ((Comment) -> Void)? = nil
     
     private var isOwnComment: Bool {
         currentUserId != nil && comment.authorId == currentUserId
     }
     
+    private var horizontalPadding: CGFloat { isTopLevel ? 0 : 53 }
+    private var fontSize: CGFloat { isTopLevel ? 15 : 14 }
+    private var nameFontSize: CGFloat { isTopLevel ? 15 : 14 }
+    private var avatarSize: CGFloat { isTopLevel ? 40 : 32 }
+    
     var body: some View {
-        HStack(alignment: .top, spacing: 13) {
-            // Profile Picture
+        HStack(alignment: .top, spacing: 12) {
             Button(action: onAuthorClick) {
-                ZStack {
-                    Circle()
-                        .fill(LinearGradient(
-                            colors: [.primaryGreen, .accentYellow],
-                            startPoint: .top, endPoint: .bottom
-                        ))
-                        .frame(width: 40, height: 40)
-                    if let urlString = comment.authorProfileImageUrl,
-                       let url = URL(string: urlString) {
-                        AsyncImage(url: url) { image in
-                            image.resizable().aspectRatio(contentMode: .fill)
-                        } placeholder: {
-                            Text(String(comment.authorName.prefix(1)).uppercased())
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundColor(.white)
-                        }
-                        .frame(width: 36, height: 36)
-                        .clipShape(Circle())
-                    } else {
-                        Text(String(comment.authorName.prefix(1)).uppercased())
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(.white)
-                    }
-                }
+                ProfileImageLoader(
+                    authorId: comment.authorId,
+                    authorName: comment.authorName,
+                    authorProfileImageUrl: comment.authorProfileImageUrl,
+                    size: avatarSize
+                )
             }
             .buttonStyle(PlainButtonStyle())
             
-            // Comment Content
-            VStack(alignment: .leading, spacing: 6) {
-                // Author name and timestamp
-                HStack(spacing: 9) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
                     Button(action: onAuthorClick) {
                         Text(comment.authorName)
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.system(size: nameFontSize, weight: .semibold))
                             .foregroundColor(.textPrimary)
                     }
                     .buttonStyle(PlainButtonStyle())
                     
                     Text(formatTimestamp(comment.createdAt))
-                        .font(.system(size: 14))
-                        .foregroundColor(Color(red: 0.608, green: 0.608, blue: 0.608))
+                        .font(.system(size: 13))
+                        .foregroundColor(.textSecondary.opacity(0.8))
                 }
                 
-                // Comment text
                 Text(comment.text)
-                    .font(.system(size: 17))
+                    .font(.system(size: fontSize))
                     .foregroundColor(.textPrimary)
-                    .lineSpacing(4)
+                    .lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 2)
                 
-                // Action buttons (Reply, Delete if own comment)
-                HStack(spacing: 16) {
+                HStack(spacing: 20) {
                     Button(action: onReplyClick) {
                         Text("Reply")
                             .font(.system(size: 14, weight: .medium))
                             .foregroundColor(.textSecondary)
+                    }
+                    
+                    if isTopLevel, comment.repliesCount > 0, let onView = onViewRepliesClick {
+                        Button(action: onView) {
+                            if isLoadingReplies {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .textSecondary))
+                                    .scaleEffect(0.75)
+                            } else {
+                                HStack(spacing: 4) {
+                                    Text(isRepliesExpanded ? "Hide replies" : "View \(comment.repliesCount) \(comment.repliesCount == 1 ? "reply" : "replies")")
+                                        .font(.system(size: 14, weight: .medium))
+                                        .foregroundColor(.textSecondary)
+                                    Image(systemName: isRepliesExpanded ? "chevron.up" : "chevron.down")
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundColor(.textSecondary)
+                                }
+                            }
+                        }
+                        .disabled(isLoadingReplies)
                     }
                     
                     if isOwnComment {
@@ -519,11 +497,33 @@ private struct CommentRow: View {
                         }
                     }
                 }
-                .padding(.top, 4)
+                .padding(.top, 6)
+                
+                if isTopLevel, isRepliesExpanded, !replies.isEmpty,
+                   let onAuthor = onAuthorClickForReplies,
+                   let onReply = onReplyClickForReplies,
+                   let onDelete = onDeleteClickForReplies {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(replies, id: \.id) { reply in
+                            CommentRow(
+                                comment: reply,
+                                currentUserId: currentUserIdForReplies,
+                                isTopLevel: false,
+                                onAuthorClick: { onAuthor(reply.authorId) },
+                                onReplyClick: { onReply(reply) },
+                                onDeleteClick: { onDelete(reply) }
+                            )
+                            .padding(.top, 12)
+                        }
+                    }
+                    .padding(.top, 8)
+                }
             }
             
             Spacer(minLength: 0)
         }
+        .padding(.horizontal, horizontalPadding)
+        .padding(.vertical, 12)
     }
 }
 
@@ -533,28 +533,28 @@ private struct ReplyIndicator: View {
     let onCancel: () -> Void
     
     var body: some View {
-        HStack {
-            HStack(spacing: 6) {
+        HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 Image(systemName: "arrowshape.turn.up.left.fill")
-                    .font(.system(size: 14))
+                    .font(.system(size: 13))
                     .foregroundColor(.primaryGreen)
                 
                 Text("Replying to @\(comment.authorUsername)")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.primaryGreen)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.textPrimary)
             }
             
             Spacer()
             
             Button(action: onCancel) {
                 Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 18))
-                    .foregroundColor(.primaryGreen.opacity(0.7))
+                    .font(.system(size: 20))
+                    .foregroundColor(.textSecondary)
             }
         }
-        .padding(.horizontal, 18)
+        .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(Color.primaryGreen.opacity(0.1))
+        .background(Color.primaryGreen.opacity(0.08))
     }
 }
 
@@ -563,32 +563,48 @@ private struct CommentInputBar: View {
     let text: String
     let replyingTo: Comment?
     let isPosting: Bool
+    let isListening: Bool
+    let isProcessing: Bool
     let onTextChange: (String) -> Void
     let onPostClick: () -> Void
     let onCancelReply: () -> Void
+    let onStartSpeech: () -> Void
+    let onStopSpeech: () -> Void
     @FocusState private var isTextFieldFocused: Bool
     
     var body: some View {
         VStack(spacing: 0) {
             Rectangle()
-                .fill(Color.black.opacity(0.08))
-                .frame(height: 1)
+                .fill(Color.black.opacity(0.06))
+                .frame(height: 0.5)
             
-            HStack(alignment: .center, spacing: 13) {
-                // Microphone button (green circular)
-                Button(action: { /* TODO: Voice comment */ }) {
-                    Circle()
-                        .fill(Color.primaryGreen)
-                        .frame(width: 45, height: 45)
-                        .overlay(
-                            Image(systemName: "mic.fill")
-                                .font(.system(size: 20))
-                                .foregroundColor(.white)
-                        )
-                }
-                .disabled(isPosting)
+            HStack(alignment: .center, spacing: 12) {
+                Circle()
+                    .fill(isListening ? Color.errorRed : Color.primaryGreen)
+                    .frame(width: 44, height: 44)
+                    .overlay(
+                        Group {
+                            if isProcessing {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                    .scaleEffect(0.85)
+                            } else {
+                                Image(systemName: "mic.fill")
+                                    .font(.system(size: 18))
+                                    .foregroundColor(.white)
+                            }
+                        }
+                    )
+                    .contentShape(Circle())
+                    .onLongPressGesture(minimumDuration: 0.1, pressing: { pressing in
+                        if pressing {
+                            if !isPosting && !isProcessing { onStartSpeech() }
+                        } else {
+                            onStopSpeech()
+                        }
+                    }, perform: {})
+                    .allowsHitTesting(!isPosting)
                 
-                // Text input - single line
                 TextField(
                     replyingTo != nil ? "Reply to @\(replyingTo!.authorUsername)..." : "Add a comment...",
                     text: Binding(
@@ -596,13 +612,13 @@ private struct CommentInputBar: View {
                         set: onTextChange
                     )
                 )
-                .font(.system(size: 17))
-                .padding(.horizontal, 18)
-                .padding(.vertical, 13)
-                .background(Color.appBackground)
+                .font(.system(size: 15))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(Color(red: 0.97, green: 0.97, blue: 0.97))
                 .overlay(
                     RoundedRectangle(cornerRadius: 22)
-                        .stroke(Color.primaryGreen.opacity(0.13), lineWidth: 1.5)
+                        .stroke(Color.black.opacity(0.08), lineWidth: 1)
                 )
                 .cornerRadius(22)
                 .focused($isTextFieldFocused)
@@ -614,7 +630,6 @@ private struct CommentInputBar: View {
                     }
                 }
                 .onChange(of: replyingTo) { newValue in
-                    // Auto-focus when entering reply mode
                     if newValue != nil {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                             isTextFieldFocused = true
@@ -622,38 +637,38 @@ private struct CommentInputBar: View {
                     }
                 }
                 
-                // Send button (grey or green circular)
                 Button(action: {
                     onPostClick()
                     isTextFieldFocused = false
                 }) {
                     Circle()
                         .fill(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?
-                              Color(red: 0.898, green: 0.898, blue: 0.898) :
+                              Color(red: 0.93, green: 0.93, blue: 0.93) :
                               Color.primaryGreen)
-                        .frame(width: 45, height: 45)
+                        .frame(width: 44, height: 44)
                         .overlay(
                             Group {
                                 if isPosting {
                                     ProgressView()
                                         .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                        .scaleEffect(0.85)
                                 } else {
                                     Image(systemName: "paperplane.fill")
-                                        .font(.system(size: 20))
+                                        .font(.system(size: 17))
                                         .foregroundColor(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?
-                                                        .textSecondary : .white)
+                                                        .textSecondary.opacity(0.6) : .white)
                                 }
                             }
                         )
                 }
                 .disabled(isPosting || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 12)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
         }
         .background(
             Color.white
-                .shadow(color: Color.black.opacity(0.08), radius: 8, x: 0, y: -2)
+                .shadow(color: Color.black.opacity(0.06), radius: 10, x: 0, y: -2)
         )
     }
 }
@@ -667,35 +682,37 @@ private struct DeleteCommentSheet: View {
     
     var body: some View {
         NavigationStack {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 20) {
                 Text("Please provide a reason for deleting this comment:")
-                    .font(.system(size: 16))
+                    .font(.system(size: 15))
                     .foregroundColor(.textPrimary)
-                    .padding(.top, 8)
+                    .padding(.top, 4)
                 
                 TextEditor(text: Binding(
                     get: { reason },
                     set: onReasonChange
                 ))
-                .font(.system(size: 16))
-                .padding(12)
-                .frame(minHeight: 100)
-                .background(Color.appBackground)
+                .font(.system(size: 15))
+                .padding(14)
+                .frame(minHeight: 120)
+                .background(Color(red: 0.97, green: 0.97, blue: 0.97))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.primaryGreen.opacity(0.13), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.black.opacity(0.08), lineWidth: 1)
                 )
-                .cornerRadius(8)
+                .cornerRadius(12)
                 
                 if reason.isEmpty {
                     Text("Reason is required")
-                        .font(.system(size: 14))
+                        .font(.system(size: 13))
                         .foregroundColor(.textSecondary)
+                        .padding(.top, -12)
                 }
                 
                 Spacer()
             }
-            .padding()
+            .padding(.horizontal, 20)
+            .padding(.top, 16)
             .navigationTitle("Delete Comment")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -703,14 +720,15 @@ private struct DeleteCommentSheet: View {
                     Button("Cancel") {
                         onDismiss()
                     }
+                    .font(.system(size: 16))
                     .foregroundColor(.textSecondary)
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Delete") {
                         onConfirm()
                     }
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(.errorRed)
-                    .fontWeight(.semibold)
                     .disabled(reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
@@ -719,7 +737,6 @@ private struct DeleteCommentSheet: View {
         .presentationDragIndicator(.visible)
     }
 }
-
 
 // MARK: - Helper Functions
 private func formatTimestamp(_ timestamp: Int64) -> String {

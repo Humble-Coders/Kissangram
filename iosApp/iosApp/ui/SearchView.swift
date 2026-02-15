@@ -152,7 +152,7 @@ struct UserSearchResultItem: View {
                         )
                         .frame(width: 50, height: 50)
 
-                    if let urlString = user.profileImageUrl, let url = URL(string: urlString) {
+                    if let urlString = user.profileImageUrl, let url = URL(string: ensureHttps(urlString)) {
                         AsyncImage(url: url) { image in
                             image
                                 .resizable()

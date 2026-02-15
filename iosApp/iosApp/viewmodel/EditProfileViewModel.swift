@@ -1,7 +1,10 @@
 import Foundation
 import SwiftUI
+import os.log
 import Shared
 import PhotosUI
+
+private let editProfileVMLog = Logger(subsystem: "com.kissangram", category: "EditProfileViewModel")
 
 @MainActor
 class EditProfileViewModel: ObservableObject {
@@ -331,6 +334,12 @@ class EditProfileViewModel: ObservableObject {
         self.village = village
     }
     
+    /// Set selected image data (from PhotosPicker or camera). Must be called when user picks an image so Save can upload it.
+    func setSelectedImageData(_ data: Data?, item: PhotosPickerItem?) {
+        selectedImageData = data
+        selectedImageItem = item
+    }
+    
     /// Called when user selects a role
     func onRoleSelected(_ role: UserRole) {
         selectedRole = role
@@ -349,6 +358,7 @@ class EditProfileViewModel: ObservableObject {
     
     /// Save all profile changes to Firestore
     func saveProfile(onSuccess: @escaping () -> Void, onError: @escaping (String) -> Void) {
+        editProfileVMLog.info("saveProfile called")
         // Validate
         guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
             onError("Name cannot be empty")
@@ -373,9 +383,11 @@ class EditProfileViewModel: ObservableObject {
             do {
                 // Upload image to Firebase Storage if a new image was selected
                 var imageUrl = profileImageUrl
+                editProfileVMLog.info("Initial profileImageUrl for Firestore: \(String(describing: imageUrl))")
                 
                 if let imageData = selectedImageData {
                     isUploadingImage = true
+                    editProfileVMLog.info("New image selected, uploading to Storage (size=\(imageData.count) bytes)")
                     
                     // Get current user ID for upload
                     do {
@@ -390,17 +402,23 @@ class EditProfileViewModel: ObservableObject {
                                 }
                                 
                                 imageUrl = try await storageRepository.uploadProfileImage(userId: userId, imageData: kotlinByteArray)
+                                editProfileVMLog.info("Storage upload succeeded, imageUrl=\(String(describing: imageUrl))")
                             } catch {
+                                editProfileVMLog.error("Storage upload failed: \(error.localizedDescription); keeping existing URL")
                                 // Continue with existing URL if upload fails
                             }
+                        } else {
+                            editProfileVMLog.warning("getCurrentUserId returned nil, cannot upload image")
                         }
                     } catch {
+                        editProfileVMLog.error("getCurrentUserId failed: \(error.localizedDescription)")
                         // Continue with existing URL if getting user ID fails
                     }
                     
                     isUploadingImage = false
                 }
                 
+                editProfileVMLog.info("Sending to Firestore: profileImageUrl=\(String(describing: imageUrl))")
                 // Save profile to Firestore
                 await saveProfileToFirestore(imageUrl: imageUrl, onSuccess: onSuccess, onError: onError)
                 
@@ -417,6 +435,7 @@ class EditProfileViewModel: ObservableObject {
     
     /// Helper to save profile to Firestore
     private func saveProfileToFirestore(imageUrl: String?, onSuccess: @escaping () -> Void, onError: @escaping (String) -> Void) async {
+        editProfileVMLog.info("saveProfileToFirestore called with profileImageUrl=\(String(describing: imageUrl))")
         do {
             try await userRepository.updateFullProfile(
                 name: name.trimmingCharacters(in: .whitespaces),
@@ -430,6 +449,7 @@ class EditProfileViewModel: ObservableObject {
             )
             
             await MainActor.run {
+                editProfileVMLog.info("Firestore update succeeded; profileImageUrl saved=\(String(describing: imageUrl))")
                 self.isSaving = false
                 self.isUploadingImage = false
                 self.profileImageUrl = imageUrl // Update with new URL
@@ -440,6 +460,7 @@ class EditProfileViewModel: ObservableObject {
             }
         } catch {
             await MainActor.run {
+                editProfileVMLog.error("Firestore update failed: \(error.localizedDescription)")
                 self.isSaving = false
                 self.isUploadingImage = false
                 self.saveError = error.localizedDescription

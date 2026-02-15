@@ -81,12 +81,11 @@ struct ContentView: View {
                         onNavigateToProfile: { userId in navigateTo(.userProfile(userId: userId)) },
                         onNavigateToStory: { userId in navigateTo(.story(userId: userId)) },
                         onNavigateToCreateStory: { navigateTo(.createStory) },
-                        onNavigateToPostDetail: { postId in navigateTo(.postDetail(postId: postId)) },
-                        onNavigateToComments: { postId, post in navigateTo(.comments(postId: postId, post: post)) }
+                        onNavigateToPostDetail: { postId, post in navigateTo(.postDetail(postId: postId, post: post)) }
                     )
                     .tag(BottomNavItem.home)
                     .tabItem {
-                        Label("होम", systemImage: "house.fill")
+                        Label("Home", systemImage: "house.fill")
                     }
                     
                     // Search Tab
@@ -95,7 +94,7 @@ struct ContentView: View {
                     )
                     .tag(BottomNavItem.search)
                     .tabItem {
-                        Label("खोजें", systemImage: "magnifyingglass")
+                        Label("Search", systemImage: "magnifyingglass")
                     }
                     
                     // Create Post Tab
@@ -108,14 +107,14 @@ struct ContentView: View {
                     )
                     .tag(BottomNavItem.post)
                     .tabItem {
-                        Label("पोस्ट", systemImage: "plus.circle.fill")
+                        Label("Post", systemImage: "plus.circle.fill")
                     }
                     
                     // Reels Tab
                     PlaceholderView(title: "Reels")
                         .tag(BottomNavItem.reels)
                         .tabItem {
-                            Label("रील्स", systemImage: "play.circle.fill")
+                            Label("Reels", systemImage: "play.circle.fill")
                         }
                     
                     // Profile Tab
@@ -131,7 +130,7 @@ struct ContentView: View {
                     )
                     .tag(BottomNavItem.profile)
                     .tabItem {
-                        Label("प्रोफ़ाइल", systemImage: "person.fill")
+                        Label("Profile", systemImage: "person.fill")
                     }
                 }
                 .onChange(of: selectedTab) { newValue in
@@ -164,8 +163,6 @@ struct ContentView: View {
                     } else if case .story = currentScreen {
                         mainAppContent
                     } else if case .userProfile = currentScreen {
-                        mainAppContent
-                    } else if case .comments = currentScreen {
                         mainAppContent
                     } else if case .postDetail = currentScreen {
                         mainAppContent
@@ -272,8 +269,7 @@ struct ContentView: View {
                 onNavigateToProfile: { userId in navigateTo(.userProfile(userId: userId)) },
                 onNavigateToStory: { userId in navigateTo(.story(userId: userId)) },
                 onNavigateToCreateStory: { navigateTo(.createStory) },
-                onNavigateToPostDetail: { postId in navigateTo(.postDetail(postId: postId)) },
-                onNavigateToComments: { postId, post in navigateTo(.comments(postId: postId, post: post)) }
+                onNavigateToPostDetail: { postId, post in navigateTo(.postDetail(postId: postId, post: post)) }
             )
             
         case .search:
@@ -308,7 +304,7 @@ struct ContentView: View {
                     navigationStack = []
                     selectedTab = .home
                 },
-                onPostClick: { postId in navigateTo(.postDetail(postId: postId)) },
+                onPostClick: { postId in navigateTo(.postDetail(postId: postId, post: nil)) },
                 reloadKey: profileReloadKey
             )
             
@@ -337,29 +333,30 @@ struct ContentView: View {
                         navigationStack = []
                         selectedTab = .home
                     },
-                    onPostClick: { postId in navigateTo(.postDetail(postId: postId)) },
+                    onPostClick: { postId in navigateTo(.postDetail(postId: postId, post: nil)) },
                     reloadKey: profileReloadKey
                 )
             } else {
                 // Viewing another user's profile - show OtherUserProfileView
                 OtherUserProfileView(
                     userId: userId,
-                    onBackClick: { navigateBack() }
+                    onBackClick: { navigateBack() },
+                    onPostClick: { postId in navigateTo(.postDetail(postId: postId, post: nil)) }
                 )
             }
-            
-        case .comments(let postId, let post):
-            CommentsView(
-                postId: postId,
-                initialPost: post,
-                onBackClick: { navigateBack() },
-                onNavigateToProfile: { userId in navigateTo(.userProfile(userId: userId)) }
-            )
             
         case .story(let userId):
             StoryView(
                 userId: userId,
                 onBackClick: { navigateBack() }
+            )
+            
+        case .postDetail(let postId, let post):
+            CommentsView(
+                postId: postId,
+                initialPost: post,
+                onBackClick: { navigateBack() },
+                onNavigateToProfile: { userId in navigateTo(.userProfile(userId: userId)) }
             )
             
         default:

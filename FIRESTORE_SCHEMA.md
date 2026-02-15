@@ -99,7 +99,7 @@ ROOT COLLECTIONS
   phoneNumber: "+919876543210",
   name: "Rajesh Kumar",
   username: "rajesh_farmer",  // Unique, lowercase, for @mentions
-  profileImageUrl: "https://...",
+  profileImageUrl: "https://...",  // Cloudinary URL (profile_images folder); synced to posts/feed via onUserProfileUpdate
   bio: "Organic farmer from Punjab",
   
   // Role & Verification
@@ -1427,6 +1427,17 @@ firestore.collection("posts")
     .whereEqualTo("isActive", true)
     .orderBy("createdAt", Query.Direction.DESCENDING)
     .limit(20)
+```
+
+### Comment Replies
+
+```kotlin
+// Get replies for a parent comment (requires composite index)
+firestore.collection("posts").document(postId).collection("comments")
+    .whereEqualTo("isActive", true)
+    .whereEqualTo("parentCommentId", parentCommentId)
+    .orderBy("createdAt", Query.Direction.ASCENDING)
+    .limit(pageSize)
 ```
 
 ### Trending Hashtags

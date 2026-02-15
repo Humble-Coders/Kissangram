@@ -5,57 +5,63 @@ import Shared
 
 /**
  * Video player component for feed videos
- * Auto-plays when visible, muted by default
+ * Auto-plays when visible, muted by default.
+ * Player is created once in init (from cache) and reused—avoids re-construction on appear
+ * and state-triggered re-renders that cause scroll lag.
  */
 struct FeedVideoPlayer: View {
     let media: PostMedia
     let isVisible: Bool
     let onTap: () -> Void
+    let player: AVPlayer
     
-    @State private var player: AVPlayer?
+    @State private var loopObserver: NSObjectProtocol?
     @State private var isPlaying = false
     @State private var isMuted = true
     @State private var showThumbnail = true
     
+    init(media: PostMedia, isVisible: Bool, onTap: @escaping () -> Void) {
+        self.media = media
+        self.isVisible = isVisible
+        self.onTap = onTap
+        let url = URL(string: ensureHttps(media.url)) ?? URL(fileURLWithPath: "")
+        self.player = VideoPlayerCache.shared.player(for: url)
+    }
+    
     var body: some View {
         ZStack {
-            if let player = player {
-                VideoPlayer(player: player)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .clipped()
-                    .onTapGesture {
-                        onTap()
-                    }
-            }
-            
-            // Thumbnail overlay (shown when paused or loading)
-            if showThumbnail, let thumbnailUrl = media.thumbnailUrl, let url = URL(string: thumbnailUrl) {
-                AsyncImage(url: url) { image in
-                    image
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                } placeholder: {
-                    Color.gray.opacity(0.3)
-                }
+            // Video layer — player always exists (from init), no conditional/state-triggered layout
+            VideoPlayer(player: player)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()
-            }
+                .onTapGesture { onTap() }
             
-            // Play/pause overlay button
-            if !isPlaying {
-                Button(action: {
-                    togglePlayPause()
-                }) {
-                    ZStack {
-                        Circle()
-                            .fill(Color.black.opacity(0.6))
-                            .frame(width: 56, height: 56)
-                        Image(systemName: "play.fill")
-                            .font(.system(size: 24))
-                            .foregroundColor(.white)
-                    }
+            // Thumbnail overlay — use opacity instead of conditional to keep stable hierarchy
+            Group {
+                if let thumbnailUrl = media.thumbnailUrl, let url = URL(string: ensureHttps(thumbnailUrl)) {
+                    CachedImageView(url: url)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .clipped()
                 }
             }
+            .opacity(showThumbnail ? 1 : 0)
+            .allowsHitTesting(showThumbnail)
+            .animation(nil, value: showThumbnail)
+            
+            // Play/pause button — use opacity instead of conditional
+            Button(action: { togglePlayPause() }) {
+                ZStack {
+                    Circle()
+                        .fill(Color.black.opacity(0.6))
+                        .frame(width: 56, height: 56)
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 24))
+                        .foregroundColor(.white)
+                }
+            }
+            .opacity(isPlaying ? 0 : 1)
+            .allowsHitTesting(!isPlaying)
+            .animation(nil, value: isPlaying)
             
             // Volume control button (top-right)
             VStack {
@@ -63,7 +69,7 @@ struct FeedVideoPlayer: View {
                     Spacer()
                     Button(action: {
                         isMuted.toggle()
-                        player?.isMuted = isMuted
+                        player.isMuted = isMuted
                     }) {
                         ZStack {
                             Circle()
@@ -79,58 +85,57 @@ struct FeedVideoPlayer: View {
                 Spacer()
             }
         }
+        .animation(nil, value: isVisible)
         .onAppear {
-            setupPlayer()
+            player.isMuted = isMuted
+            player.actionAtItemEnd = .none
+            if let item = player.currentItem {
+                loopObserver = NotificationCenter.default.addObserver(
+                    forName: .AVPlayerItemDidPlayToEndTime,
+                    object: item,
+                    queue: .main
+                ) { _ in
+                    player.seek(to: .zero)
+                    player.play()
+                }
+            }
             if isVisible {
                 startPlaying()
             }
         }
         .onDisappear {
+            if let obs = loopObserver {
+                NotificationCenter.default.removeObserver(obs)
+                loopObserver = nil
+            }
             pausePlayer()
         }
         .onChange(of: isVisible) { newValue in
-            if newValue {
-                startPlaying()
-            } else {
-                pausePlayer()
+            var t = Transaction()
+            t.animation = nil
+            withTransaction(t) {
+                if newValue {
+                    startPlaying()
+                } else {
+                    pausePlayer()
+                }
             }
         }
     }
     
-    private func setupPlayer() {
-        guard let url = URL(string: media.url) else { return }
-        let newPlayer = AVPlayer(url: url)
-        newPlayer.isMuted = isMuted
-        newPlayer.actionAtItemEnd = .none
-        
-        // Loop video
-        NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemDidPlayToEndTime,
-            object: newPlayer.currentItem,
-            queue: .main
-        ) { _ in
-            newPlayer.seek(to: .zero)
-            newPlayer.play()
-        }
-        
-        self.player = newPlayer
-    }
-    
     private func startPlaying() {
-        guard let player = player else { return }
         player.play()
         isPlaying = true
         showThumbnail = false
     }
     
     private func pausePlayer() {
-        guard let player = player else { return }
         player.pause()
         isPlaying = false
+        showThumbnail = true
     }
     
     private func togglePlayPause() {
-        guard let player = player else { return }
         if isPlaying {
             pausePlayer()
         } else {

@@ -37,6 +37,7 @@ import com.kissangram.ui.languageselection.LanguageSelectionScreen
 import com.kissangram.ui.profile.EditProfileScreen
 import com.kissangram.ui.profile.OtherUserProfileScreen
 import com.kissangram.ui.profile.ProfileScreen
+import com.kissangram.ui.postdetail.PostDetailScreen
 import com.kissangram.ui.search.SearchScreen
 import com.kissangram.ui.createpost.CreatePostScreen
 import com.kissangram.ui.createstory.CreateStoryScreen
@@ -279,12 +280,9 @@ private fun NavigationGraph(navController: NavHostController, startDestination: 
                     navController.navigate(Screen.buildStoryRoute(userId))
                 },
                 onNavigateToCreateStory = { navController.navigate(Screen.CREATE_STORY) },
-                onNavigateToPostDetail = { postId -> 
+                onNavigateToPostDetail = { postId, post -> 
+                    post?.let { PostCache.put(postId, it) }
                     navController.navigate(Screen.buildPostDetailRoute(postId))
-                },
-                onNavigateToComments = { postId, post -> 
-                    PostCache.put(postId, post)
-                    navController.navigate(Screen.buildCommentsRoute(postId))
                 }
             )
         }
@@ -431,32 +429,27 @@ private fun NavigationGraph(navController: NavHostController, startDestination: 
             } else {
                 OtherUserProfileScreen(
                     userId = userId,
-                    onBackClick = { navController.popBackStack() }
+                    onBackClick = { navController.popBackStack() },
+                    onPostClick = { postId ->
+                        navController.navigate(Screen.buildPostDetailRoute(postId))
+                    }
                 )
             }
         }
         
-        // Detail Screens (placeholders for now)
+        // Post Detail Screen (post + comments - unified view)
         composable(
             route = Screen.POST_DETAIL,
             arguments = listOf(navArgument("postId") { defaultValue = "" })
         ) { backStackEntry ->
             val postId = backStackEntry.arguments?.getString("postId") ?: ""
-            PlaceholderScreen("Post Detail: $postId")
-        }
-        
-        composable(
-            route = Screen.COMMENTS,
-            arguments = listOf(navArgument("postId") { defaultValue = "" })
-        ) { backStackEntry ->
-            val postId = backStackEntry.arguments?.getString("postId") ?: ""
-            val initialPost = PostCache.get(postId) // Get and remove from cache
-            com.kissangram.ui.comments.CommentsScreen(
+            val initialPost = PostCache.get(postId)
+            PostDetailScreen(
                 postId = postId,
                 initialPost = initialPost,
                 onBackClick = { navController.popBackStack() },
                 onNavigateToProfile = { userId ->
-                    navController.navigate(Screen.PROFILE.replace("{userId}", userId))
+                    navController.navigate(Screen.buildUserProfileRoute(userId))
                 }
             )
         }

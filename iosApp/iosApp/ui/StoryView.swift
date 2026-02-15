@@ -120,7 +120,7 @@ struct StoryContentView: View {
     var body: some View {
         ZStack {
             if story.media.type == .image {
-                AsyncImage(url: URL(string: story.media.url)) { phase in
+                AsyncImage(url: URL(string: ensureHttps(story.media.url))) { phase in
                     switch phase {
                     case .success(let image):
                         image
@@ -134,7 +134,7 @@ struct StoryContentView: View {
                 }
             } else {
                 // Video
-                StoryVideoPlayer(url: story.media.url)
+                StoryVideoPlayer(url: ensureHttps(story.media.url))
             }
             
             // Text Overlay
@@ -223,7 +223,7 @@ struct StoryTopBar: View {
             // Author Header
             HStack {
                 // Profile Image
-                AsyncImage(url: userStories.userProfileImageUrl.flatMap { URL(string: $0) }) { phase in
+                AsyncImage(url: userStories.userProfileImageUrl.flatMap { URL(string: ensureHttps($0)) }) { phase in
                     switch phase {
                     case .success(let image):
                         image

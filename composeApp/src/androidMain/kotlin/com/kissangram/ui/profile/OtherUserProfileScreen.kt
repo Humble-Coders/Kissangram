@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import com.kissangram.model.Post
 import com.kissangram.model.User
 import com.kissangram.model.UserRole
 import com.kissangram.model.VerificationStatus
@@ -50,6 +51,7 @@ private val RejectedRed = Color(0xFFBC4749)
 fun OtherUserProfileScreen(
     userId: String,
     onBackClick: () -> Unit = {},
+    onPostClick: (String) -> Unit = {},
     viewModel: OtherUserProfileViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -124,9 +126,12 @@ fun OtherUserProfileScreen(
                         uiState.user?.let { user ->
                             OtherUserProfileContent(
                                 user = user,
+                                posts = uiState.posts,
+                                isLoadingPosts = uiState.isLoadingPosts,
                                 isFollowing = uiState.isFollowing,
                                 isFollowLoading = uiState.isFollowLoading,
-                                onFollowClick = { viewModel.toggleFollow() }
+                                onFollowClick = { viewModel.toggleFollow() },
+                                onPostClick = onPostClick
                             )
                         } ?: run {
                             Box(
@@ -146,9 +151,12 @@ fun OtherUserProfileScreen(
 @Composable
 private fun OtherUserProfileContent(
     user: User,
+    posts: List<Post>,
+    isLoadingPosts: Boolean,
     isFollowing: Boolean,
     isFollowLoading: Boolean,
-    onFollowClick: () -> Unit
+    onFollowClick: () -> Unit,
+    onPostClick: (String) -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -386,34 +394,24 @@ private fun OtherUserProfileContent(
             color = TextPrimary
         )
         Spacer(Modifier.height(12.dp))
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            repeat(3) {
-                Surface(
-                    modifier = Modifier
-                        .weight(1f)
-                        .aspectRatio(1f),
-                    shape = RoundedCornerShape(12.dp),
-                    color = Color(0xFFE5E6DE)
-                ) {}
+        if (isLoadingPosts) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 32.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(
+                    color = PrimaryGreen,
+                    modifier = Modifier.size(24.dp)
+                )
             }
-        }
-        Spacer(Modifier.height(8.dp))
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            repeat(3) {
-                Surface(
-                    modifier = Modifier
-                        .weight(1f)
-                        .aspectRatio(1f),
-                    shape = RoundedCornerShape(12.dp),
-                    color = Color(0xFFE5E6DE)
-                ) {}
-            }
+        } else {
+            PostThumbnailGrid(
+                posts = posts,
+                onPostClick = onPostClick,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
 
         Spacer(Modifier.height(32.dp))

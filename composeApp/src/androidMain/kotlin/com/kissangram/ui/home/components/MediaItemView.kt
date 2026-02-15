@@ -13,10 +13,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import com.kissangram.model.MediaType
 import com.kissangram.model.PostMedia
 import com.kissangram.util.CloudinaryUrlTransformer
+import coil.compose.AsyncImage
 
 /**
  * Component that displays either an image or video based on media type

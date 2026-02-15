@@ -20,8 +20,7 @@ enum Screen {
     case profile
     
     // Detail Screens
-    case postDetail(postId: String)
-    case comments(postId: String, post: Post?)
+    case postDetail(postId: String, post: Post?)
     case userProfile(userId: String)
     case story(userId: String)
     case notifications

@@ -116,7 +116,7 @@ struct ProfileContent: View {
                         )
                         .frame(width: 120, height: 120)
 
-                    if let urlString = user.profileImageUrl, let url = URL(string: urlString) {
+                    if let urlString = user.profileImageUrl, let url = URL(string: ensureHttps(urlString)) {
                         AsyncImage(url: url) { image in
                             image
                                 .resizable()
@@ -396,12 +396,14 @@ struct PostThumbnailItem: View {
     
     private func transformThumbnailUrl(_ url: String) -> String {
         // Transform Cloudinary URL for thumbnail (similar to Android)
-        if url.contains("cloudinary.com") || url.contains("res.cloudinary.com") {
-            let parts = url.split(separator: "?", maxSplits: 1)
-            let baseUrl = parts.first.map(String.init) ?? url
+        // ensureHttps required for iOS App Transport Security
+        let secureUrl = ensureHttps(url)
+        if secureUrl.contains("cloudinary.com") || secureUrl.contains("res.cloudinary.com") {
+            let parts = secureUrl.split(separator: "?", maxSplits: 1)
+            let baseUrl = parts.first.map(String.init) ?? secureUrl
             return "\(baseUrl)?w_300,h_300,c_fill,q_auto,f_auto"
         }
-        return url
+        return secureUrl
     }
 }
 

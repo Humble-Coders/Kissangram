@@ -1,6 +1,9 @@
 import Foundation
 import FirebaseFirestore
+import os.log
 import Shared
+
+private let userRepoLog = Logger(subsystem: "com.kissangram", category: "FirestoreUserRepository")
 
 /// Firestore implementation of UserRepository.
 /// Creates and reads user profile at /users/{userId} per FIRESTORE_SCHEMA.md.
@@ -198,6 +201,7 @@ final class FirestoreUserRepository: UserRepository {
         guard let userId = try await authRepository.getCurrentUserId() else {
             throw NSError(domain: "FirestoreUserRepository", code: 1, userInfo: [NSLocalizedDescriptionKey: "No authenticated user"])
         }
+        userRepoLog.info("updateFullProfile userId=\(userId) profileImageUrl=\(String(describing: profileImageUrl))")
         
         var updates: [String: Any] = [Self.fieldUpdatedAt: Int64(Date().timeIntervalSince1970 * 1000)]
         
@@ -210,7 +214,12 @@ final class FirestoreUserRepository: UserRepository {
             }
         }
         if let bio = bio { updates[Self.fieldBio] = bio }
-        if let profileImageUrl = profileImageUrl { updates[Self.fieldProfileImageUrl] = profileImageUrl }
+        if let profileImageUrl = profileImageUrl {
+            updates[Self.fieldProfileImageUrl] = profileImageUrl
+            userRepoLog.info("profileImageUrl included in Firestore updates")
+        } else {
+            userRepoLog.info("profileImageUrl is nil, NOT included in Firestore updates")
+        }
         
         // Role
         if let role = role { updates[Self.fieldRole] = Self.roleToFirestore(role) }
@@ -227,8 +236,12 @@ final class FirestoreUserRepository: UserRepository {
         // Crops - stored in expertise field per schema
         if let crops = crops { updates[Self.fieldExpertise] = crops }
         
+        userRepoLog.info("updateFullProfile updates.count=\(updates.count) keys=\(updates.keys.joined(separator: ","))")
         if updates.count > 1 {
             try await usersCollection.document(userId).updateData(updates)
+            userRepoLog.info("Firestore updateData succeeded for user \(userId)")
+        } else {
+            userRepoLog.info("Skipped Firestore write (only updatedAt, no other changes)")
         }
     }
 

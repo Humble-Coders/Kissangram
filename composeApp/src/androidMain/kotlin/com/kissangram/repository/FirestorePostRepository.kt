@@ -311,6 +311,62 @@ class FirestorePostRepository(
         }
     }
     
+    override suspend fun getReplies(postId: String, parentCommentId: String, page: Int, pageSize: Int): List<Comment> {
+        Log.d(TAG, "getReplies: postId=$postId parentCommentId=$parentCommentId page=$page pageSize=$pageSize")
+        require(page >= 0) { "Page must be non-negative" }
+        require(pageSize in 1..50) { "Page size must be between 1 and 50" }
+        
+        return try {
+            val commentsCollection = postsCollection.document(postId).collection("comments")
+            
+            val replyKey = "${postId}_${parentCommentId}"
+            var query: Query = commentsCollection
+                .whereEqualTo("isActive", true)
+                .whereEqualTo("parentCommentId", parentCommentId)
+                .orderBy("createdAt", Query.Direction.ASCENDING)
+                .limit(pageSize.toLong())
+            
+            if (page > 0) {
+                val lastSnap = lastCommentSnapshots[replyKey]
+                if (lastSnap == null) {
+                    Log.w(TAG, "getReplies: page > 0 but no cursor for replyKey $replyKey; returning empty")
+                    return emptyList()
+                }
+                query = query.startAfter(lastSnap)
+            } else {
+                lastCommentSnapshots[replyKey] = null
+            }
+            
+            val snapshot = query.get().await()
+            val rawCount = snapshot.documents.size
+            Log.d(TAG, "getReplies: snapshot.documents.size=$rawCount")
+            
+            val repliesWithIds = snapshot.documents.mapNotNull { doc ->
+                doc.toComment(isLikedByMe = false)
+            }
+            
+            val currentUserId = authRepository.getCurrentUserId()
+            val likedCommentIds = if (currentUserId != null && repliesWithIds.isNotEmpty()) {
+                batchCheckCommentLikes(repliesWithIds.map { it.id }, postId, currentUserId)
+            } else {
+                emptySet()
+            }
+            
+            val list = repliesWithIds.map { comment ->
+                comment.copy(isLikedByMe = likedCommentIds.contains(comment.id))
+            }
+            
+            if (snapshot.documents.isNotEmpty()) {
+                lastCommentSnapshots[replyKey] = snapshot.documents.last()
+            }
+            
+            list
+        } catch (e: Exception) {
+            Log.e(TAG, "getReplies: FAILED", e)
+            throw Exception("Failed to get replies: ${e.message}", e)
+        }
+    }
+    
     override suspend fun addComment(postId: String, text: String, parentCommentId: String?): Comment {
         Log.d(TAG, "addComment: postId=$postId text=${text.take(50)}... parentCommentId=$parentCommentId")
         

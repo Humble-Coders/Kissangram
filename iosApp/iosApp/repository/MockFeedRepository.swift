@@ -12,7 +12,7 @@ final class MockFeedRepository: FeedRepository {
         self.dummyPosts = MockFeedRepository.createDummyPosts()
     }
     
-    func getHomeFeed(page: Int32, pageSize: Int32) async throws -> [Post] {
+    func getHomeFeed(page: Int32, pageSize: Int32, forceRefresh: Bool) async throws -> [Post] {
         // Simulate network delay
         try? await Task.sleep(nanoseconds: 500_000_000)
         

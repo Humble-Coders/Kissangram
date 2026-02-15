@@ -401,7 +401,7 @@ private fun StatItem(count: Int, label: String) {
 }
 
 @Composable
-private fun PostThumbnailGrid(
+internal fun PostThumbnailGrid(
     posts: List<Post>,
     onPostClick: (String) -> Unit,
     modifier: Modifier = Modifier

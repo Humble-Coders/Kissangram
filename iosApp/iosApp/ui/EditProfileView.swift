@@ -1,5 +1,8 @@
 import SwiftUI
+import os.log
 import Shared
+
+private let editProfileLog = Logger(subsystem: "com.kissangram", category: "EditProfile")
 import PhotosUI
 import AVFoundation
 
@@ -48,6 +51,7 @@ struct EditProfileView: View {
     
     // Handle save
     private func handleSave() {
+        editProfileLog.info("Save Changes button tapped")
         viewModel.saveProfile(
             onSuccess: {
                 alertMessage = "Profile saved successfully!"
@@ -114,8 +118,13 @@ struct EditProfileView: View {
                                                 if let uiImage = UIImage(data: data) {
                                                     await MainActor.run {
                                                         selectedImage = uiImage
+                                                        viewModel.setSelectedImageData(data, item: newItem)
                                                     }
                                                 }
+                                            }
+                                        } else {
+                                            await MainActor.run {
+                                                viewModel.setSelectedImageData(nil, item: nil)
                                             }
                                         }
                                     }
@@ -229,6 +238,11 @@ struct EditProfileView: View {
             .sheet(isPresented: $showCamera) {
                 ImagePicker(sourceType: imagePickerSourceType) { image in
                     selectedImage = image
+                    if let data = image.jpegData(compressionQuality: 0.9) {
+                        viewModel.setSelectedImageData(data, item: nil)
+                    } else {
+                        viewModel.setSelectedImageData(nil, item: nil)
+                    }
                 }
             }
         }
@@ -280,7 +294,7 @@ struct ProfileImageSection: View {
                         .aspectRatio(contentMode: .fill)
                         .frame(width: 120, height: 120)
                         .clipShape(Circle())
-                } else if let urlString = profileImageUrl, let url = URL(string: urlString) {
+                } else if let urlString = profileImageUrl, let url = URL(string: ensureHttps(urlString)) {
                     AsyncImage(url: url) { image in
                         image
                             .resizable()

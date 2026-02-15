@@ -10,5 +10,6 @@ target 'iosApp' do
   pod 'Firebase/Auth'
   pod 'Firebase/Storage'
   pod 'Cloudinary'
+  pod 'Kingfisher' # Image caching: memory + disk, industry standard for scalable feeds
 
 end

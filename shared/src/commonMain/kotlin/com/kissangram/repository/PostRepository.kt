@@ -38,10 +38,20 @@ interface PostRepository {
     suspend fun unsavePost(postId: String)
     
     /**
-     * Get comments for a post
+     * Get comments for a post (top-level only; parentCommentId == null)
      */
     @Throws(Exception::class)
     suspend fun getComments(postId: String, page: Int, pageSize: Int): List<Comment>
+    
+    /**
+     * Get replies for a parent comment.
+     * @param postId The post ID
+     * @param parentCommentId The parent comment ID
+     * @param page Page number (0-based)
+     * @param pageSize Page size
+     */
+    @Throws(Exception::class)
+    suspend fun getReplies(postId: String, parentCommentId: String, page: Int, pageSize: Int): List<Comment>
     
     /**
      * Add a comment to a post

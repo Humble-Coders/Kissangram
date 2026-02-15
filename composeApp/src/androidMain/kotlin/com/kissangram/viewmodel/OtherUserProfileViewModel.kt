@@ -3,10 +3,12 @@ package com.kissangram.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.kissangram.model.Post
 import com.kissangram.model.User
 import com.kissangram.repository.AndroidAuthRepository
 import com.kissangram.repository.AndroidFollowRepository
 import com.kissangram.repository.AndroidPreferencesRepository
+import com.kissangram.repository.FirestorePostRepository
 import com.kissangram.repository.FirestoreUserRepository
 import com.kissangram.usecase.FollowUserUseCase
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,7 +18,9 @@ import kotlinx.coroutines.launch
 
 data class OtherUserProfileUiState(
     val user: User? = null,
+    val posts: List<Post> = emptyList(),
     val isLoading: Boolean = false,
+    val isLoadingPosts: Boolean = false,
     val isFollowLoading: Boolean = false,
     val isFollowing: Boolean = false,
     val error: String? = null
@@ -33,6 +37,10 @@ class OtherUserProfileViewModel(
         preferencesRepository = prefs
     )
     private val userRepository = FirestoreUserRepository(authRepository = authRepository)
+    private val postRepository = FirestorePostRepository(
+        authRepository = authRepository,
+        userRepository = userRepository
+    )
     private val followRepository = AndroidFollowRepository(
         authRepository = authRepository,
         userRepository = userRepository
@@ -69,6 +77,9 @@ class OtherUserProfileViewModel(
                     isFollowing = isFollowing,
                     isLoading = false
                 )
+
+                // Load user's posts
+                loadPosts(userId)
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
@@ -119,6 +130,21 @@ class OtherUserProfileViewModel(
                     isFollowing = isCurrentlyFollowing,
                     isFollowLoading = false,
                     error = e.message ?: "Failed to ${if (isCurrentlyFollowing) "unfollow" else "follow"} user"
+                )
+            }
+        }
+    }
+
+    private fun loadPosts(userId: String) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoadingPosts = true)
+            try {
+                val posts = postRepository.getPostsByUser(userId, page = 0, pageSize = 30)
+                _uiState.value = _uiState.value.copy(posts = posts, isLoadingPosts = false)
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isLoadingPosts = false,
+                    posts = emptyList()
                 )
             }
         }

@@ -32,7 +32,7 @@ enum class BottomNavItem(
 fun KissangramBottomNavigation(
     selectedItem: BottomNavItem,
     onItemSelected: (BottomNavItem) -> Unit,
-    useHindi: Boolean = true,
+    useHindi: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     Surface(

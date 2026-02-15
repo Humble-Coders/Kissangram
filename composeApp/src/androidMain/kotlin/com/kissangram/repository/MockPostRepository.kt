@@ -41,7 +41,11 @@ class MockPostRepository : PostRepository {
     
     override suspend fun getComments(postId: String, page: Int, pageSize: Int): List<Comment> {
         delay(400)
-        // Return empty list - use FirestorePostRepository for actual data
+        return emptyList()
+    }
+    
+    override suspend fun getReplies(postId: String, parentCommentId: String, page: Int, pageSize: Int): List<Comment> {
+        delay(400)
         return emptyList()
     }
     

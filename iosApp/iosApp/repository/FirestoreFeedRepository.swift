@@ -11,12 +11,13 @@ final class FirestoreFeedRepository: FeedRepository {
     private let firestore = Firestore.firestore(database: "kissangram")
     private let authRepository: AuthRepository
     private var lastDocumentSnapshot: DocumentSnapshot?
+    private var cachedPosts: [Post]?
 
     init(authRepository: AuthRepository) {
         self.authRepository = authRepository
     }
 
-    func getHomeFeed(page: Int32, pageSize: Int32) async throws -> [Post] {
+    func getHomeFeed(page: Int32, pageSize: Int32, forceRefresh: Bool) async throws -> [Post] {
         Self.log.debug("getHomeFeed: page=\(page) pageSize=\(pageSize)")
         guard let currentUserId = try await authRepository.getCurrentUserId() else {
             Self.log.warning("getHomeFeed: currentUserId is nil, returning empty")
@@ -26,6 +27,12 @@ final class FirestoreFeedRepository: FeedRepository {
         Self.log.debug("getHomeFeed: currentUserId=\(uidPrefix)...")
         guard page >= 0 else { return [] }
         guard pageSize >= 1, pageSize <= 50 else { return [] }
+
+        // Return cached page 0 when not forcing refresh (avoids reload on tab return)
+        if page == 0 && !forceRefresh, let cached = cachedPosts {
+            Self.log.debug("getHomeFeed: returning cached posts (\(cached.count))")
+            return cached
+        }
 
         let feedRef = firestore.collection("users").document(currentUserId).collection("feed")
         var query: Query = feedRef.order(by: "createdAt", descending: true).limit(to: Int(pageSize))
@@ -60,9 +67,17 @@ final class FirestoreFeedRepository: FeedRepository {
             Set<String>()
         }
         
-        // Update posts with correct isLikedByMe value
+        // Batch-fetch likesCount from posts collection (source of truth; feed copies are stale)
+        let likesCountByPostId = if !postsWithIds.isEmpty {
+            try await batchFetchLikesCount(postIds: postsWithIds.map { $0.id })
+        } else {
+            [String: Int32]()
+        }
+        
+        // Update posts with correct isLikedByMe and likesCount from posts collection
         let posts = postsWithIds.map { post in
-            Post(
+            let freshLikesCount = likesCountByPostId[post.id] ?? post.likesCount
+            return Post(
                 id: post.id,
                 authorId: post.authorId,
                 authorName: post.authorName,
@@ -78,7 +93,7 @@ final class FirestoreFeedRepository: FeedRepository {
                 hashtags: post.hashtags,
                 location: post.location,
                 question: post.question,
-                likesCount: post.likesCount,
+                likesCount: freshLikesCount,
                 commentsCount: post.commentsCount,
                 savesCount: post.savesCount,
                 isLikedByMe: likedPostIds.contains(post.id),
@@ -92,13 +107,41 @@ final class FirestoreFeedRepository: FeedRepository {
         if let last = snapshot.documents.last {
             lastDocumentSnapshot = last
         }
+        if page == 0 {
+            cachedPosts = posts
+        }
         return posts
     }
 
     func refreshFeed() async throws -> [Post] {
-        Self.log.debug("refreshFeed: clearing cursor, fetching page 0")
+        Self.log.debug("refreshFeed: clearing cursor, forcing refresh")
         lastDocumentSnapshot = nil
-        return try await getHomeFeed(page: 0, pageSize: 20)
+        return try await getHomeFeed(page: 0, pageSize: 20, forceRefresh: true)
+    }
+    
+    // MARK: - Batch Fetch Likes Count
+    
+    /// Batch-fetch likesCount from posts collection (source of truth).
+    /// Feed documents have stale likesCount; posts collection is updated by Cloud Functions on like/unlike.
+    private func batchFetchLikesCount(postIds: [String]) async throws -> [String: Int32] {
+        if postIds.isEmpty { return [:] }
+        return try await withThrowingTaskGroup(of: (String, Int32).self) { group in
+            for postId in postIds {
+                group.addTask {
+                    let doc = try await self.firestore.collection("posts").document(postId).getDocument()
+                    if doc.exists, let data = doc.data() {
+                        let count = Int32((data["likesCount"] as? Int) ?? 0)
+                        return (postId, count)
+                    }
+                    return (postId, 0)
+                }
+            }
+            var result = [String: Int32]()
+            for try await (postId, count) in group {
+                result[postId] = count
+            }
+            return result
+        }
     }
     
     // MARK: - Batch Check Likes
@@ -145,7 +188,8 @@ final class FirestoreFeedRepository: FeedRepository {
             let authorId = (doc.get("authorId") as? String) ?? ""
             let authorName = (doc.get("authorName") as? String) ?? ""
             let authorUsername = (doc.get("authorUsername") as? String) ?? ""
-            let authorProfileImageUrl = doc.get("authorProfileImageUrl") as? String
+            let authorProfileImageUrlRaw = doc.get("authorProfileImageUrl") as? String
+            let authorProfileImageUrl = authorProfileImageUrlRaw.flatMap { $0.isEmpty ? nil : $0 }
             let authorRoleStr = (doc.get("authorRole") as? String) ?? "farmer"
             let authorVerificationStatusStr = (doc.get("authorVerificationStatus") as? String) ?? "unverified"
 

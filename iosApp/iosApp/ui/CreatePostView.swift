@@ -223,6 +223,9 @@ struct CreatePostView: View {
                 if UIImagePickerController.isSourceTypeAvailable(.camera) {
                     imagePickerSourceType = .camera
                     showVideoPicker = true
+                } else if UIImagePickerController.isSourceTypeAvailable(.photoLibrary) {
+                    imagePickerSourceType = .photoLibrary
+                    showVideoPicker = true
                 } else {
                     showCameraUnavailableAlert = true
                 }
@@ -352,11 +355,12 @@ struct CreatePostView: View {
         .background(Color.appBackground)
     }
     
-    // MARK: - Camera Sheet
+    // MARK: - Camera Sheet (supports both image and video, like Story)
     private var cameraSheet: some View {
         MediaPicker(
             sourceType: imagePickerSourceType,
-            mediaTypes: [UTType.image.identifier],
+            mediaTypes: [UTType.image.identifier, UTType.movie.identifier],
+            allowsEditing: false,
             onImagePicked: { image in
                 saveImageToTempFile(image: image) { url in
                     if let url = url {
@@ -364,27 +368,39 @@ struct CreatePostView: View {
                     }
                 }
             },
-            onVideoPicked: nil
-        )
-    }
-    
-    // MARK: - Video Sheet
-    private var videoSheet: some View {
-        MediaPicker(
-            sourceType: .camera,
-            mediaTypes: [UTType.movie.identifier],
-            onImagePicked: nil,
             onVideoPicked: { url in
-                mediaItems.append(MediaItem(localUri: url.absoluteString, type: .video))
+                saveVideoToTempFile(sourceURL: url) { copiedURL in
+                    if let u = copiedURL {
+                        mediaItems.append(MediaItem(localUri: u.absoluteString, type: .video))
+                    }
+                }
             }
         )
     }
     
-    // MARK: - Image Picker Sheet
+    // MARK: - Video Sheet (camera recording)
+    private var videoSheet: some View {
+        MediaPicker(
+            sourceType: imagePickerSourceType,
+            mediaTypes: [UTType.movie.identifier],
+            allowsEditing: true,
+            onImagePicked: nil,
+            onVideoPicked: { url in
+                saveVideoToTempFile(sourceURL: url) { copiedURL in
+                    if let u = copiedURL {
+                        mediaItems.append(MediaItem(localUri: u.absoluteString, type: .video))
+                    }
+                }
+            }
+        )
+    }
+    
+    // MARK: - Image Picker Sheet (iOS < 16 fallback for gallery)
     private var imagePickerSheet: some View {
         MediaPicker(
             sourceType: imagePickerSourceType,
             mediaTypes: [UTType.image.identifier, UTType.movie.identifier],
+            allowsEditing: true,
             onImagePicked: { image in
                 saveImageToTempFile(image: image) { url in
                     if let url = url {
@@ -393,7 +409,11 @@ struct CreatePostView: View {
                 }
             },
             onVideoPicked: { url in
-                mediaItems.append(MediaItem(localUri: url.absoluteString, type: .video))
+                saveVideoToTempFile(sourceURL: url) { copiedURL in
+                    if let u = copiedURL {
+                        mediaItems.append(MediaItem(localUri: u.absoluteString, type: .video))
+                    }
+                }
             }
         )
     }
@@ -421,6 +441,28 @@ struct CreatePostView: View {
                 print("Error saving image: \(error.localizedDescription)")
                 DispatchQueue.main.async {
                     completion(nil)
+                }
+            }
+        }
+    }
+    
+    /// Copy video to app-owned temp file so playback/upload is stable (avoids picker lifecycle and "stops in the middle" for camera recordings). Matches Story behavior.
+    private func saveVideoToTempFile(sourceURL: URL, completion: @escaping (URL?) -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let tempURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent("post_video_\(UUID().uuidString)")
+                .appendingPathExtension("mp4")
+            do {
+                if FileManager.default.fileExists(atPath: tempURL.path) {
+                    try FileManager.default.removeItem(at: tempURL)
+                }
+                try FileManager.default.copyItem(at: sourceURL, to: tempURL)
+                DispatchQueue.main.async {
+                    completion(tempURL)
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    completion(sourceURL)
                 }
             }
         }

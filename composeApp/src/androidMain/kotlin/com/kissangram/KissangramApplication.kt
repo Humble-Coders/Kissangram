@@ -2,6 +2,10 @@ package com.kissangram
 
 import android.app.Application
 import android.util.Log
+import coil.Coil
+import coil.ImageLoader
+import coil.disk.DiskCache
+import coil.memory.MemoryCache
 import com.cloudinary.android.MediaManager
 import com.google.firebase.FirebaseApp
 import com.google.firebase.firestore.FirebaseFirestore
@@ -13,13 +17,30 @@ import kotlinx.coroutines.withTimeout
 import java.util.HashMap
 
 /**
- * Application entry point. Disables Firestore disk persistence so writes go to the server
- * and fail fast when offline instead of queuing indefinitely (Task never completing).
+ * Application entry point. Configures Coil ImageLoader with disk cache for feed scalability.
  */
-class  KissangramApplication : Application() {
+class KissangramApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        
+        // Configure Coil with memory + disk cache for feed images—no reload when scrolling back
+        Coil.setImageLoader(
+            ImageLoader.Builder(this)
+                .memoryCache {
+                    MemoryCache.Builder(this)
+                        .maxSizePercent(0.25)
+                        .build()
+                }
+                .diskCache {
+                    DiskCache.Builder()
+                        .directory(cacheDir.resolve("image_cache"))
+                        .maxSizePercent(0.02)
+                        .build()
+                }
+                .crossfade(true)
+                .build()
+        )
         
         // Initialize Cloudinary
         initCloudinary()

@@ -49,28 +49,50 @@ class AndroidStorageRepository(
     }
     
     override suspend fun uploadProfileImage(userId: String, imageData: ByteArray): String {
-        Log.d(TAG, "uploadProfileImage: Starting upload for user $userId, size=${imageData.size} bytes")
-        
-        // Create reference: profile_images/{userId}/profile_{timestamp}.jpg
-        val timestamp = System.currentTimeMillis()
-        val fileName = "profile_$timestamp.jpg"
-        val storageRef = storage.reference
-            .child(FOLDER_PROFILE_IMAGES)
-            .child(userId)
-            .child(fileName)
+        Log.d(TAG, "uploadProfileImage: Starting Cloudinary upload for user $userId, size=${imageData.size} bytes")
         
         return try {
-            // Upload the image
-            val uploadTask = storageRef.putBytes(imageData)
-            uploadTask.await()
+            // Write ByteArray to temporary file for Cloudinary upload
+            val tempFile = File(context.cacheDir, "profile_${UUID.randomUUID()}.tmp")
+            tempFile.outputStream().use { it.write(imageData) }
             
-            // Get the download URL
-            val downloadUrl = storageRef.downloadUrl.await().toString()
-            Log.d(TAG, "uploadProfileImage: SUCCESS - URL: $downloadUrl")
-            downloadUrl
+            suspendCancellableCoroutine<String> { continuation ->
+                val requestId = MediaManager.get().upload(tempFile.absolutePath)
+                    .option("resource_type", "image")
+                    .option("folder", FOLDER_PROFILE_IMAGES)
+                    .option("public_id", "profile_${userId}_${System.currentTimeMillis()}")
+                    .callback(object : UploadCallback {
+                        override fun onStart(requestId: String) {
+                            Log.d(TAG, "uploadProfileImage: Upload started")
+                        }
+                        override fun onProgress(requestId: String, bytes: Long, totalBytes: Long) {}
+                        override fun onSuccess(requestId: String, resultData: Map<*, *>?) {
+                            val url = (resultData?.get("secure_url") as? String
+                                ?: resultData?.get("url") as? String)
+                                ?.let { ensureHttps(it) }
+                                ?: throw IllegalStateException("No URL in upload result")
+                            Log.d(TAG, "uploadProfileImage: SUCCESS - URL: $url")
+                            continuation.resume(url)
+                        }
+                        override fun onError(requestId: String, error: ErrorInfo) {
+                            Log.e(TAG, "uploadProfileImage: FAILED - ${error.description}")
+                            continuation.resumeWithException(
+                                Exception("Cloudinary upload failed: ${error.description}")
+                            )
+                        }
+                        override fun onReschedule(requestId: String, error: ErrorInfo) {}
+                    })
+                    .dispatch()
+                
+                continuation.invokeOnCancellation {
+                    MediaManager.get().cancelRequest(requestId)
+                }
+            }.also {
+                tempFile.delete()
+            }
         } catch (e: Exception) {
             Log.e(TAG, "uploadProfileImage: FAILED", e)
-            throw Exception("Failed to upload profile image: ${e.message}", e)
+            throw Exception("Failed to upload profile image to Cloudinary: ${e.message}", e)
         }
     }
     

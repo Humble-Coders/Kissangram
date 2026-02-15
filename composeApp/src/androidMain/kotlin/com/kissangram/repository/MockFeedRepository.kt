@@ -11,7 +11,7 @@ class MockFeedRepository : FeedRepository {
     
     private val dummyPosts = createDummyPosts()
     
-    override suspend fun getHomeFeed(page: Int, pageSize: Int): List<Post> {
+    override suspend fun getHomeFeed(page: Int, pageSize: Int, forceRefresh: Boolean): List<Post> {
         // Simulate network delay
         delay(500)
         

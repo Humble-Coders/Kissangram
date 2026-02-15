@@ -6,9 +6,10 @@ private let expertGreen = Color(red: 0.455, green: 0.765, blue: 0.396)
 
 struct OtherUserProfileView: View {
     let userId: String
-    @StateObject private var viewModel = OtherUserProfileViewModel()
-    
     var onBackClick: () -> Void = {}
+    var onPostClick: (String) -> Void = { _ in }
+    
+    @StateObject private var viewModel = OtherUserProfileViewModel()
 
     var body: some View {
         NavigationStack {
@@ -40,9 +41,12 @@ struct OtherUserProfileView: View {
                     ScrollView {
                         OtherUserProfileContent(
                             user: user,
+                            posts: viewModel.posts,
+                            isLoadingPosts: viewModel.isLoadingPosts,
                             isFollowing: viewModel.isFollowing,
                             isFollowLoading: viewModel.isFollowLoading,
-                            onFollowClick: { viewModel.toggleFollow() }
+                            onFollowClick: { viewModel.toggleFollow() },
+                            onPostClick: onPostClick
                         )
                         .padding(.horizontal, 18)
                         .padding(.top, 24)
@@ -76,9 +80,12 @@ struct OtherUserProfileView: View {
 
 struct OtherUserProfileContent: View {
     let user: User
+    let posts: [Post]
+    let isLoadingPosts: Bool
     let isFollowing: Bool
     let isFollowLoading: Bool
     let onFollowClick: () -> Void
+    let onPostClick: (String) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 27) {
@@ -95,7 +102,7 @@ struct OtherUserProfileContent: View {
                         )
                         .frame(width: 120, height: 120)
 
-                    if let urlString = user.profileImageUrl, let url = URL(string: urlString) {
+                    if let urlString = user.profileImageUrl, let url = URL(string: ensureHttps(urlString)) {
                         AsyncImage(url: url) { image in
                             image
                                 .resizable()
@@ -228,21 +235,16 @@ struct OtherUserProfileContent: View {
                     .font(.system(size: 18, weight: .bold))
                     .foregroundColor(.textPrimary)
 
-                VStack(spacing: 8) {
-                    HStack(spacing: 8) {
-                        ForEach(0..<3, id: \.self) { _ in
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(Color(red: 0.898, green: 0.902, blue: 0.859))
-                                .aspectRatio(1, contentMode: .fit)
-                        }
+                if isLoadingPosts {
+                    HStack {
+                        Spacer()
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .primaryGreen))
+                        Spacer()
                     }
-                    HStack(spacing: 8) {
-                        ForEach(0..<3, id: \.self) { _ in
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(Color(red: 0.898, green: 0.902, blue: 0.859))
-                                .aspectRatio(1, contentMode: .fit)
-                        }
-                    }
+                    .padding(.vertical, 32)
+                } else {
+                    PostThumbnailGrid(posts: posts, onPostClick: onPostClick)
                 }
             }
         }
