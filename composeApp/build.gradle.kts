@@ -1,5 +1,8 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.util.Properties
+import java.io.File
+import java.io.FileInputStream
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
@@ -78,6 +81,20 @@ android {
     namespace = "com.kissangram"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
 
+    val localProperties = Properties().apply {
+        val localFile = rootProject.file("local.properties")
+        if (localFile.exists()) load(FileInputStream(localFile))
+    }
+
+    signingConfigs {
+        create("release") {
+            storeFile = file(localProperties.getProperty("KEYSTORE_PATH", "/Users/ansh/Documents/Kissangram.jks"))
+            storePassword = localProperties.getProperty("KEYSTORE_PASSWORD")
+            keyAlias = localProperties.getProperty("KEY_ALIAS", "key0")
+            keyPassword = localProperties.getProperty("KEY_PASSWORD")
+        }
+    }
+
     defaultConfig {
         applicationId = "com.kissangram"
         minSdk = libs.versions.android.minSdk.get().toInt()
@@ -92,6 +109,7 @@ android {
     }
     buildTypes {
         getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false
         }
     }
@@ -105,7 +123,7 @@ dependencies {
     debugImplementation(compose.uiTooling)
 }
 
-// Task to print SHA-256 hash for Firebase Phone Auth
+// Task to print SHA-1/SHA-256 for Firebase Phone Auth (debug keystore)
 tasks.register("printSha256") {
     doLast {
         val keystoreFile = file("${System.getProperty("user.home")}/.android/debug.keystore")
@@ -124,6 +142,37 @@ tasks.register("printSha256") {
         } else {
             println("Debug keystore not found at: ${keystoreFile.absolutePath}")
             println("Run: ./gradlew signingReport")
+        }
+    }
+}
+
+// Task to print release keystore SHA-1/SHA-256 (add these to Firebase Console)
+// Uses only serializable values so it works with configuration cache.
+tasks.register("printReleaseSha256") {
+    val rootDirPath = rootProject.layout.projectDirectory.asFile.absolutePath
+    doLast {
+        val localFile = File(rootDirPath, "local.properties")
+        val localProperties = Properties()
+        if (localFile.exists()) localProperties.load(FileInputStream(localFile))
+        val storePass = localProperties.getProperty("KEYSTORE_PASSWORD")
+        if (storePass == null) {
+            println("Set KEYSTORE_PASSWORD and KEY_PASSWORD in local.properties")
+            return@doLast
+        }
+        val keystorePath = localProperties.getProperty("KEYSTORE_PATH", "/Users/ansh/Documents/Kissangram.jks")
+        val keystoreFile = File(keystorePath)
+        val alias = localProperties.getProperty("KEY_ALIAS", "key0")
+        val keyPass = localProperties.getProperty("KEY_PASSWORD", storePass)
+        if (keystoreFile.exists()) {
+            ProcessBuilder(
+                "keytool", "-list", "-v",
+                "-keystore", keystoreFile.absolutePath,
+                "-alias", alias,
+                "-storepass", storePass,
+                "-keypass", keyPass
+            ).inheritIO().start().waitFor()
+        } else {
+            println("Release keystore not found at: ${keystoreFile.absolutePath}")
         }
     }
 }

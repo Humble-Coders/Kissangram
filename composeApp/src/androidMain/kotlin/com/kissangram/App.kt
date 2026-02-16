@@ -1,10 +1,7 @@
 package com.kissangram
 
 import android.annotation.SuppressLint
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -227,13 +224,19 @@ private fun NavigationGraph(
             ) + fadeOut(animationSpec = tween(500))
         }
     ) {
-        // Auth Flow
+        // Auth Flow (wrapped to respect navigation bar on 3-button nav devices)
         composable(Screen.LANGUAGE_SELECTION) {
-            LanguageSelectionScreen(
-                onLanguageSelected = { languageCode ->
-                    navController.navigate(Screen.buildPhoneNumberRoute(languageCode))
-                }
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.navigationBars)
+            ) {
+                LanguageSelectionScreen(
+                    onLanguageSelected = { languageCode ->
+                        navController.navigate(Screen.buildPhoneNumberRoute(languageCode))
+                    }
+                )
+            }
         }
         
         composable(
@@ -241,12 +244,18 @@ private fun NavigationGraph(
             arguments = listOf(navArgument("languageCode") { defaultValue = "" })
         ) { backStackEntry ->
             val languageCode = backStackEntry.arguments?.getString("languageCode") ?: ""
-            PhoneNumberScreen(
-                onBackClick = { navController.popBackStack() },
-                onOtpSent = { phoneNumber ->
-                    navController.navigate(Screen.buildOtpRoute(phoneNumber))
-                }
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.navigationBars)
+            ) {
+                PhoneNumberScreen(
+                    onBackClick = { navController.popBackStack() },
+                    onOtpSent = { phoneNumber ->
+                        navController.navigate(Screen.buildOtpRoute(phoneNumber))
+                    }
+                )
+            }
         }
         
         composable(
@@ -254,23 +263,29 @@ private fun NavigationGraph(
             arguments = listOf(navArgument("phoneNumber") { defaultValue = "" })
         ) { backStackEntry ->
             val phoneNumber = backStackEntry.arguments?.getString("phoneNumber") ?: ""
-            OtpScreen(
-                phoneNumber = phoneNumber,
-                onBackClick = { navController.popBackStack() },
-                onExistingUser = { userName ->
-                    navController.navigate(Screen.buildWelcomeBackRoute(userName)) {
-                        popUpTo(Screen.LANGUAGE_SELECTION) { inclusive = false }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.navigationBars)
+            ) {
+                OtpScreen(
+                    phoneNumber = phoneNumber,
+                    onBackClick = { navController.popBackStack() },
+                    onExistingUser = { userName ->
+                        navController.navigate(Screen.buildWelcomeBackRoute(userName)) {
+                            popUpTo(Screen.LANGUAGE_SELECTION) { inclusive = false }
+                        }
+                    },
+                    onNewUser = {
+                        navController.navigate(Screen.NAME) {
+                            popUpTo(Screen.LANGUAGE_SELECTION) { inclusive = false }
+                        }
+                    },
+                    onResendOtp = {
+                        navController.popBackStack()
                     }
-                },
-                onNewUser = {
-                    navController.navigate(Screen.NAME) {
-                        popUpTo(Screen.LANGUAGE_SELECTION) { inclusive = false }
-                    }
-                },
-                onResendOtp = {
-                    navController.popBackStack()
-                }
-            )
+                )
+            }
         }
         
         composable(
@@ -283,51 +298,75 @@ private fun NavigationGraph(
             } catch (e: Exception) {
                 encodedUserName
             }
-            WelcomeBackScreen(
-                userName = userName,
-                onContinue = {
-                    navController.navigate(Screen.HOME) {
-                        popUpTo(navController.graph.startDestinationId) { inclusive = true }
-                    }
-                }
-            )
-        }
-        
-        composable(Screen.NAME) {
-            NameScreen(
-                onNameSaved = {
-                    navController.navigate(Screen.ROLE_SELECTION)
-                }
-            )
-        }
-        
-        composable(Screen.ROLE_SELECTION) {
-            RoleSelectionScreen(
-                onRoleSelected = { selectedRole ->
-                    if (selectedRole == UserRole.EXPERT) {
-                        navController.navigate(Screen.EXPERT_DOCUMENT_UPLOAD)
-                    } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.navigationBars)
+            ) {
+                WelcomeBackScreen(
+                    userName = userName,
+                    onContinue = {
                         navController.navigate(Screen.HOME) {
                             popUpTo(navController.graph.startDestinationId) { inclusive = true }
                         }
                     }
-                }
-            )
+                )
+            }
+        }
+        
+        composable(Screen.NAME) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.navigationBars)
+            ) {
+                NameScreen(
+                    onNameSaved = {
+                        navController.navigate(Screen.ROLE_SELECTION)
+                    }
+                )
+            }
+        }
+        
+        composable(Screen.ROLE_SELECTION) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.navigationBars)
+            ) {
+                RoleSelectionScreen(
+                    onRoleSelected = { selectedRole ->
+                        if (selectedRole == UserRole.EXPERT) {
+                            navController.navigate(Screen.EXPERT_DOCUMENT_UPLOAD)
+                        } else {
+                            navController.navigate(Screen.HOME) {
+                                popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                            }
+                        }
+                    }
+                )
+            }
         }
         
         composable(Screen.EXPERT_DOCUMENT_UPLOAD) {
-            ExpertDocumentUploadScreen(
-                onComplete = {
-                    navController.navigate(Screen.HOME) {
-                        popUpTo(navController.graph.startDestinationId) { inclusive = true }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.navigationBars)
+            ) {
+                ExpertDocumentUploadScreen(
+                    onComplete = {
+                        navController.navigate(Screen.HOME) {
+                            popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                        }
+                    },
+                    onSkip = {
+                        navController.navigate(Screen.HOME) {
+                            popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                        }
                     }
-                },
-                onSkip = {
-                    navController.navigate(Screen.HOME) {
-                        popUpTo(navController.graph.startDestinationId) { inclusive = true }
-                    }
-                }
-            )
+                )
+            }
         }
         
         // Main App
