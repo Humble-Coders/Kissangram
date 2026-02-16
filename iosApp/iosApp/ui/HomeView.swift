@@ -610,19 +610,24 @@ struct PostTagsRow: View {
                     dotColor: .accentYellow
                 )
             }
-            ForEach(Array(post.crops.prefix(2)), id: \.self) { crop in
-                Text(crop.capitalized)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.textPrimary)
-                    .lineLimit(1)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .background(Color.accentYellow.opacity(0.08))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 18)
-                            .stroke(Color.accentYellow.opacity(0.19), lineWidth: 0.5)
-                    )
-                    .cornerRadius(18)
+            
+            // Crop tags - use ScrollView for horizontal scrolling (matching Android LazyRow)
+            if !post.crops.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 7) {
+                        ForEach(Array(post.crops), id: \.self) { crop in
+                            Text(crop.capitalized)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(.textPrimary)
+                                .lineLimit(1)
+                                .padding(.horizontal, 11)
+                                .padding(.vertical, 6)
+                                .background(Color.accentYellow.opacity(0.08))
+                                .cornerRadius(18)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }

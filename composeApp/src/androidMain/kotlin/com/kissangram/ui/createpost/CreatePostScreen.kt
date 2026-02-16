@@ -106,7 +106,8 @@ private fun createVideoUri(context: Context): Uri {
 fun CreatePostScreen(
     onBackClick: () -> Unit,
     onPostClick: (CreatePostInput) -> Unit = {},
-    viewModel: CreatePostViewModel = viewModel()
+    viewModel: CreatePostViewModel = viewModel(),
+    bottomNavPadding: PaddingValues = PaddingValues(0.dp)
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
@@ -331,7 +332,7 @@ fun CreatePostScreen(
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 18.dp)
                     .padding(top = 18.dp)
-                    .padding(bottom = 120.dp) // Space for bottom button
+                    .padding(bottom = 120.dp + bottomNavPadding.calculateBottomPadding()) // Space for bottom button + bottom nav
             ) {
             // Post Type Toggle
             PostTypeToggle(

@@ -40,10 +40,16 @@ fun HomeScreen(
     onNavigateToProfile: (String) -> Unit = {},
     onNavigateToStory: (String) -> Unit = {},
     onNavigateToCreateStory: () -> Unit = {},
-    onNavigateToPostDetail: (String, Post?) -> Unit = { _, _ -> }
+    onNavigateToPostDetail: (String, Post?) -> Unit = { _, _ -> },
+    bottomNavPadding: PaddingValues = PaddingValues(0.dp)
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val listState = rememberLazyListState()
+    
+    // Load content when screen is first created (same as ViewModel init)
+    LaunchedEffect(Unit) {
+        viewModel.loadContent()
+    }
     
     // Track visible post indices for video auto-play
     val visiblePostIndices = remember { mutableStateSetOf<Int>() }
@@ -104,21 +110,26 @@ fun HomeScreen(
         ) { paddingValues ->
         // Content
         if (uiState.isLoading && uiState.posts.isEmpty()) {
-            Box(
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues),
-                contentAlignment = Alignment.Center
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
             ) {
+                Spacer(modifier = Modifier.weight(1f))
                 CircularProgressIndicator(color = PrimaryGreen)
+                Spacer(modifier = Modifier.weight(1f))
             }
         } else if (uiState.error != null && uiState.posts.isEmpty()) {
-            Box(
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues),
-                contentAlignment = Alignment.Center
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
             ) {
+                Spacer(modifier = Modifier.weight(1f))
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         text = uiState.error ?: "Something went wrong",
@@ -132,56 +143,70 @@ fun HomeScreen(
                         Text("Retry")
                     }
                 }
+                Spacer(modifier = Modifier.weight(1f))
             }
         } else {
-            LazyColumn(
-                state = listState,
+            val swipeRefreshState = rememberSwipeRefreshState(isRefreshing = uiState.isRefreshing)
+            
+            SwipeRefresh(
+                state = swipeRefreshState,
+                onRefresh = { viewModel.refreshFeed() },
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues)
             ) {
-                // Stories Section
-                item {
-                    StoriesSection(
-                        stories = uiState.stories,
-                        onStoryClick = onNavigateToStory,
-                        onCreateStoryClick = onNavigateToCreateStory
-                    )
-                }
-
-                // Posts
-                itemsIndexed(
-                    items = uiState.posts,
-                    key = { _, post -> post.id }
-                ) { index, post ->
-                    val isVisible = visiblePostIndices.contains(index)
-                    val isOwnPost = post.authorId == uiState.currentUserId
-                    val isFollowingAuthor = uiState.authorIdToIsFollowing[post.authorId] == true
-                    PostCard(
-                        post = post,
-                        isVisible = isVisible,
-                        isOwnPost = isOwnPost,
-                        isFollowingAuthor = isFollowingAuthor,
-                        onLikeClick = { viewModel.onLikePost(post.id) },
-                        onCommentClick = { onNavigateToPostDetail(post.id, post) },
-                        onShareClick = { /* Share */ },
-                        onSaveClick = { viewModel.onSavePost(post.id) },
-                        onAuthorClick = { onNavigateToProfile(post.authorId) },
-                        onPostClick = { onNavigateToPostDetail(post.id, post) },
-                        onFollowClick = { viewModel.onFollow(post.authorId) },
-                        onUnfollowClick = { viewModel.unfollowAndRemovePosts(post.authorId) }
-                    )
-                }
-
-                // Loading more indicator
-                if (uiState.isLoadingMore) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = bottomNavPadding.calculateBottomPadding())
+                ) {
+                    // Stories Section
                     item {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
+                        StoriesSection(
+                            stories = uiState.stories,
+                            onStoryClick = onNavigateToStory,
+                            onCreateStoryClick = onNavigateToCreateStory
+                        )
+                    }
+
+                    // Spacing between stories and first post (matching iOS)
+                    item {
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+
+                    // Posts
+                    itemsIndexed(
+                        items = uiState.posts,
+                        key = { _, post -> post.id }
+                    ) { index, post ->
+                        val isVisible = visiblePostIndices.contains(index)
+                        val isOwnPost = post.authorId == uiState.currentUserId
+                        val isFollowingAuthor = uiState.authorIdToIsFollowing[post.authorId] == true
+                        PostCard(
+                            post = post,
+                            isVisible = isVisible,
+                            isOwnPost = isOwnPost,
+                            isFollowingAuthor = isFollowingAuthor,
+                            onLikeClick = { viewModel.onLikePost(post.id) },
+                            onCommentClick = { onNavigateToPostDetail(post.id, post) },
+                            onShareClick = { /* Share */ },
+                            onSaveClick = { viewModel.onSavePost(post.id) },
+                            onAuthorClick = { onNavigateToProfile(post.authorId) },
+                            onPostClick = { onNavigateToPostDetail(post.id, post) },
+                            onFollowClick = { viewModel.onFollow(post.authorId) },
+                            onUnfollowClick = { viewModel.unfollowAndRemovePosts(post.authorId) }
+                        )
+                    }
+
+                    // Loading more indicator
+                    if (uiState.isLoadingMore) {
+                        item {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
                             CircularProgressIndicator(
                                 color = PrimaryGreen,
                                 modifier = Modifier.size(24.dp)
@@ -190,10 +215,16 @@ fun HomeScreen(
                     }
                 }
 
-                // End of feed
-                if (!uiState.hasMorePosts && uiState.posts.isNotEmpty()) {
+                    // End of feed
+                    if (!uiState.hasMorePosts && uiState.posts.isNotEmpty()) {
+                        item {
+                            EndOfFeedSection()
+                        }
+                    }
+                    
+                    // Bottom padding (matching iOS)
                     item {
-                        EndOfFeedSection()
+                        Spacer(modifier = Modifier.height(12.dp))
                     }
                 }
                 

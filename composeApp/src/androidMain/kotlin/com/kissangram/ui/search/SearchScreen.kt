@@ -48,7 +48,8 @@ private val RejectedRed = Color(0xFFBC4749)
 @Composable
 fun SearchScreen(
     onUserClick: (String) -> Unit = {},
-    viewModel: SearchViewModel = viewModel()
+    viewModel: SearchViewModel = viewModel(),
+    bottomNavPadding: PaddingValues = PaddingValues(0.dp)
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -174,7 +175,12 @@ fun SearchScreen(
                 // Results list
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 18.dp, vertical = 8.dp),
+                    contentPadding = PaddingValues(
+                        start = 18.dp,
+                        top = 8.dp,
+                        end = 18.dp,
+                        bottom = 8.dp + bottomNavPadding.calculateBottomPadding()
+                    ),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(

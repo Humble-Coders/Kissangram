@@ -440,6 +440,41 @@ final class FirestorePostRepository: PostRepository {
         }
     }
     
+    func deletePost(postId: String) async throws {
+        guard let currentUserId = try await authRepository.getCurrentUserId() else {
+            throw NSError(domain: "FirestorePostRepository", code: 401, userInfo: [NSLocalizedDescriptionKey: "User must be authenticated to delete post"])
+        }
+        
+        let postRef = postsCollection.document(postId)
+        
+        // Verify the post belongs to current user
+        let postDoc = try await postRef.getDocument()
+        guard postDoc.exists else {
+            throw NSError(domain: "FirestorePostRepository", code: 404, userInfo: [NSLocalizedDescriptionKey: "Post not found"])
+        }
+        
+        guard let postData = postDoc.data(),
+              let postAuthorId = postData["authorId"] as? String else {
+            throw NSError(domain: "FirestorePostRepository", code: 500, userInfo: [NSLocalizedDescriptionKey: "Invalid post data"])
+        }
+        
+        if postAuthorId != currentUserId {
+            throw NSError(domain: "FirestorePostRepository", code: 403, userInfo: [NSLocalizedDescriptionKey: "User can only delete their own posts"])
+        }
+        
+        // Soft delete: set isActive = false
+        // This triggers onPostDelete Cloud Function which removes from feeds and posts collection
+        let updateData: [String: Any] = [
+            "isActive": false
+        ]
+        
+        do {
+            try await postRef.updateData(updateData)
+        } catch {
+            throw NSError(domain: "FirestorePostRepository", code: 500, userInfo: [NSLocalizedDescriptionKey: "Failed to delete post: \(error.localizedDescription)"])
+        }
+    }
+    
     /// Batch check which comments are liked by the current user.
     private func batchCheckCommentLikes(commentIds: [String], postId: String, userId: String) async throws -> Set<String> {
         if commentIds.isEmpty { return Set<String>() }

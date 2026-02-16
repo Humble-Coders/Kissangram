@@ -9,61 +9,67 @@ final class FirestoreStoryRepository: StoryRepository {
     private static let log = Logger(subsystem: "com.kissangram", category: "FirestoreStoryRepo")
     private let firestore = Firestore.firestore(database: "kissangram")
     private let authRepository: AuthRepository
+    private let followRepository: FollowRepository
     
-    init(authRepository: AuthRepository) {
+    init(authRepository: AuthRepository, followRepository: FollowRepository) {
         self.authRepository = authRepository
+        self.followRepository = followRepository
     }
     
     private var storiesCollection: CollectionReference {
         firestore.collection(Self.collectionStories)
     }
-    func createStory(storyData: [String : Any], completionHandler: @escaping @Sendable (Story?, (any Error)?) -> Void) {
+    func createStory(storyData: [String: Any]) async throws -> Story {
+        Self.log.debug("createStory: Starting story creation in Firestore")
+        Self.log.debug("createStory: Story Data Summary:")
+     
         let storyRef = storiesCollection.document()
-               let storyId = storyRef.documentID
+        let storyId = storyRef.documentID
+        Self.log.debug("createStory: Generated Story ID: \(storyId)")
 
-               // Build Firestore document data
-               var documentData: [String: Any] = [:]
+        // Build Firestore document data
+        var documentData: [String: Any] = [:]
 
-               for (key, value) in storyData {
-                   documentData[key] = value
-               }
+        for (key, value) in storyData {
+            documentData[key] = value
+        }
 
-               // Add generated ID
-               documentData["id"] = storyId
+        // Add generated ID
+        documentData["id"] = storyId
 
-               // Server timestamp
-               documentData["createdAt"] = FieldValue.serverTimestamp()
+        // Server timestamp
+        documentData["createdAt"] = FieldValue.serverTimestamp()
 
-               // expiresAt = now + 24h (client-side estimate)
-               let estimatedExpiresAt = Date().addingTimeInterval(24 * 60 * 60)
-               documentData["expiresAt"] = Timestamp(date: estimatedExpiresAt)
+        // expiresAt = now + 24h (client-side estimate)
+        let estimatedExpiresAt = Date().addingTimeInterval(24 * 60 * 60)
+        documentData["expiresAt"] = Timestamp(date: estimatedExpiresAt)
 
-               // 🔑 Bridge async/await → completionHandler
-               Task {
-                   do {
-                       // Create document
-                       try await storyRef.setData(documentData)
+        do {
+            // Create document
+            Self.log.debug("createStory: Sending document to Firestore...")
+            try await storyRef.setData(documentData)
 
-                       // Fetch created document
-                       let doc = try await storyRef.getDocument()
+            Self.log.debug("createStory: Story created successfully in Firestore")
+            Self.log.debug("   - Story ID: \(storyId)")
 
-                       if let story = toStory(from: doc) {
-                           completionHandler(story, nil)
-                       } else {
-                           completionHandler(
-                               nil,
-                               NSError(
-                                   domain: "FirestoreStoryRepository",
-                                   code: 500,
-                                   userInfo: [NSLocalizedDescriptionKey: "Failed to retrieve created story"]
-                               )
-                           )
-                       }
-                   } catch {
-                       completionHandler(nil, error)
-                   }
-               }
-           }
+            // Fetch created document
+            let doc = try await storyRef.getDocument()
+
+            guard let story = toStory(from: doc) else {
+                Self.log.error("createStory: Failed to retrieve created story")
+                throw NSError(
+                    domain: "FirestoreStoryRepository",
+                    code: 500,
+                    userInfo: [NSLocalizedDescriptionKey: "Failed to retrieve created story"]
+                )
+            }
+            
+            return story
+        } catch {
+            Self.log.error("createStory: FAILED - \(error.localizedDescription)")
+            throw error
+        }
+    }
     
 
     
@@ -84,16 +90,34 @@ final class FirestoreStoryRepository: StoryRepository {
         Self.log.debug("getStoryBar: currentUserId=\(uidPrefix)...")
         
         do {
-            // Query storiesFeed subcollection ordered by createdAt DESC
-            let storiesFeedRef = firestore
+            // Get list of followed user IDs from users/{currentUserId}/following
+            let followingSnapshot = try await firestore
                 .collection("users")
                 .document(currentUserId)
-                .collection("storiesFeed")
-                .order(by: "createdAt", descending: true)
+                .collection("following")
+                .getDocuments()
             
-            let snapshot = try await storiesFeedRef.getDocuments()
-            let rawCount = snapshot.documents.count
-            Self.log.debug("getStoryBar: fetched \(rawCount) story documents")
+            var followedUserIds = Set(followingSnapshot.documents.map { $0.documentID })
+            // Always include current user's own ID
+            followedUserIds.insert(currentUserId)
+            
+            Self.log.debug("getStoryBar: found \(followedUserIds.count) users to query (including self)")
+            
+            if followedUserIds.isEmpty {
+                Self.log.debug("getStoryBar: no followed users, returning empty")
+                return []
+            }
+            
+            // Query all active stories from /stories collection
+            // Filter by followed users client-side to avoid whereIn limit of 10
+            let storiesSnapshot = try await firestore
+                .collection("stories")
+                .whereField("isActive", isEqualTo: true)
+                .order(by: "createdAt", descending: true)
+                .getDocuments()
+            
+            let rawCount = storiesSnapshot.documents.count
+            Self.log.debug("getStoryBar: fetched \(rawCount) active story documents")
             
             if rawCount == 0 {
                 return []
@@ -101,9 +125,14 @@ final class FirestoreStoryRepository: StoryRepository {
             
             let currentTime = Int64(Date().timeIntervalSince1970 * 1000)
             
-            // Filter expired stories and parse to Story objects
-            let stories = snapshot.documents.compactMap { doc -> Story? in
+            // Filter by followed users, expired stories, and parse to Story objects
+            let stories = storiesSnapshot.documents.compactMap { doc -> Story? in
                 do {
+                    guard let authorId = doc.get("authorId") as? String,
+                          followedUserIds.contains(authorId) else {
+                        return nil
+                    }
+                    
                     // Check if story is expired
                     if let expiresAtTimestamp = doc.get("expiresAt") as? Timestamp {
                         let expiresAt = Int64(expiresAtTimestamp.dateValue().timeIntervalSince1970 * 1000)
@@ -120,7 +149,7 @@ final class FirestoreStoryRepository: StoryRepository {
                 }
             }
             
-            Self.log.debug("getStoryBar: parsed \(stories.count) valid stories (after filtering expired)")
+            Self.log.debug("getStoryBar: parsed \(stories.count) valid stories (after filtering by followed users and expired)")
             
             if stories.isEmpty {
                 return []
@@ -254,11 +283,121 @@ final class FirestoreStoryRepository: StoryRepository {
     }
 
     func getStoriesForUser(userId: String) async throws -> [Story] {
-        throw NSError(domain: "FirestoreStoryRepository", code: 501, userInfo: [NSLocalizedDescriptionKey: "Not yet implemented"])
+        Self.log.debug("getStoriesForUser: start for userId=\(String(userId.prefix(8)))...")
+        guard let currentUserId = try await authRepository.getCurrentUserId() else {
+            Self.log.warning("getStoriesForUser: currentUserId is nil, returning empty")
+            return []
+        }
+        
+        do {
+            // Check if current user follows the target user
+            let isFollowing: Bool
+            if currentUserId == userId {
+                isFollowing = true // User viewing their own profile
+            } else {
+                do {
+                    let isFollowingResult = try await followRepository.isFollowing(userId: userId)
+                    isFollowing = isFollowingResult.boolValue
+                } catch {
+                    Self.log.error("getStoriesForUser: failed to check follow status: \(error.localizedDescription)")
+                    isFollowing = false
+                }
+            }
+            
+            Self.log.debug("getStoriesForUser: isFollowing=\(isFollowing)")
+            
+            // Build query: authorId == userId, isActive == true
+            var query = firestore
+                .collection("stories")
+                .whereField("authorId", isEqualTo: userId)
+                .whereField("isActive", isEqualTo: true)
+                .order(by: "createdAt", descending: true)
+            
+            // If not following, only show public stories
+            if !isFollowing {
+                query = query.whereField("visibility", isEqualTo: "public")
+            }
+            // If following, show all stories (both public and followers)
+            
+            let snapshot = try await query.getDocuments()
+            let rawCount = snapshot.documents.count
+            Self.log.debug("getStoriesForUser: fetched \(rawCount) story documents")
+            
+            if rawCount == 0 {
+                return []
+            }
+            
+            let currentTime = Int64(Date().timeIntervalSince1970 * 1000)
+            
+            // Filter expired stories and parse to Story objects
+            let stories = snapshot.documents.compactMap { doc -> Story? in
+                do {
+                    // Check if story is expired
+                    if let expiresAtTimestamp = doc.get("expiresAt") as? Timestamp {
+                        let expiresAt = Int64(expiresAtTimestamp.dateValue().timeIntervalSince1970 * 1000)
+                        if expiresAt < currentTime {
+                            Self.log.debug("getStoriesForUser: skipping expired story \(doc.documentID)")
+                            return nil
+                        }
+                    }
+                    
+                    return toStory(from: doc)
+                } catch {
+                    Self.log.error("getStoriesForUser: failed to parse story \(doc.documentID): \(error.localizedDescription)")
+                    return nil
+                }
+            }
+            
+            Self.log.debug("getStoriesForUser: parsed \(stories.count) valid stories (after filtering expired)")
+            
+            if stories.isEmpty {
+                return []
+            }
+            
+            // Batch check views and likes
+            let storyIds = stories.map { $0.id }
+            let viewedStoryIds = try await batchCheckViews(storyIds: storyIds, userId: currentUserId)
+            let likedStoryIds = try await batchCheckLikes(storyIds: storyIds, userId: currentUserId)
+            
+            // Update stories with view/like status
+            let storiesWithStatus = stories.map { story in
+                Story(
+                    id: story.id,
+                    authorId: story.authorId,
+                    authorName: story.authorName,
+                    authorUsername: story.authorUsername,
+                    authorProfileImageUrl: story.authorProfileImageUrl,
+                    authorRole: story.authorRole,
+                    authorVerificationStatus: story.authorVerificationStatus,
+                    media: story.media,
+                    textOverlay: story.textOverlay,
+                    locationName: story.locationName,
+                    visibility: story.visibility,
+                    viewsCount: story.viewsCount,
+                    likesCount: story.likesCount,
+                    isViewedByMe: viewedStoryIds.contains(story.id),
+                    isLikedByMe: likedStoryIds.contains(story.id),
+                    createdAt: story.createdAt,
+                    expiresAt: story.expiresAt
+                )
+            }
+            
+            Self.log.debug("getStoriesForUser: returning \(storiesWithStatus.count) stories")
+            return storiesWithStatus
+            
+        } catch {
+            Self.log.error("getStoriesForUser: failed: \(error.localizedDescription)")
+            throw error
+        }
     }
 
     func getMyStories() async throws -> [Story] {
-        throw NSError(domain: "FirestoreStoryRepository", code: 501, userInfo: [NSLocalizedDescriptionKey: "Not yet implemented"])
+        guard let currentUserId = try await authRepository.getCurrentUserId() else {
+            Self.log.warning("getMyStories: currentUserId is nil, returning empty")
+            return []
+        }
+        // Use getStoriesForUser with current user's ID
+        return try await getStoriesForUser(userId: currentUserId)
     }
     func markStoryAsViewed(storyId: String) async throws {
         guard let currentUserId = try await authRepository.getCurrentUserId() else {

@@ -6,8 +6,10 @@ import androidx.lifecycle.viewModelScope
 import com.kissangram.model.Story
 import com.kissangram.model.UserStories
 import com.kissangram.repository.AndroidAuthRepository
+import com.kissangram.repository.AndroidFollowRepository
 import com.kissangram.repository.AndroidPreferencesRepository
 import com.kissangram.repository.FirestoreStoryRepository
+import com.kissangram.repository.FirestoreUserRepository
 import com.kissangram.usecase.GetStoryBarUseCase
 import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,11 +29,22 @@ class StoryViewModel(
         activity = null,
         preferencesRepository = AndroidPreferencesRepository(application)
     )
-    private val storyRepository = FirestoreStoryRepository(authRepository = authRepository)
+    private val userRepository = FirestoreUserRepository(authRepository = authRepository)
+    private val followRepository = AndroidFollowRepository(
+        authRepository = authRepository,
+        userRepository = userRepository
+    )
+    private val storyRepository = FirestoreStoryRepository(
+        authRepository = authRepository,
+        followRepository = followRepository
+    )
     private val getStoryBarUseCase = GetStoryBarUseCase(storyRepository)
 
     private val _uiState = MutableStateFlow(StoryUiState())
     val uiState: StateFlow<StoryUiState> = _uiState.asStateFlow()
+
+    private val _allStoriesFinished = MutableStateFlow(false)
+    val allStoriesFinished: StateFlow<Boolean> = _allStoriesFinished.asStateFlow()
 
     private var autoAdvanceJob: Job? = null
     private val STORY_DURATION_MS = 5000L // 5 seconds per story
@@ -79,18 +92,19 @@ class StoryViewModel(
         }
     }
 
-    fun nextStory() {
+    fun nextStory(): Boolean {
         val currentState = _uiState.value
-        val currentUserStories = currentState.getCurrentUserStories() ?: return
+        val currentUserStories = currentState.getCurrentUserStories() ?: return false
         
         if (currentState.currentStoryIndex < currentUserStories.stories.size - 1) {
             // Move to next story in current user
             _uiState.value = currentState.copy(currentStoryIndex = currentState.currentStoryIndex + 1)
             startAutoAdvance()
             markCurrentStoryAsViewed()
+            return true
         } else {
             // Move to next user
-            nextUser()
+            return nextUser()
         }
     }
 
@@ -109,7 +123,7 @@ class StoryViewModel(
         }
     }
 
-    fun nextUser() {
+    fun nextUser(): Boolean {
         val currentState = _uiState.value
         if (currentState.currentUserIndex < currentState.userStories.size - 1) {
             _uiState.value = currentState.copy(
@@ -118,6 +132,11 @@ class StoryViewModel(
             )
             startAutoAdvance()
             markCurrentStoryAsViewed()
+            return true
+        } else {
+            // All stories finished
+            _allStoriesFinished.value = true
+            return false
         }
     }
 
@@ -147,7 +166,10 @@ class StoryViewModel(
         autoAdvanceJob?.cancel()
         autoAdvanceJob = viewModelScope.launch {
             delay(STORY_DURATION_MS)
-            nextStory()
+            val hasMore = nextStory()
+            if (!hasMore) {
+                _allStoriesFinished.value = true
+            }
         }
     }
 

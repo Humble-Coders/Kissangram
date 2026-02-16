@@ -24,18 +24,17 @@ function buildFeedEntry(postData, postId) {
 }
 
 /**
- * Build story feed entry from story data (copy fields; omit client-only fields).
- * @param {object} storyData - Raw story document from snap.data()
- * @param {string} storyId - Story document ID
- * @returns {object} Feed document for users/{userId}/storiesFeed/{storyId}
+ * DEPRECATED: Story feed entry builder removed.
+ * Stories are now queried directly from the /stories collection.
+ * This function is kept for reference but is no longer used.
  */
-function buildStoryFeedEntry(storyData, storyId) {
-  const entry = { ...storyData };
-  entry.id = storyId;
-  delete entry.isViewedByMe;
-  delete entry.isLikedByMe;
-  return entry;
-}
+// function buildStoryFeedEntry(storyData, storyId) {
+//   const entry = { ...storyData };
+//   entry.id = storyId;
+//   delete entry.isViewedByMe;
+//   delete entry.isLikedByMe;
+//   return entry;
+// }
 
 /**
  * Fan-out: when a post is created, copy it to the author's feed and to each follower's feed.
@@ -633,76 +632,103 @@ exports.onCommentUpdate = onDocumentUpdated(
 );
 
 /**
- * Fan-out: when a story is created, copy it to the author's storiesFeed and to each follower's storiesFeed.
- * Uses 2nd gen so we can attach to the "kissangram" database (1st gen requires (default) only).
- * Note: Both "public" and "followers" visibility stories go to followers' feeds.
- * "Public" just means the story is viewable on the author's profile by anyone.
+ * When a post is updated, check if it was soft-deleted (isActive = false).
+ * This handles the soft delete approach where we set isActive = false instead of deleting.
+ * When detected, removes the post from all follower feeds, deletes the post document,
+ * and decrements the author's postsCount.
  */
-exports.onStoryCreate = onDocumentCreated(
+exports.onPostDelete = onDocumentUpdated(
   {
-    document: "stories/{storyId}",
+    document: "posts/{postId}",
     database: "kissangram",
   },
   async (event) => {
-    const snapshot = event.data;
-    if (!snapshot) {
-      console.warn("onStoryCreate: no data");
-      return null;
-    }
-    const storyId = event.params.storyId;
-    const storyData = snapshot.data();
-    const authorId = storyData.authorId;
-
-    if (!authorId) {
-      console.warn("onStoryCreate: story missing authorId", { storyId });
+    const before = event.data.before;
+    const after = event.data.after;
+    if (!before || !after) {
       return null;
     }
 
-    try {
-      const storyFeedEntry = buildStoryFeedEntry(storyData, storyId);
+    const beforeData = before.data();
+    const afterData = after.data();
+    const { postId } = event.params;
 
-      // Get all follower IDs from users/{authorId}/followers
-      const followersSnap = await db
-        .collection("users")
-        .doc(authorId)
-        .collection("followers")
-        .get();
+    // Check if post was soft-deleted (isActive changed from true to false)
+    if (beforeData.isActive === true && afterData.isActive === false) {
+      try {
+        const authorId = afterData.authorId;
 
-      const recipientIds = followersSnap.docs.map((d) => d.id);
-      // Always include the author in their own storiesFeed
-      if (!recipientIds.includes(authorId)) {
-        recipientIds.push(authorId);
-      }
-      // If no followers, at least add to author's feed
-      if (recipientIds.length === 0) {
-        recipientIds.push(authorId);
-      }
-
-      // Batch writes: users/{userId}/storiesFeed/{storyId}.set(storyFeedEntry), max 500 per batch
-      for (let i = 0; i < recipientIds.length; i += BATCH_SIZE) {
-        const chunk = recipientIds.slice(i, i + BATCH_SIZE);
-        const batch = db.batch();
-        for (const userId of chunk) {
-          const storiesFeedRef = db
-            .collection("users")
-            .doc(userId)
-            .collection("storiesFeed")
-            .doc(storyId);
-          batch.set(storiesFeedRef, storyFeedEntry);
+        if (!authorId) {
+          console.warn("onPostDelete: post missing authorId", { postId });
+          return null;
         }
-        await batch.commit();
-      }
 
-      console.log("onStoryCreate: fan-out complete", {
-        storyId,
-        authorId,
-        recipientCount: recipientIds.length,
-        visibility: storyData.visibility,
-      });
-      return null;
-    } catch (err) {
-      console.error("onStoryCreate failed", { storyId, authorId, err });
-      throw err;
+        // 1. Get all follower IDs from users/{authorId}/followers
+        const followersSnap = await db
+          .collection("users")
+          .doc(authorId)
+          .collection("followers")
+          .get();
+
+        const recipientIds = followersSnap.docs.map((d) => d.id);
+        // Include author's own feed
+        if (!recipientIds.includes(authorId)) {
+          recipientIds.push(authorId);
+        }
+        if (recipientIds.length === 0) {
+          recipientIds.push(authorId);
+        }
+
+        // 2. Delete post from all feeds (batch delete, max 500 per batch)
+        for (let i = 0; i < recipientIds.length; i += BATCH_SIZE) {
+          const chunk = recipientIds.slice(i, i + BATCH_SIZE);
+          const batch = db.batch();
+          for (const userId of chunk) {
+            const feedRef = db
+              .collection("users")
+              .doc(userId)
+              .collection("feed")
+              .doc(postId);
+            batch.delete(feedRef);
+          }
+          await batch.commit();
+        }
+
+        // 3. Decrement author's postsCount
+        await db.collection("users").doc(authorId).update({
+          postsCount: admin.firestore.FieldValue.increment(-1),
+        });
+
+        // 4. Hard delete the post document
+        await db.collection("posts").doc(postId).delete();
+
+        console.log("onPostDelete: post deleted successfully", {
+          postId,
+          authorId,
+          feedCount: recipientIds.length,
+        });
+        return null;
+      } catch (err) {
+        console.error("onPostDelete failed", { postId, err });
+        throw err;
+      }
     }
+
+    return null;
   }
 );
+
+/**
+ * DEPRECATED: Story fan-out Cloud Function removed.
+ * Stories are now queried directly from the /stories collection based on follow relationships.
+ * This function is kept for reference but is no longer active.
+ */
+// exports.onStoryCreate = onDocumentCreated(
+//   {
+//     document: "stories/{storyId}",
+//     database: "kissangram",
+//   },
+//   async (event) => {
+//     // Function disabled - stories are now queried directly from /stories collection
+//   }
+// );

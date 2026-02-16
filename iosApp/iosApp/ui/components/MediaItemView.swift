@@ -38,7 +38,6 @@ struct MediaItemView: View {
             } else {
                 FeedVideoPlayer(
                     media: media,
-                    isVisible: isVisible,
                     onTap: onTap
                 )
                 .frame(maxWidth: .infinity)

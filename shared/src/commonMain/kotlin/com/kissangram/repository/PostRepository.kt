@@ -97,4 +97,12 @@ interface PostRepository {
      */
     @Throws(Exception::class)
     suspend fun createPost(postData: Map<String, Any?>): Post
+    
+    /**
+     * Delete a post. This will trigger a Cloud Function to remove the post
+     * from all follower feeds and the posts collection.
+     * @param postId The ID of the post to delete
+     */
+    @Throws(Exception::class)
+    suspend fun deletePost(postId: String)
 }

@@ -6,6 +6,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -41,7 +42,7 @@ fun MediaCarousel(
     // Multiple media items - show carousel with HorizontalPager
     val pagerState = rememberPagerState(pageCount = { media.size })
     
-    Column(modifier = modifier) {
+    Box(modifier = modifier) {
         HorizontalPager(
             state = pagerState,
             modifier = Modifier
@@ -56,24 +57,25 @@ fun MediaCarousel(
             )
         }
         
-        // Dot indicators
+        // Dot indicators overlaid on bottom of media - transparent background
         Row(
             modifier = Modifier
+                .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .padding(vertical = 8.dp),
+                .padding(horizontal = 12.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.Center
         ) {
             repeat(media.size) { index ->
                 val isSelected = index == pagerState.currentPage
                 Surface(
                     modifier = Modifier
-                        .size(if (isSelected) 8.dp else 6.dp)
+                        .size(if (isSelected) 6.dp else 5.dp)
                         .padding(horizontal = 3.dp),
                     shape = CircleShape,
                     color = if (isSelected) {
-                        Color.White.copy(alpha = 0.9f)
+                        Color.White
                     } else {
-                        Color.White.copy(alpha = 0.4f)
+                        Color.White.copy(alpha = 0.5f)
                     }
                 ) {}
             }

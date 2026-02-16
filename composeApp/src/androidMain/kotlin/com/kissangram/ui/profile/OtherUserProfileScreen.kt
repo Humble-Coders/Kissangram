@@ -51,7 +51,7 @@ private val RejectedRed = Color(0xFFBC4749)
 fun OtherUserProfileScreen(
     userId: String,
     onBackClick: () -> Unit = {},
-    onPostClick: (String) -> Unit = {},
+    onPostClick: (String, Post?) -> Unit = { _, _ -> },
     viewModel: OtherUserProfileViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -156,7 +156,7 @@ private fun OtherUserProfileContent(
     isFollowing: Boolean,
     isFollowLoading: Boolean,
     onFollowClick: () -> Unit,
-    onPostClick: (String) -> Unit
+    onPostClick: (String, Post?) -> Unit
 ) {
     Column(
         modifier = Modifier

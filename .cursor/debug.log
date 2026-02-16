@@ -1,0 +1,75 @@
+{"data":{"hasMedia":true,"postId":"tiklnbu2tXGoDVPSozIG"},"message":"Tap gesture detected","timestamp":1771224351621,"location":"PostThumbnailItem:392"}
+{"message":"onPostClick called from grid","timestamp":1771224351622,"data":{"postId":"tiklnbu2tXGoDVPSozIG","hasPost":true,"totalPosts":3},"location":"PostThumbnailGrid:319"}
+{"message":"onPostClick received in ProfileContent","data":{"postId":"tiklnbu2tXGoDVPSozIG","hasPost":true,"postsCount":3},"location":"ProfileContent:256","timestamp":1771224351622}
+{"message":"onPostClick received","timestamp":1771224351624,"data":{"postsCount":3,"postId":"tiklnbu2tXGoDVPSozIG","hasPost":true},"location":"ProfileView:50"}
+{"timestamp":1771224354254,"data":{"hasMedia":true,"postId":"tiklnbu2tXGoDVPSozIG"},"message":"Tap gesture detected","location":"PostThumbnailItem:392"}
+{"data":{"hasPost":true,"postId":"tiklnbu2tXGoDVPSozIG","totalPosts":3},"timestamp":1771224354254,"location":"PostThumbnailGrid:319","message":"onPostClick called from grid"}
+{"timestamp":1771224354256,"message":"onPostClick received in ProfileContent","location":"ProfileContent:256","data":{"hasPost":true,"postId":"tiklnbu2tXGoDVPSozIG","postsCount":3}}
+{"message":"onPostClick received","data":{"postsCount":3,"postId":"tiklnbu2tXGoDVPSozIG","hasPost":true},"timestamp":1771224354259,"location":"ProfileView:50"}
+{"location":"PostThumbnailItem:392","timestamp":1771224354845,"message":"Tap gesture detected","data":{"postId":"FzNJrA1IcGdAsiQsDOrs","hasMedia":true}}
+{"message":"onPostClick called from grid","data":{"postId":"FzNJrA1IcGdAsiQsDOrs","totalPosts":3,"hasPost":true},"timestamp":1771224354846,"location":"PostThumbnailGrid:319"}
+{"location":"ProfileContent:256","message":"onPostClick received in ProfileContent","data":{"hasPost":true,"postsCount":3,"postId":"FzNJrA1IcGdAsiQsDOrs"},"timestamp":1771224354847}
+{"data":{"hasPost":true,"postId":"FzNJrA1IcGdAsiQsDOrs","postsCount":3},"message":"onPostClick received","timestamp":1771224354848,"location":"ProfileView:50"}
+{"location":"PostThumbnailItem:392","timestamp":1771224356360,"message":"Tap gesture detected","data":{"hasMedia":true,"postId":"FzNJrA1IcGdAsiQsDOrs"}}
+{"timestamp":1771224356361,"data":{"hasPost":true,"postId":"FzNJrA1IcGdAsiQsDOrs","totalPosts":3},"location":"PostThumbnailGrid:319","message":"onPostClick called from grid"}
+{"message":"onPostClick received in ProfileContent","location":"ProfileContent:256","timestamp":1771224356361,"data":{"postsCount":3,"postId":"FzNJrA1IcGdAsiQsDOrs","hasPost":true}}
+{"data":{"postsCount":3,"postId":"FzNJrA1IcGdAsiQsDOrs","hasPost":true},"timestamp":1771224356362,"location":"ProfileView:50","message":"onPostClick received"}
+{"location":"PostThumbnailItem:392","message":"Tap gesture detected","data":{"postId":"WhIpIZkQDvgnKscWCvOD","hasMedia":true},"timestamp":1771224356910}
+{"location":"PostThumbnailGrid:319","message":"onPostClick called from grid","data":{"postId":"WhIpIZkQDvgnKscWCvOD","hasPost":true,"totalPosts":3},"timestamp":1771224356911}
+{"location":"ProfileContent:256","message":"onPostClick received in ProfileContent","data":{"postId":"WhIpIZkQDvgnKscWCvOD","hasPost":true,"postsCount":3},"timestamp":1771224356912}
+{"location":"ProfileView:50","message":"onPostClick received","data":{"postId":"WhIpIZkQDvgnKscWCvOD","hasPost":true,"postsCount":3},"timestamp":1771224356913}
+{"location":"ProfileView:90","message":"ProfileView appeared with posts","timestamp":1771224682741,"data":{"userId":"yrDRV04o3QapDiiiapLuuRQb5oC3","postsCount":0}}
+{"data":{"hasMedia":true,"postId":"tiklnbu2tXGoDVPSozIG"},"timestamp":1771224686167,"location":"PostThumbnailItem:395","message":"Button action triggered"}
+{"location":"PostThumbnailGrid:319","data":{"totalPosts":3,"postId":"tiklnbu2tXGoDVPSozIG","hasPost":true},"timestamp":1771224686170,"message":"onPostClick called from grid"}
+{"data":{"postId":"tiklnbu2tXGoDVPSozIG","hasPost":true,"postsCount":3},"message":"onPostClick received in ProfileContent","timestamp":1771224686170,"location":"ProfileContent:256"}
+{"message":"onPostClick received","timestamp":1771224686171,"location":"ProfileView:75","data":{"hasPost":true,"postsCount":3,"postId":"tiklnbu2tXGoDVPSozIG"}}
+{"data":{"hasMedia":true,"postId":"tiklnbu2tXGoDVPSozIG"},"timestamp":1771224687250,"location":"PostThumbnailItem:395","message":"Button action triggered"}
+{"message":"onPostClick called from grid","data":{"hasPost":true,"totalPosts":3,"postId":"tiklnbu2tXGoDVPSozIG"},"location":"PostThumbnailGrid:319","timestamp":1771224687251}
+{"message":"onPostClick received in ProfileContent","data":{"hasPost":true,"postsCount":3,"postId":"tiklnbu2tXGoDVPSozIG"},"location":"ProfileContent:256","timestamp":1771224687251}
+{"message":"onPostClick received","data":{"hasPost":true,"postsCount":3,"postId":"tiklnbu2tXGoDVPSozIG"},"location":"ProfileView:75","timestamp":1771224687251}
+{"data":{"hasMedia":true,"postId":"WhIpIZkQDvgnKscWCvOD"},"timestamp":1771224688234,"message":"Button action triggered","location":"PostThumbnailItem:395"}
+{"data":{"hasPost":true,"totalPosts":3,"postId":"WhIpIZkQDvgnKscWCvOD"},"timestamp":1771224688234,"message":"onPostClick called from grid","location":"PostThumbnailGrid:319"}
+{"data":{"postsCount":3,"hasPost":true,"postId":"WhIpIZkQDvgnKscWCvOD"},"timestamp":1771224688235,"message":"onPostClick received in ProfileContent","location":"ProfileContent:256"}
+{"data":{"postsCount":3,"hasPost":true,"postId":"WhIpIZkQDvgnKscWCvOD"},"timestamp":1771224688235,"message":"onPostClick received","location":"ProfileView:75"}
+{"message":"Button action triggered","data":{"postId":"FzNJrA1IcGdAsiQsDOrs","hasMedia":true},"location":"PostThumbnailItem:395","timestamp":1771224689884}
+{"location":"PostThumbnailGrid:319","timestamp":1771224689885,"message":"onPostClick called from grid","data":{"postId":"FzNJrA1IcGdAsiQsDOrs","hasPost":true,"totalPosts":3}}
+{"location":"ProfileContent:256","timestamp":1771224689885,"data":{"postsCount":3,"hasPost":true,"postId":"FzNJrA1IcGdAsiQsDOrs"},"message":"onPostClick received in ProfileContent"}
+{"location":"ProfileView:75","timestamp":1771224689885,"data":{"postsCount":3,"hasPost":true,"postId":"FzNJrA1IcGdAsiQsDOrs"},"message":"onPostClick received"}
+{"location":"PostThumbnailItem:395","data":{"postId":"tiklnbu2tXGoDVPSozIG","hasMedia":true},"timestamp":1771224690417,"message":"Button action triggered"}
+{"location":"PostThumbnailGrid:319","timestamp":1771224690418,"message":"onPostClick called from grid","data":{"postId":"tiklnbu2tXGoDVPSozIG","hasPost":true,"totalPosts":3}}
+{"location":"ProfileContent:256","timestamp":1771224690419,"message":"onPostClick received in ProfileContent","data":{"hasPost":true,"postsCount":3,"postId":"tiklnbu2tXGoDVPSozIG"}}
+{"location":"ProfileView:75","timestamp":1771224690420,"message":"onPostClick received","data":{"hasPost":true,"postsCount":3,"postId":"tiklnbu2tXGoDVPSozIG"}}
+{"location":"ProfileView:90","data":{"userId":"yrDRV04o3QapDiiiapLuuRQb5oC3","postsCount":0},"timestamp":1771225049727,"message":"ProfileView appeared with posts"}
+{"location":"PostThumbnailItem:395","message":"Button action triggered","timestamp":1771225053135,"data":{"postId":"tiklnbu2tXGoDVPSozIG","hasMedia":true}}
+{"message":"onPostClick called from grid","location":"PostThumbnailGrid:319","timestamp":1771225053140,"data":{"hasPost":true,"totalPosts":3,"postId":"tiklnbu2tXGoDVPSozIG"}}
+{"location":"ProfileContent:256","timestamp":1771225053141,"message":"onPostClick received in ProfileContent","data":{"hasPost":true,"postsCount":3,"postId":"tiklnbu2tXGoDVPSozIG"}}
+{"message":"onPostClick received","location":"ProfileView:75","timestamp":1771225053141,"data":{"hasPost":true,"postsCount":3,"postId":"tiklnbu2tXGoDVPSozIG"}}
+{"location":"PostThumbnailItem:395","message":"Button action triggered","data":{"hasMedia":true,"postId":"WhIpIZkQDvgnKscWCvOD"},"timestamp":1771225055759}
+{"message":"onPostClick called from grid","timestamp":1771225055760,"location":"PostThumbnailGrid:319","data":{"hasPost":true,"postId":"WhIpIZkQDvgnKscWCvOD","totalPosts":3}}
+{"location":"ProfileContent:256","message":"onPostClick received in ProfileContent","data":{"hasPost":true,"postId":"WhIpIZkQDvgnKscWCvOD","postsCount":3},"timestamp":1771225055761}
+{"location":"ProfileView:75","message":"onPostClick received","data":{"hasPost":true,"postId":"WhIpIZkQDvgnKscWCvOD","postsCount":3},"timestamp":1771225055762}
+{"data":{"postId":"FzNJrA1IcGdAsiQsDOrs","hasMedia":true},"timestamp":1771225119416,"message":"Button action triggered","location":"PostThumbnailItem:395"}
+{"data":{"totalPosts":3,"postId":"FzNJrA1IcGdAsiQsDOrs","hasPost":true},"message":"onPostClick called from grid","timestamp":1771225119423,"location":"PostThumbnailGrid:319"}
+{"message":"onPostClick received in ProfileContent","data":{"hasPost":true,"postsCount":3,"postId":"FzNJrA1IcGdAsiQsDOrs"},"timestamp":1771225119424,"location":"ProfileContent:256"}
+{"location":"ProfileView:75","data":{"postsCount":3,"postId":"FzNJrA1IcGdAsiQsDOrs","hasPost":true},"timestamp":1771225119425,"message":"onPostClick received"}
+{"timestamp":1771225119966,"data":{"postId":"tiklnbu2tXGoDVPSozIG","hasMedia":true},"message":"Button action triggered","location":"PostThumbnailItem:395"}
+{"location":"PostThumbnailGrid:319","data":{"postId":"tiklnbu2tXGoDVPSozIG","hasPost":true,"totalPosts":3},"message":"onPostClick called from grid","timestamp":1771225119966}
+{"location":"ProfileContent:256","data":{"postId":"tiklnbu2tXGoDVPSozIG","hasPost":true,"postsCount":3},"message":"onPostClick received in ProfileContent","timestamp":1771225119967}
+{"location":"ProfileView:75","data":{"postId":"tiklnbu2tXGoDVPSozIG","hasPost":true,"postsCount":3},"message":"onPostClick received","timestamp":1771225119967}
+{"message":"Button action triggered","data":{"hasMedia":true,"postId":"FzNJrA1IcGdAsiQsDOrs"},"location":"PostThumbnailItem:395","timestamp":1771225120366}
+{"message":"onPostClick called from grid","data":{"totalPosts":3,"postId":"FzNJrA1IcGdAsiQsDOrs","hasPost":true},"location":"PostThumbnailGrid:319","timestamp":1771225120366}
+{"message":"onPostClick received in ProfileContent","data":{"postsCount":3,"postId":"FzNJrA1IcGdAsiQsDOrs","hasPost":true},"location":"ProfileContent:256","timestamp":1771225120366}
+{"message":"onPostClick received","data":{"postsCount":3,"postId":"FzNJrA1IcGdAsiQsDOrs","hasPost":true},"location":"ProfileView:75","timestamp":1771225120367}
+{"message":"Button action triggered","timestamp":1771225120850,"data":{"hasMedia":true,"postId":"WhIpIZkQDvgnKscWCvOD"},"location":"PostThumbnailItem:395"}
+{"message":"onPostClick called from grid","timestamp":1771225120850,"data":{"totalPosts":3,"hasPost":true,"postId":"WhIpIZkQDvgnKscWCvOD"},"location":"PostThumbnailGrid:319"}
+{"message":"onPostClick received in ProfileContent","timestamp":1771225120850,"data":{"postsCount":3,"hasPost":true,"postId":"WhIpIZkQDvgnKscWCvOD"},"location":"ProfileContent:256"}
+{"message":"onPostClick received","timestamp":1771225120850,"data":{"postsCount":3,"hasPost":true,"postId":"WhIpIZkQDvgnKscWCvOD"},"location":"ProfileView:75"}
+{"message":"ProfileView appeared with posts","location":"ProfileView:90","timestamp":1771225223371,"data":{"postsCount":0,"userId":"yrDRV04o3QapDiiiapLuuRQb5oC3"}}
+{"data":{"postId":"tiklnbu2tXGoDVPSozIG","hasMedia":true},"location":"PostThumbnailItem:395","timestamp":1771225226545,"message":"Button action triggered"}
+{"timestamp":1771225226549,"message":"onPostClick called from grid","location":"PostThumbnailGrid:319","data":{"totalPosts":3,"postId":"tiklnbu2tXGoDVPSozIG","hasPost":true}}
+{"timestamp":1771225226549,"message":"onPostClick received in ProfileContent","location":"ProfileContent:256","data":{"postId":"tiklnbu2tXGoDVPSozIG","postsCount":3,"hasPost":true}}
+{"message":"onPostClick received","timestamp":1771225226550,"data":{"postId":"tiklnbu2tXGoDVPSozIG","postsCount":3,"hasPost":true},"location":"ProfileView:75"}
+{"location":"PostThumbnailItem:395","message":"Button action triggered","data":{"postId":"WhIpIZkQDvgnKscWCvOD","hasMedia":true},"timestamp":1771225227881}
+{"location":"PostThumbnailGrid:319","timestamp":1771225227882,"message":"onPostClick called from grid","data":{"postId":"WhIpIZkQDvgnKscWCvOD","hasPost":true,"totalPosts":3}}
+{"location":"ProfileContent:256","message":"onPostClick received in ProfileContent","data":{"postId":"WhIpIZkQDvgnKscWCvOD","postsCount":3,"hasPost":true},"timestamp":1771225227884}
+{"location":"ProfileView:75","message":"onPostClick received","data":{"postId":"WhIpIZkQDvgnKscWCvOD","postsCount":3,"hasPost":true},"timestamp":1771225227884}

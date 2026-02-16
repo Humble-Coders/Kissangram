@@ -7,7 +7,7 @@ private let expertGreen = Color(red: 0.455, green: 0.765, blue: 0.396)
 struct OtherUserProfileView: View {
     let userId: String
     var onBackClick: () -> Void = {}
-    var onPostClick: (String) -> Void = { _ in }
+    var onPostClick: (String, Post?) -> Void = { _, _ in }
     
     @StateObject private var viewModel = OtherUserProfileViewModel()
 
@@ -85,7 +85,7 @@ struct OtherUserProfileContent: View {
     let isFollowing: Bool
     let isFollowLoading: Bool
     let onFollowClick: () -> Void
-    let onPostClick: (String) -> Void
+    let onPostClick: (String, Post?) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 27) {

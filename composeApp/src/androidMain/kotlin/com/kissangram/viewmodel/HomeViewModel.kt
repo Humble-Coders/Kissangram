@@ -46,7 +46,10 @@ class HomeViewModel(
         authRepository = authRepository,
         userRepository = userRepository
     )
-    private val storyRepository = FirestoreStoryRepository(authRepository = authRepository)
+    private val storyRepository = FirestoreStoryRepository(
+        authRepository = authRepository,
+        followRepository = followRepository
+    )
     
     // Use cases
     private val getHomeFeedUseCase = GetHomeFeedUseCase(feedRepository)

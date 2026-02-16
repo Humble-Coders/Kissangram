@@ -15,6 +15,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -37,28 +38,35 @@ fun StoriesSection(
         modifier = Modifier
             .fillMaxWidth()
             .background(BackgroundColor)
-            .padding(top = 13.dp, bottom = 13.dp)
     ) {
-        // Section Title
-        Text(
-            text = "Today in Nearby Fields",
-            fontSize = 18.sp,
-            fontWeight = FontWeight.Bold,
-            color = TextPrimary,
-            modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp),
-            fontFamily = androidx.compose.ui.text.font.FontFamily.Serif
-        )
-        
+        // Section Title - with full width container to match iOS HStack behavior
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp)
+                .padding(top = 13.dp, bottom = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = "Today in Nearby Fields",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary,
+                fontFamily = androidx.compose.ui.text.font.FontFamily.Serif
+            )
+            Spacer(modifier = Modifier.weight(1f))
+        }
+
         // Horizontal Story List
         LazyRow(
-            contentPadding = PaddingValues(horizontal = 18.dp),
+            contentPadding = PaddingValues(start = 18.dp, end = 18.dp, bottom = 13.dp),
             horizontalArrangement = Arrangement.spacedBy(11.dp)
         ) {
             // Create Story Card (first item)
             item {
                 CreateStoryCard(onClick = onCreateStoryClick)
             }
-            
+
             // Other stories
             items(stories) { userStory ->
                 StoryCard(
@@ -68,14 +76,13 @@ fun StoriesSection(
             }
         }
     }
-    
+
     // Divider
     HorizontalDivider(
         color = Color.Black.copy(alpha = 0.05f),
         thickness = 0.5.dp
     )
 }
-
 @Composable
 private fun StoryCard(
     userStory: UserStories,
@@ -85,24 +92,27 @@ private fun StoryCard(
     val gradientBrush = Brush.verticalGradient(
         colors = listOf(PrimaryGreen, AccentYellow)
     )
-    
-    Surface(
-        onClick = onClick,
+
+    Box(
         modifier = Modifier
             .width(120.dp)
-            .height(193.dp),
-        shape = RoundedCornerShape(18.dp),
-        color = Color.White,
-        shadowElevation = 2.dp
+            .height(193.dp)
+            .shadow(2.dp, RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(18.dp))
+            .background(Color.White)
+            .clickable(onClick = onClick)
     ) {
-        Column {
-            // Story Image
+        Column(
+            modifier = Modifier.fillMaxSize()
+        ) {
+
+            // STORY IMAGE
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(126.dp)
             ) {
-                // Background Image
+
                 AsyncImage(
                     model = story?.media?.url ?: userStory.userProfileImageUrl,
                     contentDescription = null,
@@ -111,7 +121,7 @@ private fun StoryCard(
                         .clip(RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp)),
                     contentScale = ContentScale.Crop
                 )
-                
+
                 // Gradient overlay
                 Box(
                     modifier = Modifier
@@ -126,8 +136,8 @@ private fun StoryCard(
                             )
                         )
                 )
-                
-                // User Avatar with gradient border
+
+                // Avatar
                 Box(
                     modifier = Modifier
                         .padding(9.dp)
@@ -163,31 +173,32 @@ private fun StoryCard(
                         }
                     }
                 }
-                
+
                 // Today badge
-                Surface(
+                Box(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .padding(9.dp),
-                    shape = RoundedCornerShape(4.dp),
-                    color = AccentYellow.copy(alpha = 0.9f)
+                        .padding(9.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(AccentYellow.copy(alpha = 0.9f))
+                        .padding(horizontal = 7.dp, vertical = 6.dp)
                 ) {
                     Text(
                         text = "Today",
-                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 6.dp),
                         fontSize = 10.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = TextPrimary
                     )
                 }
             }
-            
-            // User Info
+
+            // USER INFO — CENTERED
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 9.dp, vertical = 9.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                    .weight(1f),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
             ) {
                 Text(
                     text = userStory.userName,
@@ -198,17 +209,17 @@ private fun StoryCard(
                     overflow = TextOverflow.Ellipsis,
                     textAlign = TextAlign.Center
                 )
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                // Crop tag
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = PrimaryGreen.copy(alpha = 0.08f)
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(PrimaryGreen.copy(alpha = 0.08f))
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
                 ) {
                     Text(
-                        text = "🌾 Wheat",
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        text = "🫵View",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = PrimaryGreen
@@ -226,30 +237,32 @@ private fun CreateStoryCard(
     val gradientBrush = Brush.verticalGradient(
         colors = listOf(PrimaryGreen, AccentYellow)
     )
-    
-    Surface(
-        onClick = onClick,
+
+    Box(
         modifier = Modifier
             .width(120.dp)
-            .height(193.dp),
-        shape = RoundedCornerShape(18.dp),
-        color = Color.White,
-        shadowElevation = 2.dp
+            .height(193.dp)
+            .shadow(2.dp, RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(18.dp))
+            .background(Color.White)
+            .clickable(onClick = onClick)
     ) {
         Column(
             modifier = Modifier.fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Story Image Area with gradient background
+
+            // Top image area
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(126.dp)
-                    .background(gradientBrush, RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp)),
+                    .background(
+                        gradientBrush,
+                        RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp)
+                    ),
                 contentAlignment = Alignment.Center
             ) {
-                // Plus icon
                 Icon(
                     imageVector = Icons.Default.Add,
                     contentDescription = "Create Story",
@@ -257,34 +270,33 @@ private fun CreateStoryCard(
                     modifier = Modifier.size(48.dp)
                 )
             }
-            
-            // User Info
+
+            // Bottom info area — CENTERED
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 9.dp, vertical = 9.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                    .weight(1f),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
             ) {
                 Text(
                     text = "Your Story",
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = TextPrimary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                     textAlign = TextAlign.Center
                 )
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                // Add Story tag
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = PrimaryGreen.copy(alpha = 0.08f)
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(PrimaryGreen.copy(alpha = 0.08f))
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
                 ) {
                     Text(
                         text = "+ Add",
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = PrimaryGreen

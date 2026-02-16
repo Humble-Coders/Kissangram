@@ -1,17 +1,14 @@
 import SwiftUI
-import AVKit
 import AVFoundation
 import Shared
 
 /**
- * Video player component for feed videos
- * Auto-plays when visible, muted by default.
- * Player is created once in init (from cache) and reused—avoids re-construction on appear
- * and state-triggered re-renders that cause scroll lag.
+ * Video player component for feed videos.
+ * No autoplay—user taps the play button to start (YouTube-style).
+ * Uses AVPlayerLayer for lightweight teardown.
  */
 struct FeedVideoPlayer: View {
     let media: PostMedia
-    let isVisible: Bool
     let onTap: () -> Void
     let player: AVPlayer
     
@@ -20,9 +17,8 @@ struct FeedVideoPlayer: View {
     @State private var isMuted = true
     @State private var showThumbnail = true
     
-    init(media: PostMedia, isVisible: Bool, onTap: @escaping () -> Void) {
+    init(media: PostMedia, onTap: @escaping () -> Void) {
         self.media = media
-        self.isVisible = isVisible
         self.onTap = onTap
         let url = URL(string: ensureHttps(media.url)) ?? URL(fileURLWithPath: "")
         self.player = VideoPlayerCache.shared.player(for: url)
@@ -30,8 +26,8 @@ struct FeedVideoPlayer: View {
     
     var body: some View {
         ZStack {
-            // Video layer — player always exists (from init), no conditional/state-triggered layout
-            VideoPlayer(player: player)
+            // AVPlayerLayer—lightweight, cheap teardown when cell scrolls out
+            AVPlayerLayerView(player: player)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()
                 .onTapGesture { onTap() }
@@ -48,20 +44,17 @@ struct FeedVideoPlayer: View {
             .allowsHitTesting(showThumbnail)
             .animation(nil, value: showThumbnail)
             
-            // Play/pause button — use opacity instead of conditional
+            // YouTube-style play/pause button — always visible, user taps to play
             Button(action: { togglePlayPause() }) {
                 ZStack {
                     Circle()
                         .fill(Color.black.opacity(0.6))
                         .frame(width: 56, height: 56)
-                    Image(systemName: "play.fill")
+                    Image(systemName: isPlaying ? "pause.fill" : "play.fill")
                         .font(.system(size: 24))
                         .foregroundColor(.white)
                 }
             }
-            .opacity(isPlaying ? 0 : 1)
-            .allowsHitTesting(!isPlaying)
-            .animation(nil, value: isPlaying)
             
             // Volume control button (top-right)
             VStack {
@@ -85,7 +78,7 @@ struct FeedVideoPlayer: View {
                 Spacer()
             }
         }
-        .animation(nil, value: isVisible)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
             player.isMuted = isMuted
             player.actionAtItemEnd = .none
@@ -99,26 +92,11 @@ struct FeedVideoPlayer: View {
                     player.play()
                 }
             }
-            if isVisible {
-                startPlaying()
-            }
         }
         .onDisappear {
             if let obs = loopObserver {
                 NotificationCenter.default.removeObserver(obs)
                 loopObserver = nil
-            }
-            pausePlayer()
-        }
-        .onChange(of: isVisible) { newValue in
-            var t = Transaction()
-            t.animation = nil
-            withTransaction(t) {
-                if newValue {
-                    startPlaying()
-                } else {
-                    pausePlayer()
-                }
             }
         }
     }

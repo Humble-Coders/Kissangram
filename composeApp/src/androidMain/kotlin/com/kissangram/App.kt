@@ -2,7 +2,9 @@ package com.kissangram
 
 import android.annotation.SuppressLint
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -21,7 +23,6 @@ import androidx.navigation.navArgument
 import com.google.firebase.auth.FirebaseAuth
 import com.kissangram.navigation.Screen
 import com.kissangram.navigation.PostCache
-import com.kissangram.model.Post
 import com.kissangram.repository.AndroidPreferencesRepository
 import com.kissangram.ui.auth.ExpertDocumentUploadScreen
 import com.kissangram.ui.auth.NameScreen
@@ -42,6 +43,7 @@ import com.kissangram.ui.search.SearchScreen
 import com.kissangram.ui.createpost.CreatePostScreen
 import com.kissangram.ui.createstory.CreateStoryScreen
 import com.kissangram.repository.AndroidAuthRepository
+import com.kissangram.repository.AndroidFollowRepository
 import com.kissangram.repository.AndroidStorageRepository
 import com.kissangram.repository.FirestoreUserRepository
 import com.kissangram.repository.FirestoreStoryRepository
@@ -50,6 +52,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.unit.dp
 
 @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
 @Composable
@@ -144,20 +147,32 @@ fun App() {
                         }
                     )
                 }
-            ) {
+            ) { paddingValues ->
                 Box(modifier = Modifier.fillMaxSize()) {
-                    NavigationGraph(navController = navController, startDestination = destination)
+                    NavigationGraph(
+                        navController = navController,
+                        startDestination = destination,
+                        bottomNavPadding = paddingValues
+                    )
                 }
             }
         } else {
             // Show screens without bottom nav (auth flow, edit profile, create story, user profile)
-            NavigationGraph(navController = navController, startDestination = destination)
+            NavigationGraph(
+                navController = navController,
+                startDestination = destination,
+                bottomNavPadding = PaddingValues(0.dp)
+            )
         }
     }
 }
 
 @Composable
-private fun NavigationGraph(navController: NavHostController, startDestination: String) {
+private fun NavigationGraph(
+    navController: NavHostController,
+    startDestination: String,
+    bottomNavPadding: PaddingValues
+) {
     // Track if profile should reload (after save from EditProfile)
     var profileReloadKey by remember { mutableStateOf(0) }
     
@@ -283,7 +298,8 @@ private fun NavigationGraph(navController: NavHostController, startDestination: 
                 onNavigateToPostDetail = { postId, post -> 
                     post?.let { PostCache.put(postId, it) }
                     navController.navigate(Screen.buildPostDetailRoute(postId))
-                }
+                },
+                bottomNavPadding = bottomNavPadding
             )
         }
         
@@ -291,7 +307,8 @@ private fun NavigationGraph(navController: NavHostController, startDestination: 
             SearchScreen(
                 onUserClick = { userId -> 
                     navController.navigate(Screen.buildUserProfileRoute(userId))
-                }
+                },
+                bottomNavPadding = bottomNavPadding
             )
         }
         
@@ -303,7 +320,8 @@ private fun NavigationGraph(navController: NavHostController, startDestination: 
                     navController.navigate(Screen.HOME) {
                         popUpTo(Screen.HOME) { inclusive = false }
                     }
-                }
+                },
+                bottomNavPadding = bottomNavPadding
             )
         }
         
@@ -319,7 +337,18 @@ private fun NavigationGraph(navController: NavHostController, startDestination: 
             }
             val storageRepository = remember { AndroidStorageRepository(context.applicationContext) }
             val userRepository = remember { FirestoreUserRepository(authRepository = authRepository) }
-            val storyRepository = remember { FirestoreStoryRepository(authRepository = authRepository) }
+            val followRepository = remember {
+                AndroidFollowRepository(
+                    authRepository = authRepository,
+                    userRepository = userRepository
+                )
+            }
+            val storyRepository = remember {
+                FirestoreStoryRepository(
+                    authRepository = authRepository,
+                    followRepository = followRepository
+                )
+            }
             val createStoryUseCase = remember {
                 CreateStoryUseCase(
                     storageRepository = storageRepository,
@@ -366,7 +395,7 @@ private fun NavigationGraph(navController: NavHostController, startDestination: 
         }
         
         composable(Screen.REELS) {
-            PlaceholderScreen("Reels")
+            PlaceholderScreen("Reels", bottomNavPadding = bottomNavPadding)
         }
         
         composable(Screen.PROFILE) {
@@ -378,7 +407,12 @@ private fun NavigationGraph(navController: NavHostController, startDestination: 
                         popUpTo(navController.graph.startDestinationId) { inclusive = true }
                     }
                 },
-                reloadKey = profileReloadKey
+                onPostClick = { postId, post ->
+                    post?.let { PostCache.put(postId, it) }
+                    navController.navigate(Screen.buildOwnPostDetailRoute(postId))
+                },
+                reloadKey = profileReloadKey,
+                bottomNavPadding = bottomNavPadding
             )
         }
         
@@ -421,8 +455,9 @@ private fun NavigationGraph(navController: NavHostController, startDestination: 
                             popUpTo(0) { inclusive = true }
                         }
                     },
-                    onPostClick = { postId ->
-                        navController.navigate(Screen.buildPostDetailRoute(postId))
+                    onPostClick = { postId, post ->
+                        post?.let { PostCache.put(postId, it) }
+                        navController.navigate(Screen.buildOwnPostDetailRoute(postId))
                     },
                     reloadKey = profileReloadKey
                 )
@@ -430,7 +465,8 @@ private fun NavigationGraph(navController: NavHostController, startDestination: 
                 OtherUserProfileScreen(
                     userId = userId,
                     onBackClick = { navController.popBackStack() },
-                    onPostClick = { postId ->
+                    onPostClick = { postId, post ->
+                        post?.let { PostCache.put(postId, it) }
                         navController.navigate(Screen.buildPostDetailRoute(postId))
                     }
                 )
@@ -454,6 +490,23 @@ private fun NavigationGraph(navController: NavHostController, startDestination: 
             )
         }
         
+        // Own Post Detail Screen (with delete functionality)
+        composable(
+            route = Screen.OWN_POST_DETAIL,
+            arguments = listOf(navArgument("postId") { defaultValue = "" })
+        ) { backStackEntry ->
+            val postId = backStackEntry.arguments?.getString("postId") ?: ""
+            val initialPost = PostCache.get(postId)
+            com.kissangram.ui.postdetail.OwnPostDetailScreen(
+                postId = postId,
+                initialPost = initialPost,
+                onBackClick = { navController.popBackStack() },
+                onNavigateToProfile = { userId ->
+                    navController.navigate(Screen.buildUserProfileRoute(userId))
+                }
+            )
+        }
+        
         composable(
             route = Screen.STORY,
             arguments = listOf(navArgument("userId") { defaultValue = "" })
@@ -461,7 +514,9 @@ private fun NavigationGraph(navController: NavHostController, startDestination: 
             val userId = backStackEntry.arguments?.getString("userId") ?: ""
             com.kissangram.ui.story.StoryScreen(
                 userId = userId,
-                onBackClick = { navController.popBackStack() }
+                onBackClick = { 
+                    navController.popBackStack()
+                }
             )
         }
         
@@ -476,9 +531,11 @@ private fun NavigationGraph(navController: NavHostController, startDestination: 
 }
 
 @Composable
-private fun PlaceholderScreen(title: String) {
+private fun PlaceholderScreen(title: String, bottomNavPadding: PaddingValues = PaddingValues(0.dp)) {
     Box(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(bottom = bottomNavPadding.calculateBottomPadding()),
         contentAlignment = Alignment.Center
     ) {
         Text(text = "$title - Coming Soon")

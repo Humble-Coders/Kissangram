@@ -271,7 +271,7 @@ struct CommentsView: View {
 }
 
 // MARK: - Post Header Section
-private struct PostHeaderSection: View {
+internal struct PostHeaderSection: View {
     let post: Post
     let onAuthorClick: () -> Void
     let onLikeClick: () -> Bool
@@ -376,23 +376,21 @@ private struct PostHeaderSection: View {
             
             if !post.crops.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 9) {
                         ForEach(post.crops, id: \.self) { crop in
-                            Text(crop)
-                                .font(.system(size: 14, weight: .medium))
+                            Text(crop.capitalized)
+                                .font(.system(size: 15, weight: .semibold))
                                 .foregroundColor(.textPrimary)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 8)
+                                .lineLimit(1)
+                                .padding(.horizontal, 11)
+                                .padding(.vertical, 6)
                                 .background(Color.accentYellow.opacity(0.08))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 16)
-                                        .stroke(Color.accentYellow.opacity(0.2), lineWidth: 1)
-                                )
-                                .cornerRadius(16)
+                                .cornerRadius(18)
                         }
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, 0)
                 }
+                .padding(.horizontal, 16)
                 .padding(.bottom, 16)
             }
             
@@ -404,7 +402,7 @@ private struct PostHeaderSection: View {
 }
 
 // MARK: - Comment Row
-private struct CommentRow: View {
+internal struct CommentRow: View {
     let comment: Comment
     let currentUserId: String?
     let isTopLevel: Bool
@@ -528,7 +526,7 @@ private struct CommentRow: View {
 }
 
 // MARK: - Reply Indicator
-private struct ReplyIndicator: View {
+internal struct ReplyIndicator: View {
     let comment: Comment
     let onCancel: () -> Void
     
@@ -559,7 +557,7 @@ private struct ReplyIndicator: View {
 }
 
 // MARK: - Comment Input Bar
-private struct CommentInputBar: View {
+internal struct CommentInputBar: View {
     let text: String
     let replyingTo: Comment?
     let isPosting: Bool
@@ -674,7 +672,7 @@ private struct CommentInputBar: View {
 }
 
 // MARK: - Delete Comment Sheet
-private struct DeleteCommentSheet: View {
+internal struct DeleteCommentSheet: View {
     @Binding var reason: String
     let onReasonChange: (String) -> Void
     let onConfirm: () -> Void
@@ -739,7 +737,7 @@ private struct DeleteCommentSheet: View {
 }
 
 // MARK: - Helper Functions
-private func formatTimestamp(_ timestamp: Int64) -> String {
+internal func formatTimestamp(_ timestamp: Int64) -> String {
     let now = Date()
     let date = Date(timeIntervalSince1970: Double(timestamp) / 1000.0)
     let diff = now.timeIntervalSince(date)

@@ -3,6 +3,8 @@ package com.kissangram.ui.home.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -59,21 +61,21 @@ fun PostCard(
     // Updates immediately on click, but only if ViewModel accepts the request
     var localLikedState by remember(post.id) { mutableStateOf(post.isLikedByMe) }
     var localLikesCount by remember(post.id) { mutableIntStateOf(post.likesCount) }
-    
+
     // Sync local state with actual post state when it changes (from ViewModel or refresh)
     // This ensures local state matches server state after requests complete
     LaunchedEffect(post.isLikedByMe, post.likesCount) {
         localLikedState = post.isLikedByMe
         localLikesCount = post.likesCount
     }
-    
+
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 18.dp, vertical = 6.dp),
         shape = RoundedCornerShape(18.dp),
         color = Color.White,
-        shadowElevation = 2.dp,
+        shadowElevation = 8.dp,
         tonalElevation = 0.dp
     ) {
         Column(
@@ -88,12 +90,12 @@ fun PostCard(
                 onFollowClick = onFollowClick,
                 onUnfollowClick = onUnfollowClick
             )
-            
+
             Spacer(modifier = Modifier.height(10.dp))
-            
+
             // Tags Row
             PostTagsRow(post = post)
-            
+
             // Post Media (if any)
             if (post.media.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(12.dp))
@@ -104,7 +106,7 @@ fun PostCard(
                     modifier = Modifier.padding(horizontal = 16.dp)
                 )
             }
-            
+
             // Post Text
             if (post.text.isNotEmpty() || post.voiceCaption != null) {
                 Spacer(modifier = Modifier.height(if (post.media.isEmpty()) 10.dp else 14.dp))
@@ -114,7 +116,7 @@ fun PostCard(
                     onReadMore = onPostClick
                 )
             }
-            
+
             // Action Bar - use local state for instant feedback
             Spacer(modifier = Modifier.height(4.dp))
             PostActionBar(
@@ -127,10 +129,10 @@ fun PostCard(
                     // This gives instant visual feedback with zero perceived lag
                     val newLikedState = !localLikedState
                     val newLikesCount = if (newLikedState) localLikesCount + 1 else localLikesCount - 1
-                    
+
                     // Call ViewModel first to check if it accepts the request
                     val accepted = onLikeClick()
-                    
+
                     // Only update local state if ViewModel accepted the request
                     // This prevents sync issues when rapid clicks are ignored
                     if (accepted) {
@@ -161,7 +163,7 @@ private fun PostAuthorHeader(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 0.dp)
+            .padding(horizontal = 16.dp)
             .padding(top = 16.dp)
             .clickable { onAuthorClick() },
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -178,10 +180,10 @@ private fun PostAuthorHeader(
                 authorProfileImageUrl = post.authorProfileImageUrl,
                 size = 45.dp
             )
-            
+
             Spacer(modifier = Modifier.width(11.dp))
-            
-            Column {
+
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = post.authorName,
@@ -191,7 +193,7 @@ private fun PostAuthorHeader(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    
+
                     if (post.authorVerificationStatus == VerificationStatus.VERIFIED) {
                         Spacer(modifier = Modifier.width(7.dp))
                         Icon(
@@ -202,7 +204,7 @@ private fun PostAuthorHeader(
                         )
                     }
                 }
-                
+
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                         imageVector = Icons.Outlined.Person,
@@ -221,12 +223,16 @@ private fun PostAuthorHeader(
                         },
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = TextSecondary
+                        color = TextSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
         }
-        
+
+        Spacer(modifier = Modifier.width(8.dp))
+
         // Follow / 3-dot menu (if not own post and not expert)
         if (!isOwnPost && post.authorRole != UserRole.EXPERT) {
             if (isFollowingAuthor) {
@@ -235,7 +241,8 @@ private fun PostAuthorHeader(
                         Icon(
                             Icons.Outlined.MoreVert,
                             contentDescription = "More options",
-                            tint = TextPrimary
+                            tint = TextPrimary,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                     DropdownMenu(
@@ -257,7 +264,7 @@ private fun PostAuthorHeader(
                 Button(
                     onClick = onFollowClick,
                     colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen),
-                    shape = RoundedCornerShape(50),
+                    shape = RoundedCornerShape(25.dp),
                     contentPadding = PaddingValues(horizontal = 19.dp, vertical = 12.dp)
                 ) {
                     Text(
@@ -274,8 +281,11 @@ private fun PostAuthorHeader(
 @Composable
 private fun PostTagsRow(post: Post) {
     Row(
-        modifier = Modifier.padding(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(7.dp)
+        modifier = Modifier
+            .padding(horizontal = 16.dp)
+            .fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(7.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
         // Role tag
         when (post.authorRole) {
@@ -299,24 +309,33 @@ private fun PostTagsRow(post: Post) {
             }
             else -> {}
         }
-        
-        // Crop tags
-        post.crops.take(2).forEach { crop ->
-            Surface(
-                shape = RoundedCornerShape(18.dp),
-                color = AccentYellow.copy(alpha = 0.08f),
-                border = androidx.compose.foundation.BorderStroke(
-                    0.5.dp,
-                    AccentYellow.copy(alpha = 0.19f)
-                )
+
+        // Crop tags - use LazyRow for horizontal scrolling
+        if (post.crops.isNotEmpty()) {
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+                modifier = Modifier.weight(1f)
             ) {
-                Text(
-                    text = crop.replaceFirstChar { it.uppercase() },
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = TextPrimary
-                )
+                items(post.crops) { crop ->
+                    Surface(
+                        shape = RoundedCornerShape(18.dp),
+                        color = AccentYellow.copy(alpha = 0.08f)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = crop.replaceFirstChar { it.uppercase() },
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = TextPrimary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -347,7 +366,8 @@ private fun TagChip(
                 text = text,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = textColor
+                color = textColor,
+                maxLines = 1
             )
         }
     }
@@ -363,35 +383,35 @@ fun PostTextContent(
     var isPlaying by remember { mutableStateOf(false) }
     var playbackProgress by remember { mutableStateOf(0) }
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
-    
+
     // Handler for progress updates (matching CreatePostViewModel pattern)
     val playbackHandler = remember { Handler(Looper.getMainLooper()) }
     var playbackUpdateRunnable by remember { mutableStateOf<Runnable?>(null) }
-    
+
     // Stop playback function (matching CreatePostViewModel pattern)
     val stopPlayback: () -> Unit = {
         // Stop progress updates
         playbackUpdateRunnable?.let { playbackHandler.removeCallbacks(it) }
         playbackUpdateRunnable = null
-        
+
         // Stop and release media player
         try {
             mediaPlayer?.stop()
         } catch (e: Exception) {
             // Ignore - may already be stopped
         }
-        
+
         try {
             mediaPlayer?.release()
         } catch (e: Exception) {
             // Ignore
         }
-        
+
         mediaPlayer = null
         isPlaying = false
         playbackProgress = 0
     }
-    
+
     // Start playback progress updates (matching CreatePostViewModel pattern)
     val startPlaybackProgressUpdates: () -> Unit = {
         playbackUpdateRunnable = object : Runnable {
@@ -400,7 +420,7 @@ fun PostTextContent(
                     if (player.isPlaying) {
                         val progress = player.currentPosition / 1000
                         playbackProgress = progress
-                        
+
                         // Check if reached duration limit
                         if (voiceCaption != null && progress >= voiceCaption.durationSeconds) {
                             stopPlayback()
@@ -413,40 +433,40 @@ fun PostTextContent(
         }
         playbackHandler.post(playbackUpdateRunnable!!)
     }
-    
+
     // Cleanup MediaPlayer and Handler callbacks on dispose
     DisposableEffect(voiceCaption?.url) {
         onDispose {
             // Stop progress updates
             playbackUpdateRunnable?.let { playbackHandler.removeCallbacks(it) }
             playbackUpdateRunnable = null
-            
+
             // Stop and release media player
             try {
                 mediaPlayer?.stop()
             } catch (e: Exception) {
                 // Ignore - may already be stopped
             }
-            
+
             try {
                 mediaPlayer?.release()
             } catch (e: Exception) {
                 // Ignore
             }
-            
+
             mediaPlayer = null
             isPlaying = false
             playbackProgress = 0
         }
     }
-    
+
     // Handle playback
     val onPlayClick: () -> Unit = onPlayClick@ {
         val caption = voiceCaption
         if (caption == null) {
             return@onPlayClick
         }
-        
+
         if (isPlaying) {
             // Stop playback
             stopPlayback()
@@ -457,14 +477,14 @@ fun PostTextContent(
                 if (url.isBlank()) {
                     return@onPlayClick
                 }
-                
+
                 // Stop any existing playback
                 stopPlayback()
-                
+
                 val player = MediaPlayer().apply {
                     // Handle remote URLs (http/https) and local file paths
                     setDataSource(url)
-                    
+
                     setOnPreparedListener {
                         start()
                         isPlaying = true
@@ -472,17 +492,17 @@ fun PostTextContent(
                         // Start progress updates
                         startPlaybackProgressUpdates()
                     }
-                    
+
                     setOnCompletionListener {
                         stopPlayback()
                     }
-                    
+
                     setOnErrorListener { _, what, extra ->
                         android.util.Log.e("PostCard", "MediaPlayer error: what=$what, extra=$extra")
                         stopPlayback()
                         true
                     }
-                    
+
                     prepareAsync()
                 }
                 mediaPlayer = player
@@ -492,58 +512,55 @@ fun PostTextContent(
             }
         }
     }
-    
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.Top
     ) {
         // Left icon/button - show play button if voiceCaption exists, otherwise text icon
         if (voiceCaption != null) {
             // Voice caption play button
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.width(40.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .background(
-                            color = if (isPlaying) Color(0xFFFF6B6B) else PrimaryGreen,
-                            shape = CircleShape
-                        )
-                        .clickable { onPlayClick() },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = if (isPlaying) Icons.Default.Stop else Icons.AutoMirrored.Filled.VolumeUp,
-                        contentDescription = if (isPlaying) "Stop" else "Play",
-                        tint = Color.White,
-                        modifier = Modifier.size(18.dp)
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(
+                        color = if (isPlaying) Color(0xFFFF6B6B) else PrimaryGreen,
+                        shape = CircleShape
                     )
-                }
-
+                    .clickable { onPlayClick() },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = if (isPlaying) Icons.Default.Stop else Icons.AutoMirrored.Filled.VolumeUp,
+                    contentDescription = if (isPlaying) "Stop" else "Play",
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp)
+                )
             }
         } else {
             // Text icon (when no voice caption)
-            Surface(
-                modifier = Modifier.size(40.dp),
-                shape = CircleShape,
-                color = PrimaryGreen.copy(alpha = 0.1f)
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(
+                        color = PrimaryGreen.copy(alpha = 0.1f),
+                        shape = CircleShape
+                    ),
+                contentAlignment = Alignment.Center
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.Outlined.Notes,
-                        contentDescription = null,
-                        tint = PrimaryGreen,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
+                Icon(
+                    imageVector = Icons.Outlined.Notes,
+                    contentDescription = null,
+                    tint = PrimaryGreen,
+                    modifier = Modifier.size(18.dp)
+                )
             }
         }
-        
+
         Spacer(modifier = Modifier.width(11.dp))
-        
+
         // Text caption (right side)
         if (text.isNotEmpty()) {
             Column(
@@ -558,7 +575,7 @@ fun PostTextContent(
                     overflow = TextOverflow.Ellipsis,
                     lineHeight = 23.sp // Approximate lineSpacing of 6dp (17sp + 6dp ≈ 23sp)
                 )
-                
+
                 if (text.length > 150) {
                     TextButton(
                         onClick = onReadMore,
@@ -603,7 +620,7 @@ private fun PostActionBar(
             tint = if (post.isLikedByMe) ErrorRed else TextSecondary,
             onClick = onLikeClick
         )
-        
+
         // Comment
         ActionButton(
             icon = Icons.Outlined.ChatBubbleOutline,
@@ -611,7 +628,7 @@ private fun PostActionBar(
             tint = TextSecondary,
             onClick = onCommentClick
         )
-        
+
         // Share
         ActionButton(
             icon = Icons.Outlined.Share,
@@ -619,14 +636,14 @@ private fun PostActionBar(
             tint = TextSecondary,
             onClick = onShareClick
         )
-        
+
         // Save
         IconButton(onClick = onSaveClick) {
             Icon(
                 imageVector = if (post.isSavedByMe) Icons.Outlined.Bookmark else Icons.Outlined.BookmarkBorder,
                 contentDescription = "Save",
                 tint = if (post.isSavedByMe) PrimaryGreen else TextSecondary,
-                modifier = Modifier.size(20.dp)
+                modifier = Modifier.size(18.dp)
             )
         }
     }
@@ -650,14 +667,15 @@ private fun ActionButton(
             imageVector = icon,
             contentDescription = label,
             tint = tint,
-            modifier = Modifier.size(20.dp)
+            modifier = Modifier.size(18.dp)
         )
         Spacer(modifier = Modifier.width(7.dp))
         Text(
             text = label,
             fontSize = 15.sp,
             fontWeight = FontWeight.SemiBold,
-            color = tint
+            color = tint,
+            maxLines = 1
         )
     }
 }

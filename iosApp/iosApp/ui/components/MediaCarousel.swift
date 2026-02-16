@@ -24,7 +24,7 @@ struct MediaCarousel: View {
             )
         } else {
             // Multiple media items - show carousel with TabView
-            VStack(spacing: 0) {
+            ZStack(alignment: .bottom) {
                 TabView(selection: $currentPage) {
                     ForEach(Array(media.enumerated()), id: \.offset) { index, item in
                         MediaItemView(
@@ -38,14 +38,15 @@ struct MediaCarousel: View {
                 .tabViewStyle(.page(indexDisplayMode: .never))
                 .frame(height: 220)
                 
-                // Dot indicators
+                // Dot indicators overlaid on bottom of media - transparent background
                 HStack(spacing: 6) {
                     ForEach(0..<media.count, id: \.self) { index in
                         Circle()
-                            .fill(index == currentPage ? Color.white.opacity(0.9) : Color.white.opacity(0.4))
-                            .frame(width: index == currentPage ? 8 : 6, height: index == currentPage ? 8 : 6)
+                            .fill(index == currentPage ? Color.white : Color.white.opacity(0.5))
+                            .frame(width: index == currentPage ? 6 : 5, height: index == currentPage ? 6 : 5)
                     }
                 }
+                .padding(.horizontal, 12)
                 .padding(.vertical, 8)
             }
         }

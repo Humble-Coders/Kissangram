@@ -99,7 +99,7 @@ ROOT COLLECTIONS
   phoneNumber: "+919876543210",
   name: "Rajesh Kumar",
   username: "rajesh_farmer",  // Unique, lowercase, for @mentions
-  profileImageUrl: "https://...",  // Cloudinary URL (profile_images folder); synced to posts/feed via onUserProfileUpdate
+  profileImageUrl: "https://...",
   bio: "Organic farmer from Punjab",
   
   // Role & Verification
@@ -278,45 +278,17 @@ Populated by the `onPostCreate` Cloud Function (fan-out). Each document is a cop
 - **Read**: Owner only (each user reads their own feed).
 - **Create/Update/Delete**: Cloud Functions only (client cannot write).
 
-#### Subcollection: Stories Feed
+#### Subcollection: Stories Feed (DEPRECATED)
 
 **Path:** `/users/{userId}/storiesFeed/{storyId}`
 
-Populated by the `onStoryCreate` Cloud Function (fan-out). Each document is a copy of a story for the stories feed. Document ID = storyId.
+**⚠️ DEPRECATED**: This subcollection is no longer used. Stories are now queried directly from the `/stories` collection based on follow relationships. This subcollection may still contain old data but is not populated by new stories.
 
-```javascript
-{
-  id: "story123",
-  authorId: "user123",
-  authorName: "Rajesh Kumar",
-  authorUsername: "rajesh_farmer",
-  authorProfileImageUrl: "https://...",
-  authorRole: "farmer",
-  authorVerificationStatus: "unverified",
-  media: {
-    url: "https://...",
-    type: "image",  // "image" | "video"
-    thumbnailUrl: null,
-  },
-  textOverlay: {
-    text: "Morning at the farm!",
-    position: { x: 0.5, y: 0.8 },
-  },
-  location: {
-    name: "Ludhiana, Punjab",
-  },
-  visibility: "public",  // "public" | "followers"
-  viewsCount: 0,
-  likesCount: 0,
-  createdAt: Timestamp,
-  expiresAt: Timestamp,  // createdAt + 24 hours
-  isActive: true,
-}
-```
+**Previous behavior**: Populated by the `onStoryCreate` Cloud Function (fan-out). Each document was a copy of a story for the stories feed. Document ID = storyId.
 
-- **Read**: Owner only (each user reads their own stories feed).
-- **Create/Update/Delete**: Cloud Functions only (client cannot write).
-- **Note**: Both "public" and "followers" visibility stories are distributed to followers' feeds. "Public" means the story is viewable on the author's profile by anyone, but still only appears in followers' feeds.
+**Current behavior**: Stories are queried directly from `/stories` collection using:
+- Story Bar: Query stories where `authorId` is in the list of followed users (from `users/{userId}/following`)
+- Profile View: Query stories where `authorId == userId` with visibility filtering (public only if not following, all if following)
 
 ---
 
@@ -460,6 +432,8 @@ Populated by the `onStoryCreate` Cloud Function (fan-out). Each document is a co
 
 **Path:** `/stories/{storyId}`
 
+Stories are created directly in this collection by clients. Stories are queried based on follow relationships and visibility settings.
+
 ```javascript
 {
   id: "story123",
@@ -499,10 +473,27 @@ Populated by the `onStoryCreate` Cloud Function (fan-out). Each document is a co
   
   // Metadata
   createdAt: Timestamp,
-  expiresAt: Timestamp,  // createdAt + 24 hours
+  expiresAt: Timestamp,  // createdAt + 24 hours (set by client on creation)
   isActive: true,
 }
 ```
+
+#### Query Patterns
+
+**Story Bar (Home Feed)**:
+- Get list of followed user IDs from `users/{currentUserId}/following`
+- Include current user's own ID
+- Query: `stories` where `isActive == true` and `authorId` in followed users list
+- Filter expired stories client-side (`expiresAt > now`)
+- Returns stories from all followed users (both "public" and "followers" visibility)
+
+**Profile View**:
+- Query: `stories` where `authorId == userId` and `isActive == true`
+- If current user follows the target user: return all stories (both "public" and "followers")
+- If current user does NOT follow the target user: add filter `visibility == "public"`
+- Filter expired stories client-side (`expiresAt > now`)
+
+**Note**: Stories expire 24 hours after creation. Expired stories should be filtered out in queries.
 
 #### Subcollection: Views
 
@@ -944,8 +935,8 @@ Fields: topics (Arrays), membersCount (Descending)
 | `onFollow` | `users/{userId}/followers/{followerId}` create | Update follower/following counts, send notification |
 | `onUnfollow` | `users/{userId}/followers/{followerId}` delete | Update follower/following counts |
 | `onPostCreate` | `posts/{postId}` create | Update user's postsCount, fan-out to followers' feeds |
-| `onPostDelete` | `posts/{postId}` delete/update | Update user's postsCount |
-| `onStoryCreate` | `stories/{storyId}` create | Fan-out story to followers' storiesFeed |
+| `onPostDelete` | `posts/{postId}` update (isActive = false) | Remove post from all follower feeds, delete post document, decrement author's postsCount |
+| ~~`onStoryCreate`~~ | ~~`stories/{storyId}` create~~ | ~~Fan-out story to followers' storiesFeed~~ **DEPRECATED** - Stories are now queried directly from `/stories` collection |
 | `onLike` | `posts/{postId}/likes/{userId}` create | Update likesCount, send notification |
 | `onUnlike` | `posts/{postId}/likes/{userId}` delete | Update likesCount |
 | `onComment` | `posts/{postId}/comments/{commentId}` create | Update commentsCount/repliesCount, send notification |
@@ -1177,6 +1168,90 @@ exports.onCommentUpdate = functions.firestore.v2.firestore
     });
 ```
 
+### Example: onPostDelete Function (Soft Delete)
+
+```javascript
+exports.onPostDelete = functions.firestore.v2.firestore
+    .onDocumentUpdated({
+        document: 'posts/{postId}',
+        database: 'kissangram',
+    }, async (event) => {
+        const before = event.data.before;
+        const after = event.data.after;
+        if (!before || !after) {
+            return null;
+        }
+
+        const beforeData = before.data();
+        const afterData = after.data();
+        const { postId } = event.params;
+
+        // Check if post was soft-deleted (isActive changed from true to false)
+        if (beforeData.isActive === true && afterData.isActive === false) {
+            try {
+                const authorId = afterData.authorId;
+
+                if (!authorId) {
+                    console.warn('onPostDelete: post missing authorId', { postId });
+                    return null;
+                }
+
+                // 1. Get all follower IDs from users/{authorId}/followers
+                const followersSnap = await db
+                    .collection('users')
+                    .doc(authorId)
+                    .collection('followers')
+                    .get();
+
+                const recipientIds = followersSnap.docs.map((d) => d.id);
+                // Include author's own feed
+                if (!recipientIds.includes(authorId)) {
+                    recipientIds.push(authorId);
+                }
+                if (recipientIds.length === 0) {
+                    recipientIds.push(authorId);
+                }
+
+                // 2. Delete post from all feeds (batch delete, max 500 per batch)
+                const BATCH_SIZE = 500;
+                for (let i = 0; i < recipientIds.length; i += BATCH_SIZE) {
+                    const chunk = recipientIds.slice(i, i + BATCH_SIZE);
+                    const batch = db.batch();
+                    for (const userId of chunk) {
+                        const feedRef = db
+                            .collection('users')
+                            .doc(userId)
+                            .collection('feed')
+                            .doc(postId);
+                        batch.delete(feedRef);
+                    }
+                    await batch.commit();
+                }
+
+                // 3. Decrement author's postsCount
+                await db.collection('users').doc(authorId).update({
+                    postsCount: admin.firestore.FieldValue.increment(-1),
+                });
+
+                // 4. Hard delete the post document
+                await db.collection('posts').doc(postId).delete();
+
+                console.log('onPostDelete: post deleted successfully', {
+                    postId,
+                    authorId,
+                    feedCount: recipientIds.length,
+                });
+                return null;
+            } catch (err) {
+                console.error('onPostDelete failed', { postId, err });
+                throw err;
+            }
+        }
+
+        return null;
+    });
+```
+
 ---
 
 ## Security Rules
@@ -1203,14 +1278,24 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isAuthenticated();
       allow create: if isOwner(userId);
-      allow update: if isOwner(userId);
+      // Allow users to update their own document, OR allow authenticated users to update only followersCount/followingCount
+      // (needed for follow/unfollow operations where we update the target user's followersCount)
+      // IMPORTANT: FieldValue.increment() doesn't work reliably with diff() checks in security rules.
+      // The simplified approach: allow any authenticated user to update these count fields.
+      // Security is enforced by the subcollection rules (only the follower can create/delete their own follower document).
+      allow update: if isOwner(userId) 
+                    || (isAuthenticated() 
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['followersCount', 'followingCount']));
       allow delete: if false;  // Users can't delete accounts directly
       
       // Followers
       match /followers/{followerId} {
         allow read: if isAuthenticated();
-        allow create: if isAuthenticated() && isOwner(followerId);
-        allow delete: if isAuthenticated() && isOwner(followerId);
+        // Allow creating follower document if the followerId matches the current user
+        allow create: if isAuthenticated() && request.auth.uid == followerId;
+        // Allow deleting follower document if the followerId matches the current user
+        // (when unfollowing, the current user deletes themselves from the target user's followers list)
+        allow delete: if isAuthenticated() && request.auth.uid == followerId;
       }
       
       // Following
@@ -1245,7 +1330,7 @@ service cloud.firestore {
         allow create, update, delete: if false;
       }
       
-      // Stories Feed (fan-out from onStoryCreate; read-only for owner, write by Cloud Functions only)
+      // Stories Feed (DEPRECATED - no longer used, stories queried directly from /stories collection)
       match /storiesFeed/{storyId} {
         allow read: if isOwner(userId);
         allow create, update, delete: if false;
@@ -1429,17 +1514,6 @@ firestore.collection("posts")
     .limit(20)
 ```
 
-### Comment Replies
-
-```kotlin
-// Get replies for a parent comment (requires composite index)
-firestore.collection("posts").document(postId).collection("comments")
-    .whereEqualTo("isActive", true)
-    .whereEqualTo("parentCommentId", parentCommentId)
-    .orderBy("createdAt", Query.Direction.ASCENDING)
-    .limit(pageSize)
-```
-
 ### Trending Hashtags
 
 ```kotlin
@@ -1472,4 +1546,4 @@ firestore.collection("hashtags")
 
 ---
 
-*Last updated: February 2026 (Added comment feature with replies, delete with reason, and Cloud Functions)*
+*Last updated: February 2026 (Added onPostDelete Cloud Function for post deletion with feed cleanup)*

@@ -39,7 +39,52 @@ struct StoryView: View {
                 // Story Content
                 StoryContentView(story: currentStory)
                 
-                // Top Bar
+                // Swipe Gestures (placed before top bar so top bar is on top)
+                // Use VStack to exclude top bar area from tap gestures
+                VStack(spacing: 0) {
+                    // Top spacer to exclude top bar area (approximately 100 points)
+                    Color.clear
+                        .frame(height: 100)
+                        .allowsHitTesting(false)
+                    
+                    // Tap gesture areas for the rest of the screen
+                    GeometryReader { geometry in
+                        HStack(spacing: 0) {
+                            // Left tap area (previous)
+                            Color.clear
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    viewModel.previousStory()
+                                }
+                                .frame(width: geometry.size.width / 3)
+                            
+                            // Center (pause/resume)
+                            Color.clear
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    viewModel.pauseAutoAdvance()
+                                    // Resume after a short delay
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                        viewModel.resumeAutoAdvance()
+                                    }
+                                }
+                                .frame(width: geometry.size.width / 3)
+                            
+                            // Right tap area (next)
+                            Color.clear
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    let hasMore = viewModel.nextStory()
+                                    if !hasMore {
+                                        // All stories finished, will be handled by onChange
+                                    }
+                                }
+                                .frame(width: geometry.size.width / 3)
+                        }
+                    }
+                }
+                
+                // Top Bar - positioned with safe area padding (placed last so it's on top and clickable)
                 VStack {
                     StoryTopBar(
                         userStories: currentUserStories,
@@ -48,47 +93,7 @@ struct StoryView: View {
                     )
                     Spacer()
                 }
-                
-                // Bottom Actions
-                VStack {
-                    Spacer()
-                    StoryBottomActions(story: currentStory)
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 16)
-                }
-                
-                // Swipe Gestures
-                GeometryReader { geometry in
-                    HStack(spacing: 0) {
-                        // Left tap area (previous)
-                        Color.clear
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                viewModel.previousStory()
-                            }
-                            .frame(width: geometry.size.width / 3)
-                        
-                        // Center (pause/resume)
-                        Color.clear
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                viewModel.pauseAutoAdvance()
-                                // Resume after a short delay
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                                    viewModel.resumeAutoAdvance()
-                                }
-                            }
-                            .frame(width: geometry.size.width / 3)
-                        
-                        // Right tap area (next)
-                        Color.clear
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                viewModel.nextStory()
-                            }
-                            .frame(width: geometry.size.width / 3)
-                    }
-                }
+                .padding(.top) // Respects safe area (notch)
             }
         }
         .onAppear {
@@ -98,6 +103,19 @@ struct StoryView: View {
         .onDisappear {
             progressTimer?.invalidate()
             viewModel.pauseAutoAdvance()
+        }
+        .onChange(of: viewModel.currentStoryIndex) { _ in
+            // Restart timer when story changes
+            startProgressTimer()
+        }
+        .onChange(of: viewModel.currentUserIndex) { _ in
+            // Restart timer when user changes
+            startProgressTimer()
+        }
+        .onChange(of: viewModel.allStoriesFinished) { finished in
+            if finished {
+                onBackClick()
+            }
         }
     }
     
@@ -118,55 +136,65 @@ struct StoryContentView: View {
     let story: Story
     
     var body: some View {
-        ZStack {
-            if story.media.type == .image {
-                AsyncImage(url: URL(string: ensureHttps(story.media.url))) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                    case .failure(_), .empty:
-                        Color.black
-                    @unknown default:
-                        Color.black
-                    }
+        GeometryReader { geometry in
+            ZStack {
+                if story.media.type == .image {
+                    // Use a layout-neutral container so AsyncImage never drives parent layout
+                    // (AsyncImage can report intrinsic size from image dimensions and cause "zoom").
+                    Color.clear
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .overlay {
+                            AsyncImage(url: URL(string: story.media.url)) { phase in
+                                switch phase {
+                                case .success(let image):
+                                    image
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fill)
+                                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                case .failure(_), .empty:
+                                    Color.black
+                                @unknown default:
+                                    Color.black
+                                }
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .clipped()
+                        }
+                } else {
+                    // Video
+                    StoryVideoPlayer(url: story.media.url)
                 }
-            } else {
-                // Video
-                StoryVideoPlayer(url: ensureHttps(story.media.url))
-            }
-            
-            // Text Overlay
-            if let overlay = story.textOverlay {
-                Text(overlay.text)
-                    .foregroundColor(.white)
-                    .font(.system(size: 24, weight: .bold))
-                    .position(
-                        x: CGFloat(overlay.positionX) * UIScreen.main.bounds.width,
-                        y: CGFloat(overlay.positionY) * UIScreen.main.bounds.height
-                    )
-            }
-            
-            // Location Badge
-            if let location = story.locationName {
-                VStack {
-                    Spacer()
-                    HStack {
-                        Text(location)
-                            .foregroundColor(.white)
-                            .font(.system(size: 14))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(Color.black.opacity(0.6))
-                            .cornerRadius(8)
+                
+                // Text Overlay - use GeometryReader size instead of UIScreen.main.bounds for better performance
+                if let overlay = story.textOverlay {
+                    Text(overlay.text)
+                        .foregroundColor(.white)
+                        .font(.system(size: 24, weight: .bold))
+                        .position(
+                            x: CGFloat(overlay.positionX) * geometry.size.width,
+                            y: CGFloat(overlay.positionY) * geometry.size.height
+                        )
+                }
+                
+                // Location Badge
+                if let location = story.locationName {
+                    VStack {
                         Spacer()
+                        HStack {
+                            Text(location)
+                                .foregroundColor(.white)
+                                .font(.system(size: 14))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(Color.black.opacity(0.6))
+                                .cornerRadius(8)
+                            Spacer()
+                        }
+                        .padding(16)
                     }
-                    .padding(16)
                 }
             }
         }
-        .ignoresSafeArea()
     }
 }
 
@@ -223,7 +251,7 @@ struct StoryTopBar: View {
             // Author Header
             HStack {
                 // Profile Image
-                AsyncImage(url: userStories.userProfileImageUrl.flatMap { URL(string: ensureHttps($0)) }) { phase in
+                AsyncImage(url: userStories.userProfileImageUrl.flatMap { URL(string: $0) }) { phase in
                     switch phase {
                     case .success(let image):
                         image
@@ -256,13 +284,15 @@ struct StoryTopBar: View {
                 
                 Spacer()
                 
-                // Close Button
+                // Close Button - ensure it's clickable
                 Button(action: onBackClick) {
                     Image(systemName: "xmark")
                         .foregroundColor(.white)
-                        .font(.system(size: 18))
-                        .frame(width: 32, height: 32)
+                        .font(.system(size: 18, weight: .semibold))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(PlainButtonStyle())
             }
             .padding(.horizontal, 16)
         }
@@ -325,24 +355,3 @@ struct StoryProgressBar: View {
     }
 }
 
-struct StoryBottomActions: View {
-    let story: Story
-    
-    var body: some View {
-        HStack {
-            // Like Button
-            Button(action: { /* TODO: Implement like */ }) {
-                Image(systemName: story.isLikedByMe ? "heart.fill" : "heart")
-                    .foregroundColor(story.isLikedByMe ? .red : .white)
-                    .font(.system(size: 24))
-            }
-            
-            Spacer()
-            
-            // View Count
-            Text("\(story.viewsCount) views")
-                .foregroundColor(.white.opacity(0.8))
-                .font(.system(size: 14))
-        }
-    }
-}

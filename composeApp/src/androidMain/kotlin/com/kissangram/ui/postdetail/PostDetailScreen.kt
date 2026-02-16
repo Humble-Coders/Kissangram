@@ -13,6 +13,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -37,6 +38,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -177,7 +179,7 @@ fun PostDetailScreen(
                     .imePadding(),
                 contentPadding = PaddingValues(bottom = 80.dp)
             ) {
-                // Post Header Section
+                // Post Header Section - matching iOS padding
                 item {
                     uiState.post?.let { post ->
                         Box(modifier = Modifier.padding(horizontal = 18.dp)) {
@@ -210,14 +212,17 @@ fun PostDetailScreen(
                     }
                 }
 
-                // Comments Heading
+                // Comments Heading - matching iOS exactly
                 item {
                     Text(
                         text = "Comments (${uiState.comments.size})",
-                        fontSize = 17.sp,
+                        fontSize = 16.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = TextPrimary,
-                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 18.dp)
+                        modifier = Modifier
+                            .padding(horizontal = 16.dp)
+                            .padding(top = 20.dp)
+                            .padding(bottom = 12.dp)
                     )
                 }
 
@@ -239,29 +244,29 @@ fun PostDetailScreen(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 80.dp),
+                                .height(200.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Column(
                                 horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Outlined.ChatBubbleOutline,
                                     contentDescription = null,
-                                    modifier = Modifier.size(64.dp),
-                                    tint = TextSecondary.copy(alpha = 0.5f)
+                                    modifier = Modifier.size(56.dp),
+                                    tint = TextSecondary.copy(alpha = 0.3f)
                                 )
                                 Text(
                                     text = "No comments yet",
-                                    color = TextSecondary,
-                                    fontSize = 18.sp,
-                                    fontWeight = FontWeight.Medium
+                                    color = TextPrimary,
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.SemiBold
                                 )
                                 Text(
                                     text = "Be the first to comment!",
-                                    color = TextSecondary.copy(alpha = 0.7f),
-                                    fontSize = 14.sp
+                                    color = TextSecondary,
+                                    fontSize = 15.sp
                                 )
                             }
                         }
@@ -358,7 +363,7 @@ fun PostDetailScreen(
 }
 
 @Composable
-private fun PostHeaderSection(
+internal fun PostHeaderSection(
     post: Post,
     onAuthorClick: () -> Unit,
     onLikeClick: () -> Boolean
@@ -379,45 +384,47 @@ private fun PostHeaderSection(
         tonalElevation = 0.dp
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
+            // Author Header - matching iOS exactly
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 18.dp, vertical = 18.dp)
+                    .padding(horizontal = 16.dp)
+                    .padding(top = 16.dp)
+                    .padding(bottom = 12.dp)
                     .clickable { onAuthorClick() },
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 ProfileImageLoader(
                     authorId = post.authorId,
                     authorName = post.authorName,
                     authorProfileImageUrl = post.authorProfileImageUrl,
-                    size = 50.dp
+                    size = 48.dp
                 )
-                Spacer(modifier = Modifier.width(13.dp))
-                Column(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(
                         text = post.authorName,
-                        fontSize = 17.sp,
+                        fontSize = 16.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = TextPrimary
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Icon(
                             imageVector = Icons.Outlined.LocationOn,
                             contentDescription = null,
                             tint = TextSecondary,
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(12.dp)
                         )
-                        Spacer(modifier = Modifier.width(7.dp))
                         Text(
                             text = post.location?.name ?: "Location not set",
-                            fontSize = 15.sp,
+                            fontSize = 14.sp,
                             color = TextSecondary
                         )
                     }
                 }
             }
 
+            // Media Carousel - matching iOS padding
             if (post.media.isNotEmpty()) {
                 MediaCarousel(
                     media = post.media,
@@ -425,87 +432,106 @@ private fun PostHeaderSection(
                     isVisible = true,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 18.dp)
+                        .padding(horizontal = 16.dp)
                 )
             }
 
+            // Action Buttons - matching PostCard layout
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 18.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    .padding(horizontal = 8.dp)
+                    .padding(top = 4.dp, bottom = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                ActionButton(
-                    icon = if (localLikedState) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder,
-                    label = localLikesCount.toString(),
-                    tint = if (localLikedState) ErrorRed else TextSecondary,
-                    onClick = {
-                        val newLikedState = !localLikedState
-                        val newLikesCount = if (newLikedState) localLikesCount + 1 else localLikesCount - 1
-                        val accepted = onLikeClick()
-                        if (accepted) {
-                            localLikedState = newLikedState
-                            localLikesCount = newLikesCount
-                        }
-                    }
-                )
-                ActionButton(
-                    icon = Icons.Outlined.ChatBubbleOutline,
-                    label = "Comment",
-                    tint = TextSecondary,
-                    onClick = { }
-                )
-                ActionButton(
-                    icon = Icons.Outlined.Share,
-                    label = "Share",
-                    tint = TextSecondary,
-                    onClick = { }
-                )
-            }
-
-            if (post.text.isNotEmpty() || post.voiceCaption != null) {
-                PostTextContent(
-                    text = post.text,
-                    voiceCaption = post.voiceCaption,
-                    onReadMore = { }
-                )
-            }
-
-            if (post.crops.isNotEmpty()) {
                 Row(
+                    horizontalArrangement = Arrangement.spacedBy(0.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    ActionButton(
+                        icon = if (localLikedState) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder,
+                        label = localLikesCount.toString(),
+                        tint = if (localLikedState) ErrorRed else TextSecondary,
+                        onClick = {
+                            val newLikedState = !localLikedState
+                            val newLikesCount = if (newLikedState) localLikesCount + 1 else localLikesCount - 1
+                            val accepted = onLikeClick()
+                            if (accepted) {
+                                localLikedState = newLikedState
+                                localLikesCount = newLikesCount
+                            }
+                        }
+                    )
+                    ActionButton(
+                        icon = Icons.Outlined.Share,
+                        label = "Share",
+                        tint = TextSecondary,
+                        onClick = { }
+                    )
+                }
+                // Right side spacer (matching PostCard which has Save button on right)
+                Spacer(modifier = Modifier.width(48.dp)) // Space for potential save button
+            }
+
+            // Post Text - matching iOS padding
+            if (post.text.isNotEmpty() || post.voiceCaption != null) {
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 18.dp, vertical = 18.dp),
-                    horizontalArrangement = Arrangement.spacedBy(9.dp)
+                        .padding(horizontal = 16.dp)
+                        .padding(vertical = 12.dp)
                 ) {
-                    post.crops.forEach { crop ->
+                    PostTextContent(
+                        text = post.text,
+                        voiceCaption = post.voiceCaption,
+                        onReadMore = { }
+                    )
+                }
+            }
+
+            // Crops - matching iOS styling
+            if (post.crops.isNotEmpty()) {
+                LazyRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                        .padding(bottom = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(9.dp),
+                    contentPadding = PaddingValues(horizontal = 0.dp)
+                ) {
+                    items(post.crops) { crop ->
                         Surface(
                             color = AccentYellow.copy(alpha = 0.08f),
-                            shape = RoundedCornerShape(18.dp),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, AccentYellow.copy(alpha = 0.19f))
+                            shape = RoundedCornerShape(18.dp)
                         ) {
                             Text(
-                                text = crop,
+                                text = crop.replaceFirstChar { it.uppercase() },
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = TextPrimary,
-                                modifier = Modifier.padding(horizontal = 15.dp, vertical = 10.dp)
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp)
                             )
                         }
                     }
                 }
             }
 
-            HorizontalDivider(
-                color = Color.Black.copy(alpha = 0.05f),
-                thickness = 1.dp
+            // Divider - matching iOS styling
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .background(Color.Black.copy(alpha = 0.08f))
             )
         }
     }
 }
 
 @Composable
-private fun CommentItem(
+internal fun CommentItem(
     comment: Comment,
     currentUserId: String?,
     isTopLevel: Boolean,
@@ -643,7 +669,7 @@ private fun CommentItem(
 }
 
 @Composable
-private fun ReplyIndicator(
+internal fun ReplyIndicator(
     comment: Comment,
     onCancel: () -> Unit
 ) {
@@ -688,7 +714,7 @@ private fun ReplyIndicator(
 }
 
 @Composable
-private fun CommentInputBar(
+internal fun CommentInputBar(
     text: String,
     replyingTo: Comment?,
     isPosting: Boolean,
@@ -711,26 +737,31 @@ private fun CommentInputBar(
         }
     }
 
-    Surface(color = Color.White, modifier = modifier.fillMaxWidth()) {
+    Surface(
+        color = Color.White,
+        modifier = modifier.fillMaxWidth(),
+        shadowElevation = 2.dp
+    ) {
         Column {
             HorizontalDivider(
-                color = Color.Black.copy(alpha = 0.08f),
-                thickness = 1.dp
+                color = Color.Black.copy(alpha = 0.06f),
+                thickness = 0.5.dp
             )
 
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 18.dp, vertical = 12.dp),
+                    .padding(horizontal = 16.dp)
+                    .padding(vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(13.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Tap to speak - compact mic button for comments
+                // Tap to speak - matching iOS exactly (44dp circle)
                 Box(
                     modifier = Modifier
-                        .size(45.dp)
+                        .size(44.dp)
                         .clip(CircleShape)
-                        .background(PrimaryGreen)
+                        .background(if (isListening) ErrorRed else PrimaryGreen)
                         .pointerInput(isPosting, isProcessing) {
                             detectDragGestures(
                                 onDragStart = {
@@ -744,7 +775,7 @@ private fun CommentInputBar(
                 ) {
                     if (isProcessing) {
                         CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
+                            modifier = Modifier.size(18.dp),
                             color = Color.White,
                             strokeWidth = 2.dp
                         )
@@ -753,11 +784,12 @@ private fun CommentInputBar(
                             imageVector = Icons.Outlined.Mic,
                             contentDescription = "Tap to speak",
                             tint = Color.White,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 }
 
+                // TextField - matching iOS styling exactly
                 OutlinedTextField(
                     value = text,
                     onValueChange = onTextChange,
@@ -765,23 +797,23 @@ private fun CommentInputBar(
                         Text(
                             text = if (replyingTo != null) "Reply to @${replyingTo.authorUsername}..." else "Add a comment...",
                             color = TextPrimary.copy(alpha = 0.5f),
-                            fontSize = 17.sp
+                            fontSize = 15.sp
                         )
                     },
                     modifier = Modifier
                         .weight(1f)
-                        .heightIn(min = 45.dp)
+                        .heightIn(min = 44.dp)
                         .focusRequester(focusRequester)
                         .onFocusChanged { onFocusChange(it.isFocused) },
                     shape = RoundedCornerShape(22.dp),
                     colors = OutlinedTextFieldDefaults.colors(
-                        unfocusedBorderColor = PrimaryGreen.copy(alpha = 0.13f),
-                        focusedBorderColor = PrimaryGreen.copy(alpha = 0.3f),
-                        unfocusedContainerColor = BackgroundColor,
-                        focusedContainerColor = BackgroundColor,
+                        unfocusedBorderColor = Color.Black.copy(alpha = 0.08f),
+                        focusedBorderColor = Color.Black.copy(alpha = 0.08f),
+                        unfocusedContainerColor = Color(0xFFF7F7F7),
+                        focusedContainerColor = Color(0xFFF7F7F7),
                         cursorColor = PrimaryGreen
                     ),
-                    textStyle = LocalTextStyle.current.copy(fontSize = 17.sp),
+                    textStyle = LocalTextStyle.current.copy(fontSize = 15.sp),
                     singleLine = true,
                     enabled = !isPosting,
                     keyboardOptions = KeyboardOptions(
@@ -798,11 +830,12 @@ private fun CommentInputBar(
                     )
                 )
 
+                // Send button - matching iOS exactly (44dp circle)
                 Box(
                     modifier = Modifier
-                        .size(45.dp)
+                        .size(44.dp)
                         .background(
-                            if (text.trim().isNotEmpty()) PrimaryGreen else Color(0xFFE5E5E5),
+                            if (text.trim().isNotEmpty()) PrimaryGreen else Color(0xFFEDEDED),
                             CircleShape
                         )
                         .clickable(enabled = !isPosting && text.trim().isNotEmpty()) {
@@ -812,7 +845,7 @@ private fun CommentInputBar(
                 ) {
                     if (isPosting) {
                         CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
+                            modifier = Modifier.size(17.dp),
                             color = Color.White,
                             strokeWidth = 2.dp
                         )
@@ -820,8 +853,8 @@ private fun CommentInputBar(
                         Icon(
                             imageVector = Icons.Outlined.Send,
                             contentDescription = "Send",
-                            tint = if (text.trim().isNotEmpty()) Color.White else TextSecondary,
-                            modifier = Modifier.size(20.dp)
+                            tint = if (text.trim().isNotEmpty()) Color.White else TextSecondary.copy(alpha = 0.6f),
+                            modifier = Modifier.size(17.dp)
                         )
                     }
                 }
@@ -831,7 +864,7 @@ private fun CommentInputBar(
 }
 
 @Composable
-private fun DeleteCommentDialog(
+internal fun DeleteCommentDialog(
     reason: String,
     onReasonChange: (String) -> Unit,
     onConfirm: () -> Unit,
@@ -889,7 +922,7 @@ private fun DeleteCommentDialog(
 }
 
 @Composable
-private fun ActionButton(
+internal fun ActionButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
     tint: Color,
@@ -897,22 +930,29 @@ private fun ActionButton(
 ) {
     Row(
         modifier = Modifier
+            .clip(RoundedCornerShape(22.dp))
             .clickable { onClick() }
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
+            .padding(horizontal = 10.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
             imageVector = icon,
-            contentDescription = null,
+            contentDescription = label,
             tint = tint,
             modifier = Modifier.size(18.dp)
         )
-        Text(text = label, fontSize = 15.sp, color = tint)
+        Spacer(modifier = Modifier.width(7.dp))
+        Text(
+            text = label,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = tint,
+            maxLines = 1
+        )
     }
 }
 
-private fun formatTimestamp(timestamp: Long): String {
+internal fun formatTimestamp(timestamp: Long): String {
     val now = System.currentTimeMillis()
     val diff = now - timestamp
     return when {

@@ -20,6 +20,7 @@ sealed class Screen {
     
     // Detail Screens
     data class PostDetail(val postId: String) : Screen()
+    data class OwnPostDetail(val postId: String) : Screen()
     data class UserProfile(val userId: String) : Screen()
     data class Story(val userId: String) : Screen()
     object Notifications : Screen()
@@ -42,6 +43,7 @@ sealed class Screen {
         const val REELS = "reels"
         const val PROFILE = "profile"
         const val POST_DETAIL = "post_detail/{postId}"
+        const val OWN_POST_DETAIL = "own_post_detail/{postId}"
         const val USER_PROFILE = "user_profile/{userId}"
         const val STORY = "story/{userId}"
         const val NOTIFICATIONS = "notifications"
@@ -65,6 +67,7 @@ sealed class Screen {
                 is Reels -> REELS
                 is Profile -> PROFILE
                 is PostDetail -> buildPostDetailRoute(postId)
+                is OwnPostDetail -> buildOwnPostDetailRoute(postId)
                 is UserProfile -> buildUserProfileRoute(userId)
                 is Story -> buildStoryRoute(userId)
                 is Notifications -> NOTIFICATIONS
@@ -88,6 +91,10 @@ sealed class Screen {
         
         fun buildPostDetailRoute(postId: String): String {
             return "post_detail/$postId"
+        }
+        
+        fun buildOwnPostDetailRoute(postId: String): String {
+            return "own_post_detail/$postId"
         }
         
         fun buildUserProfileRoute(userId: String): String {

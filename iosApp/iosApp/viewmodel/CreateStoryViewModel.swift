@@ -28,7 +28,8 @@ class CreateStoryViewModel: ObservableObject {
     }()
     
     private lazy var storyRepository: StoryRepository = {
-        FirestoreStoryRepository(authRepository: authRepository)
+        let followRepo = IOSFollowRepository(authRepository: authRepository, userRepository: userRepository)
+        return FirestoreStoryRepository(authRepository: authRepository, followRepository: followRepo)
     }()
     
     private lazy var userRepository: UserRepository = {

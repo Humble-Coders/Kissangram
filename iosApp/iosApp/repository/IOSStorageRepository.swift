@@ -187,28 +187,47 @@ public final class IOSStorageRepository: StorageRepository {
         mediaType: Shared.MediaType,
         thumbnailData: KotlinByteArray?
     ) async throws -> Shared.MediaUploadResult {
+        print("📤 IOSStorageRepository: Starting Cloudinary upload")
+        print("   - Media Data Size: \(mediaData.size) bytes")
+        print("   - Media Type: \(mediaType == Shared.MediaType.video ? "video" : "image")")
+        print("   - Thumbnail Data Size: \(thumbnailData?.size ?? 0) bytes")
+        
         // Convert KotlinByteArray to Data
         let mediaDataObj = mediaData.toData()
+        print("   - Converted to Data: \(mediaDataObj.count) bytes")
         
         // Upload main media file
         let params = CLDUploadRequestParams()
         params.setFolder("posts")
         // Cloudinary requires resource_type for video uploads; defaults to "image" which causes 400 for video data
-        params.setResourceType(mediaType == Shared.MediaType.video ? .video : .image)
+        let resourceType: CLDUrlResourceType = mediaType == Shared.MediaType.video ? .video : .image
+        params.setResourceType(resourceType)
+        print("   - Resource Type: \(resourceType == .video ? "video" : "image")")
         
         let mediaUrl = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, Error>) in
+            print("📤 IOSStorageRepository: Starting Cloudinary signed upload...")
             cloudinary.createUploader().signedUpload(
                 data: mediaDataObj,
                 params: params,
-                progress: { _ in },
+                progress: { progress in
+                    // Log progress for debugging
+                    let progressPercent = Int(progress.fractionCompleted * 100)
+                    print("📤 IOSStorageRepository: Upload progress: \(progressPercent)%")
+                },
                 completionHandler: { result, error in
                     if let error = error {
+                        print("❌ IOSStorageRepository: Upload failed - \(error.localizedDescription)")
                         continuation.resume(throwing: error)
                     } else if let secureUrl = result?.secureUrl {
+                        print("✅ IOSStorageRepository: Media uploaded successfully")
+                        print("   - Media URL: \(secureUrl)")
                         continuation.resume(returning: self.ensureHttps(secureUrl))
                     } else if let url = result?.url {
+                        print("✅ IOSStorageRepository: Media uploaded successfully (non-secure URL)")
+                        print("   - Media URL: \(url)")
                         continuation.resume(returning: self.ensureHttps(url))
                     } else {
+                        print("❌ IOSStorageRepository: Upload succeeded but no URL returned")
                         continuation.resume(throwing: NSError(domain: "IOSStorageRepository", code: 500, userInfo: [NSLocalizedDescriptionKey: "Upload succeeded but no URL returned"]))
                     }
                 }
@@ -219,8 +238,10 @@ public final class IOSStorageRepository: StorageRepository {
         let thumbnailUrl: String?
         if mediaType == Shared.MediaType.video, let thumbData = thumbnailData {
             do {
+                print("📤 IOSStorageRepository: Starting thumbnail upload...")
                 // Convert KotlinByteArray to Data
                 let thumbDataObj = thumbData.toData()
+                print("   - Thumbnail Data: \(thumbDataObj.count) bytes")
                 
                 let thumbParams = CLDUploadRequestParams()
                 thumbParams.setFolder("posts/thumbnails")
@@ -229,26 +250,41 @@ public final class IOSStorageRepository: StorageRepository {
                     cloudinary.createUploader().signedUpload(
                         data: thumbDataObj,
                         params: thumbParams,
-                        progress: { _ in },
+                        progress: { progress in
+                            // Log progress for debugging
+                            let progressPercent = Int(progress.fractionCompleted * 100)
+                            print("📤 IOSStorageRepository: Thumbnail upload progress: \(progressPercent)%")
+                        },
                         completionHandler: { result, error in
                             if let error = error {
+                                print("⚠️ IOSStorageRepository: Thumbnail upload failed (continuing without thumbnail): \(error.localizedDescription)")
                                 continuation.resume(returning: nil)
                             } else if let secureUrl = result?.secureUrl {
+                                print("✅ IOSStorageRepository: Thumbnail uploaded successfully")
+                                print("   - Thumbnail URL: \(secureUrl)")
                                 continuation.resume(returning: self.ensureHttps(secureUrl))
                             } else if let url = result?.url {
+                                print("✅ IOSStorageRepository: Thumbnail uploaded successfully (non-secure URL)")
+                                print("   - Thumbnail URL: \(url)")
                                 continuation.resume(returning: self.ensureHttps(url))
                             } else {
+                                print("⚠️ IOSStorageRepository: Thumbnail upload succeeded but no URL returned")
                                 continuation.resume(returning: nil)
                             }
                         }
                     )
                 }
             } catch {
+                print("⚠️ IOSStorageRepository: Thumbnail upload error (continuing without thumbnail): \(error.localizedDescription)")
                 thumbnailUrl = nil
             }
         } else {
             thumbnailUrl = nil
         }
+        
+        print("✅ IOSStorageRepository: Media upload completed")
+        print("   - Media URL: \(mediaUrl)")
+        print("   - Thumbnail URL: \(thumbnailUrl ?? "none")")
         
         return Shared.MediaUploadResult(
             mediaUrl: mediaUrl,

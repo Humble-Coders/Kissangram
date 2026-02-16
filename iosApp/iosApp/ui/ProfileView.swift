@@ -1,8 +1,42 @@
 import SwiftUI
 import Shared
+import Foundation
 
 private let profileBackground = Color(red: 0.984, green: 0.973, blue: 0.941)
 private let expertGreen = Color(red: 0.455, green: 0.765, blue: 0.396)
+
+// MARK: - Logging Helper
+private func logEvent(_ location: String, _ message: String, _ data: [String: Any] = [:]) {
+    let logData: [String: Any] = [
+        "location": location,
+        "message": message,
+        "data": data,
+        "timestamp": Int(Date().timeIntervalSince1970 * 1000)
+    ]
+    
+    // Console log for immediate visibility
+    print("🔵 [\(location)] \(message) - Data: \(data)")
+    
+    // File log for persistence
+    if let jsonData = try? JSONSerialization.data(withJSONObject: logData),
+       let jsonString = String(data: jsonData, encoding: .utf8) {
+        let logLine = jsonString + "\n"
+        let logPath = "/Users/rishibhardwaj/AndroidStudioProjects/Kissangram/.cursor/debug.log"
+        
+        // Ensure directory exists
+        let directory = (logPath as NSString).deletingLastPathComponent
+        try? FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true, attributes: nil)
+        
+        if let logFile = FileHandle(forWritingAtPath: logPath) {
+            logFile.seekToEndOfFile()
+            logFile.write(logLine.data(using: .utf8) ?? Data())
+            logFile.closeFile()
+        } else {
+            // Try to create the file if it doesn't exist
+            try? logLine.write(toFile: logPath, atomically: true, encoding: .utf8)
+        }
+    }
+}
 
 struct ProfileView: View {
     @StateObject private var viewModel = ProfileViewModel()
@@ -11,7 +45,7 @@ struct ProfileView: View {
     var onBackClick: () -> Void = {}
     var onEditProfile: () -> Void = {}
     var onSignOut: () -> Void = {}
-    var onPostClick: (String) -> Void = { _ in }
+    var onPostClick: (String, Post?) -> Void = { _, _ in }
     var reloadKey: Int = 0 // Key that changes to trigger reload after save
 
     var body: some View {
@@ -47,13 +81,26 @@ struct ProfileView: View {
                             posts: viewModel.posts,
                             isLoadingPosts: viewModel.isLoadingPosts,
                             onEditProfile: onEditProfile,
-                            onPostClick: onPostClick
+                            onPostClick: { postId, post in
+                                logEvent("ProfileView:75", "onPostClick received", [
+                                    "postId": postId,
+                                    "hasPost": post != nil,
+                                    "postsCount": viewModel.posts.count
+                                ])
+                                onPostClick(postId, post)
+                            }
                         )
                         .padding(.horizontal, 18)
                         .padding(.top, 24)
                         .padding(.bottom, 20)
                     }
                     .scrollContentBackground(.hidden)
+                    .onAppear {
+                        logEvent("ProfileView:90", "ProfileView appeared with posts", [
+                            "postsCount": viewModel.posts.count,
+                            "userId": user.id
+                        ])
+                    }
                 } else {
                     Spacer()
                     Text("No profile found")
@@ -99,7 +146,7 @@ struct ProfileContent: View {
     let posts: [Post]
     let isLoadingPosts: Bool
     let onEditProfile: () -> Void
-    let onPostClick: (String) -> Void
+    let onPostClick: (String, Post?) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 27) {
@@ -221,7 +268,17 @@ struct ProfileContent: View {
                     }
                     .padding(.vertical, 32)
                 } else {
-                    PostThumbnailGrid(posts: posts, onPostClick: onPostClick)
+                    PostThumbnailGrid(
+                        posts: posts,
+                        onPostClick: { postId, post in
+                            logEvent("ProfileContent:256", "onPostClick received in ProfileContent", [
+                                "postId": postId,
+                                "hasPost": post != nil,
+                                "postsCount": posts.count
+                            ])
+                            onPostClick(postId, post)
+                        }
+                    )
                 }
             }
 
@@ -298,7 +355,7 @@ struct VerificationStatusBadge: View {
 
 struct PostThumbnailGrid: View {
     let posts: [Post]
-    let onPostClick: (String) -> Void
+    let onPostClick: (String, Post?) -> Void
     
     private let columns = [
         GridItem(.flexible(), spacing: 8),
@@ -316,7 +373,17 @@ struct PostThumbnailGrid: View {
         } else {
             LazyVGrid(columns: columns, spacing: 8) {
                 ForEach(posts, id: \.id) { post in
-                    PostThumbnailItem(post: post, onClick: { onPostClick(post.id) })
+                    PostThumbnailItem(
+                        post: post,
+                        onClick: {
+                            logEvent("PostThumbnailGrid:319", "onPostClick called from grid", [
+                                "postId": post.id,
+                                "hasPost": true,
+                                "totalPosts": posts.count
+                            ])
+                            onPostClick(post.id, post)
+                        }
+                    )
                 }
             }
         }
@@ -328,69 +395,75 @@ struct PostThumbnailItem: View {
     let onClick: () -> Void
     
     var body: some View {
-        ZStack {
-            let firstMedia = post.media.first
-            
-            if let media = firstMedia {
-                if media.type == .image {
-                    AsyncImage(url: URL(string: transformThumbnailUrl(media.url))) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                        case .failure(_), .empty:
-                            Color(red: 0.898, green: 0.902, blue: 0.859)
-                        @unknown default:
-                            Color(red: 0.898, green: 0.902, blue: 0.859)
+        Button(action: {
+            logEvent("PostThumbnailItem:395", "Button action triggered", [
+                "postId": post.id,
+                "hasMedia": post.media.first != nil
+            ])
+            onClick()
+        }) {
+            ZStack {
+                let firstMedia = post.media.first
+                
+                if let media = firstMedia {
+                    if media.type == .image {
+                        AsyncImage(url: URL(string: transformThumbnailUrl(media.url))) { phase in
+                            switch phase {
+                            case .success(let image):
+                                image
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                            case .failure(_), .empty:
+                                Color(red: 0.898, green: 0.902, blue: 0.859)
+                            @unknown default:
+                                Color(red: 0.898, green: 0.902, blue: 0.859)
+                            }
+                        }
+                    } else {
+                        // Video
+                        ZStack {
+                            if let thumbnailUrl = media.thumbnailUrl {
+                                AsyncImage(url: URL(string: transformThumbnailUrl(thumbnailUrl))) { phase in
+                                    switch phase {
+                                    case .success(let image):
+                                        image
+                                            .resizable()
+                                            .aspectRatio(contentMode: .fill)
+                                    case .failure(_), .empty:
+                                        Color.black.opacity(0.3)
+                                    @unknown default:
+                                        Color.black.opacity(0.3)
+                                    }
+                                }
+                            } else {
+                                Color.black.opacity(0.3)
+                            }
+                            
+                            // Play icon overlay
+                            Image(systemName: "play.fill")
+                                .font(.system(size: 24))
+                                .foregroundColor(.white)
                         }
                     }
                 } else {
-                    // Video
+                    // No media - placeholder
                     ZStack {
-                        if let thumbnailUrl = media.thumbnailUrl {
-                            AsyncImage(url: URL(string: transformThumbnailUrl(thumbnailUrl))) { phase in
-                                switch phase {
-                                case .success(let image):
-                                    image
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fill)
-                                case .failure(_), .empty:
-                                    Color.black.opacity(0.3)
-                                @unknown default:
-                                    Color.black.opacity(0.3)
-                                }
-                            }
+                        Color(red: 0.898, green: 0.902, blue: 0.859)
+                        if !post.text.isEmpty {
+                            Text(String(post.text.prefix(1)).uppercased())
+                                .font(.system(size: 24))
+                                .foregroundColor(.textSecondary)
                         } else {
-                            Color.black.opacity(0.3)
+                            Image(systemName: "photo")
+                                .font(.system(size: 24))
+                                .foregroundColor(.textSecondary)
                         }
-                        
-                        // Play icon overlay
-                        Image(systemName: "play.fill")
-                            .font(.system(size: 24))
-                            .foregroundColor(.white)
-                    }
-                }
-            } else {
-                // No media - placeholder
-                ZStack {
-                    Color(red: 0.898, green: 0.902, blue: 0.859)
-                    if !post.text.isEmpty {
-                        Text(String(post.text.prefix(1)).uppercased())
-                            .font(.system(size: 24))
-                            .foregroundColor(.textSecondary)
-                    } else {
-                        Image(systemName: "photo")
-                            .font(.system(size: 24))
-                            .foregroundColor(.textSecondary)
                     }
                 }
             }
-        }
-        .aspectRatio(1, contentMode: .fit)
-        .cornerRadius(12)
-        .onTapGesture {
-            onClick()
+            .aspectRatio(1, contentMode: .fit)
+            .cornerRadius(12)
+            .buttonStyle(PlainButtonStyle())
         }
     }
     
@@ -406,7 +479,5 @@ struct PostThumbnailItem: View {
         return secureUrl
     }
 }
+    
 
-#Preview {
-    ProfileView()
-}

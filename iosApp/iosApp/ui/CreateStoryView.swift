@@ -442,9 +442,6 @@ struct CreateStoryView: View {
             return
         }
         
-        // Set loading state immediately to show loader right away
-        viewModel.isCreatingStory = true
-        
         Task {
             do {
                 // Convert local MediaType to Shared.MediaType

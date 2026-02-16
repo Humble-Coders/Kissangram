@@ -3,19 +3,15 @@ package com.kissangram.ui.story
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -30,11 +26,6 @@ import com.kissangram.model.Story
 import com.kissangram.model.UserStories
 import com.kissangram.viewmodel.StoryViewModel
 import com.kissangram.ui.home.components.VideoPlayerView
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.foundation.Canvas
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.drawscope.Stroke
 import kotlinx.coroutines.delay
 
 @Composable
@@ -49,6 +40,14 @@ fun StoryScreen(
     )
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val allStoriesFinished by viewModel.allStoriesFinished.collectAsState()
+
+    // Navigate back when all stories are finished
+    LaunchedEffect(allStoriesFinished) {
+        if (allStoriesFinished) {
+            onBackClick()
+        }
+    }
 
     if (uiState.isLoading) {
         Box(
@@ -101,26 +100,8 @@ fun StoryScreen(
             modifier = Modifier.fillMaxSize()
         )
 
-        // Top Bar with Progress Indicators
-        StoryTopBar(
-            userStories = currentUserStories,
-            currentStoryIndex = uiState.currentStoryIndex,
-            onBackClick = onBackClick,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(8.dp)
-        )
-
-        // Bottom Actions
-        StoryBottomActions(
-            story = currentStory,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .padding(16.dp)
-        )
-
-        // Swipe Gestures
+        // Swipe Gestures (placed behind top bar to not interfere with close button)
+        val density = LocalDensity.current
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -128,16 +109,31 @@ fun StoryScreen(
                     detectTapGestures(
                         onTap = { offset ->
                             val screenWidth = size.width
-                            if (offset.x < screenWidth / 3) {
-                                // Left side - previous
-                                viewModel.previousStory()
-                            } else if (offset.x > screenWidth * 2 / 3) {
-                                // Right side - next
-                                viewModel.nextStory()
+                            // Don't intercept taps in the top bar area (first 100dp)
+                            val topBarHeightPx = with(density) { 100.dp.toPx() }
+                            if (offset.y > topBarHeightPx) {
+                                if (offset.x < screenWidth / 3) {
+                                    // Left side - previous
+                                    viewModel.previousStory()
+                                } else if (offset.x > screenWidth * 2 / 3) {
+                                    // Right side - next
+                                    viewModel.nextStory()
+                                }
                             }
                         }
                     )
                 }
+        )
+
+        // Top Bar with Progress Indicators (placed last so it's on top and clickable)
+        StoryTopBar(
+            userStories = currentUserStories,
+            currentStoryIndex = uiState.currentStoryIndex,
+            onBackClick = onBackClick,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(WindowInsets.statusBars.asPaddingValues())
+                .padding(8.dp)
         )
     }
 }
@@ -275,12 +271,16 @@ private fun StoryTopBar(
                 )
             }
 
-            // Close Button
-            IconButton(onClick = onBackClick) {
+            // Close Button - ensure it's clickable
+            IconButton(
+                onClick = onBackClick,
+                modifier = Modifier.size(48.dp)
+            ) {
                 Icon(
                     imageVector = Icons.Default.Close,
                     contentDescription = "Close",
-                    tint = Color.White
+                    tint = Color.White,
+                    modifier = Modifier.size(24.dp)
                 )
             }
         }
@@ -322,35 +322,6 @@ private fun StoryProgressBar(
     }
 }
 
-@Composable
-private fun StoryBottomActions(
-    story: Story,
-    modifier: Modifier = Modifier
-) {
-    Row(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        // Like Button
-        IconButton(onClick = { /* TODO: Implement like */ }) {
-            Icon(
-                imageVector = if (story.isLikedByMe) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                contentDescription = "Like",
-                tint = if (story.isLikedByMe) Color.Red else Color.White
-            )
-        }
-
-        Spacer(modifier = Modifier.weight(1f))
-
-        // View Count
-        Text(
-            text = "${story.viewsCount} views",
-            color = Color.White.copy(alpha = 0.8f),
-            fontSize = 14.sp
-        )
-    }
-}
 
 // Factory for creating StoryViewModel
 class StoryViewModelFactory(

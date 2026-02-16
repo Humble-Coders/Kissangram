@@ -304,7 +304,16 @@ struct ContentView: View {
                     navigationStack = []
                     selectedTab = .home
                 },
-                onPostClick: { postId in navigateTo(.postDetail(postId: postId, post: nil)) },
+                onPostClick: { postId, post in
+                    print("🔵 [ContentView:307] onPostClick callback received - postId: \(postId), hasPost: \(post != nil)")
+                    logToFile("ContentView:307", "onPostClick callback received", [
+                        "postId": postId,
+                        "hasPost": post != nil
+                    ])
+                    print("🔵 [ContentView:327] About to call navigateTo with .ownPostDetail")
+                    navigateTo(.ownPostDetail(postId: postId, post: post))
+                    print("🔵 [ContentView:329] navigateTo call completed")
+                },
                 reloadKey: profileReloadKey
             )
             
@@ -333,7 +342,7 @@ struct ContentView: View {
                         navigationStack = []
                         selectedTab = .home
                     },
-                    onPostClick: { postId in navigateTo(.postDetail(postId: postId, post: nil)) },
+                    onPostClick: { postId, post in navigateTo(.ownPostDetail(postId: postId, post: post)) },
                     reloadKey: profileReloadKey
                 )
             } else {
@@ -341,18 +350,33 @@ struct ContentView: View {
                 OtherUserProfileView(
                     userId: userId,
                     onBackClick: { navigateBack() },
-                    onPostClick: { postId in navigateTo(.postDetail(postId: postId, post: nil)) }
+                    onPostClick: { postId, post in navigateTo(.postDetail(postId: postId, post: post)) }
                 )
             }
             
         case .story(let userId):
             StoryView(
                 userId: userId,
-                onBackClick: { navigateBack() }
+                onBackClick: { 
+                    navigateBack()
+                }
             )
             
         case .postDetail(let postId, let post):
             CommentsView(
+                postId: postId,
+                initialPost: post,
+                onBackClick: { navigateBack() },
+                onNavigateToProfile: { userId in navigateTo(.userProfile(userId: userId)) }
+            )
+            
+        case .ownPostDetail(let postId, let post):
+            let _ = print("🔵 [ContentView:373] Rendering OwnPostDetailView - postId: \(postId), hasPost: \(post != nil)")
+            let _ = logToFile("ContentView:373", "Rendering OwnPostDetailView", [
+                "postId": postId,
+                "hasPost": post != nil
+            ])
+            OwnPostDetailView(
                 postId: postId,
                 initialPost: post,
                 onBackClick: { navigateBack() },
@@ -364,9 +388,42 @@ struct ContentView: View {
         }
     }
     
+    private func logToFile(_ location: String, _ message: String, _ data: [String: Any] = [:]) {
+        let logData: [String: Any] = [
+            "location": location,
+            "message": message,
+            "data": data,
+            "timestamp": Int(Date().timeIntervalSince1970 * 1000)
+        ]
+        
+        if let jsonData = try? JSONSerialization.data(withJSONObject: logData),
+           let jsonString = String(data: jsonData, encoding: .utf8) {
+            let logLine = jsonString + "\n"
+            let logPath = "/Users/rishibhardwaj/AndroidStudioProjects/Kissangram/.cursor/debug.log"
+            
+            let directory = (logPath as NSString).deletingLastPathComponent
+            try? FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true, attributes: nil)
+            
+            if let logFile = FileHandle(forWritingAtPath: logPath) {
+                logFile.seekToEndOfFile()
+                logFile.write(logLine.data(using: .utf8) ?? Data())
+                logFile.closeFile()
+            } else {
+                try? logLine.write(toFile: logPath, atomically: true, encoding: .utf8)
+            }
+        }
+    }
+    
     private func navigateTo(_ screen: Screen) {
+        print("🔵 [ContentView:navigateTo] Navigating to screen: \(screen)")
+        logToFile("ContentView:navigateTo", "Navigating to screen", [
+            "screen": "\(screen)",
+            "currentScreen": "\(currentScreen)",
+            "navigationStackCount": navigationStack.count
+        ])
         navigationStack.append(currentScreen)
         currentScreen = screen
+        print("🔵 [ContentView:navigateTo] currentScreen updated to: \(currentScreen)")
         
         // Update selected tab when navigating to main screens
         switch screen {
@@ -377,6 +434,7 @@ struct ContentView: View {
         case .profile: selectedTab = .profile
         default: break
         }
+        print("🔵 [ContentView:navigateTo] Navigation completed")
     }
     
     private func navigateBack() {

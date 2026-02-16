@@ -16,13 +16,16 @@ class StoryViewModel: ObservableObject {
     @Published var currentStoryIndex: Int = 0
     @Published var isLoading: Bool = false
     @Published var error: String? = nil
+    @Published var allStoriesFinished: Bool = false
     
     private var autoAdvanceTask: Task<Void, Never>? = nil
     private let STORY_DURATION_MS: UInt64 = 5_000_000_000 // 5 seconds in nanoseconds
     
     init(initialUserId: String) {
         self.authRepository = IOSAuthRepository(preferencesRepository: prefs)
-        self.storyRepository = FirestoreStoryRepository(authRepository: authRepository)
+        let userRepository = FirestoreUserRepository(authRepository: authRepository)
+        let followRepository = IOSFollowRepository(authRepository: authRepository, userRepository: userRepository)
+        self.storyRepository = FirestoreStoryRepository(authRepository: authRepository, followRepository: followRepository)
         self.getStoryBarUseCase = GetStoryBarUseCase(storyRepository: storyRepository)
         
         Task {
@@ -63,8 +66,8 @@ class StoryViewModel: ObservableObject {
         }
     }
     
-    func nextStory() {
-        guard let currentUserStories = getCurrentUserStories() else { return }
+    func nextStory() -> Bool {
+        guard let currentUserStories = getCurrentUserStories() else { return false }
         
         if currentStoryIndex < currentUserStories.stories.count - 1 {
             // Move to next story in current user
@@ -73,9 +76,10 @@ class StoryViewModel: ObservableObject {
             Task {
                 await markCurrentStoryAsViewed()
             }
+            return true
         } else {
             // Move to next user
-            nextUser()
+            return nextUser()
         }
     }
     
@@ -95,7 +99,7 @@ class StoryViewModel: ObservableObject {
         }
     }
     
-    func nextUser() {
+    func nextUser() -> Bool {
         if currentUserIndex < userStories.count - 1 {
             currentUserIndex += 1
             currentStoryIndex = 0
@@ -103,6 +107,11 @@ class StoryViewModel: ObservableObject {
             Task {
                 await markCurrentStoryAsViewed()
             }
+            return true
+        } else {
+            // All stories finished
+            allStoriesFinished = true
+            return false
         }
     }
     
@@ -132,7 +141,10 @@ class StoryViewModel: ObservableObject {
         autoAdvanceTask = Task {
             try? await Task.sleep(nanoseconds: STORY_DURATION_MS)
             if !Task.isCancelled {
-                nextStory()
+                let hasMore = nextStory()
+                if !hasMore {
+                    allStoriesFinished = true
+                }
             }
         }
     }

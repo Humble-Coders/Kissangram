@@ -21,6 +21,7 @@ enum Screen {
     
     // Detail Screens
     case postDetail(postId: String, post: Post?)
+    case ownPostDetail(postId: String, post: Post?)
     case userProfile(userId: String)
     case story(userId: String)
     case notifications

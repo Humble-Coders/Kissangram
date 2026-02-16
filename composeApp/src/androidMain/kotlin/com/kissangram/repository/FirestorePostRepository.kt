@@ -458,6 +458,41 @@ class FirestorePostRepository(
         }
     }
     
+    override suspend fun deletePost(postId: String) {
+        Log.d(TAG, "deletePost: postId=$postId")
+        
+        val currentUserId = authRepository.getCurrentUserId()
+            ?: throw IllegalStateException("User must be authenticated to delete post")
+        
+        val postRef = postsCollection.document(postId)
+        
+        // Verify the post belongs to current user
+        val postDoc = postRef.get().await()
+        if (!postDoc.exists()) {
+            throw IllegalArgumentException("Post not found")
+        }
+        
+        val postData = postDoc.data
+        val postAuthorId = postData?.get("authorId") as? String
+        if (postAuthorId != currentUserId) {
+            throw IllegalStateException("User can only delete their own posts")
+        }
+        
+        // Soft delete: set isActive = false
+        // This triggers onPostDelete Cloud Function which removes from feeds and posts collection
+        val updateData = mapOf(
+            "isActive" to false
+        )
+        
+        try {
+            postRef.update(updateData).await()
+            Log.d(TAG, "✅ deletePost: Post soft-deleted successfully, Cloud Function will handle cleanup")
+        } catch (e: Exception) {
+            Log.e(TAG, "deletePost: FAILED", e)
+            throw Exception("Failed to delete post: ${e.message}", e)
+        }
+    }
+    
     /**
      * Batch check which comments are liked by the current user.
      * Uses parallel coroutines for efficient batch fetching.

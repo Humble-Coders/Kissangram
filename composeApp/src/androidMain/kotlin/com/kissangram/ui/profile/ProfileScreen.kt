@@ -59,9 +59,10 @@ fun ProfileScreen(
     onBackClick: () -> Unit = {},
     onEditProfile: () -> Unit = {},
     onSignOut: () -> Unit = {},
-    onPostClick: (String) -> Unit = {},
+    onPostClick: (String, Post?) -> Unit = { _, _ -> },
     reloadKey: Int = 0, // Key that changes to trigger reload after save
-    viewModel: ProfileViewModel = viewModel()
+    viewModel: ProfileViewModel = viewModel(),
+    bottomNavPadding: PaddingValues = PaddingValues(0.dp)
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var showMenu by remember { mutableStateOf(false) }
@@ -164,7 +165,7 @@ fun ProfileScreen(
                                 isLoadingPosts = uiState.isLoadingPosts,
                                 onEditProfile = onEditProfile,
                                 onPostClick = onPostClick,
-                                paddingValues = PaddingValues(0.dp) // no Scaffold now
+                                paddingValues = PaddingValues(bottom = bottomNavPadding.calculateBottomPadding())
                             )
                         } ?: run {
                             Box(
@@ -186,14 +187,14 @@ private fun ProfileContent(
     posts: List<Post>,
     isLoadingPosts: Boolean,
     onEditProfile: () -> Unit,
-    onPostClick: (String) -> Unit,
+    onPostClick: (String, Post?) -> Unit,
     paddingValues: PaddingValues
 ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(paddingValues)
             .padding(horizontal = 24.dp)
+            .padding(bottom = paddingValues.calculateBottomPadding())
             .verticalScroll(rememberScrollState())
     ) {
         Spacer(Modifier.height(16.dp))
@@ -403,7 +404,7 @@ private fun StatItem(count: Int, label: String) {
 @Composable
 internal fun PostThumbnailGrid(
     posts: List<Post>,
-    onPostClick: (String) -> Unit,
+    onPostClick: (String, Post?) -> Unit,
     modifier: Modifier = Modifier
 ) {
     if (posts.isEmpty()) {
@@ -434,7 +435,7 @@ internal fun PostThumbnailGrid(
                     rowPosts.forEach { post ->
                         PostThumbnailItem(
                             post = post,
-                            onClick = { onPostClick(post.id) },
+                            onClick = { onPostClick(post.id, post) },
                             modifier = Modifier.weight(1f)
                         )
                     }

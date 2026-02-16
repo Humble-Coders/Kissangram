@@ -19,7 +19,8 @@ class FirestoreStoryRepository(
         com.google.firebase.FirebaseApp.getInstance(),
         DATABASE_NAME
     ),
-    private val authRepository: AuthRepository
+    private val authRepository: AuthRepository,
+    private val followRepository: FollowRepository
 ) : StoryRepository {
     
     private val storiesCollection
@@ -49,8 +50,7 @@ class FirestoreStoryRepository(
         documentData["createdAt"] = com.google.firebase.firestore.FieldValue.serverTimestamp()
         
         // Calculate expiresAt as createdAt + 24 hours
-        // We'll set this after getting the actual createdAt timestamp
-        // For now, we'll use a client-side estimate (Cloud Function will set it properly later)
+        // Using client-side estimate (Cloud Function no longer sets this)
         val estimatedExpiresAt = Date(System.currentTimeMillis() + (24 * 60 * 60 * 1000L))
         documentData["expiresAt"] = Timestamp(estimatedExpiresAt)
         
@@ -81,16 +81,36 @@ class FirestoreStoryRepository(
         Log.d(TAG, "getStoryBar: currentUserId=${currentUserId.take(8)}...")
         
         return try {
-            // Query storiesFeed subcollection ordered by createdAt DESC
-            val storiesFeedRef = firestore
+            // Get list of followed user IDs from users/{currentUserId}/following
+            val followingSnapshot = firestore
                 .collection("users")
                 .document(currentUserId)
-                .collection("storiesFeed")
-                .orderBy("createdAt", Query.Direction.DESCENDING)
+                .collection("following")
+                .get()
+                .await()
             
-            val snapshot = storiesFeedRef.get().await()
-            val rawCount = snapshot.documents.size
-            Log.d(TAG, "getStoryBar: fetched $rawCount story documents")
+            val followedUserIds = followingSnapshot.documents.map { it.id }.toMutableSet()
+            // Always include current user's own ID
+            followedUserIds.add(currentUserId)
+            
+            Log.d(TAG, "getStoryBar: found ${followedUserIds.size} users to query (including self)")
+            
+            if (followedUserIds.isEmpty()) {
+                Log.d(TAG, "getStoryBar: no followed users, returning empty list")
+                return emptyList()
+            }
+            
+            // Query all active stories from /stories collection
+            // Filter by followed users client-side to avoid whereIn limit of 10
+            val storiesSnapshot = firestore
+                .collection("stories")
+                .whereEqualTo("isActive", true)
+                .orderBy("createdAt", Query.Direction.DESCENDING)
+                .get()
+                .await()
+            
+            val rawCount = storiesSnapshot.documents.size
+            Log.d(TAG, "getStoryBar: fetched $rawCount active story documents")
             
             if (rawCount == 0) {
                 return emptyList()
@@ -98,10 +118,15 @@ class FirestoreStoryRepository(
             
             val currentTime = System.currentTimeMillis()
             
-            // Filter expired stories and parse to Story objects
-            val stories = snapshot.documents
+            // Filter by followed users, expired stories, and parse to Story objects
+            val stories = storiesSnapshot.documents
                 .mapNotNull { doc ->
                     try {
+                        val authorId = doc.getString("authorId")
+                        if (authorId == null || !followedUserIds.contains(authorId)) {
+                            return@mapNotNull null
+                        }
+                        
                         // Check if story is expired
                         val expiresAt = doc.getTimestamp("expiresAt")?.toDate()?.time
                         if (expiresAt != null && expiresAt < currentTime) {
@@ -116,7 +141,7 @@ class FirestoreStoryRepository(
                     }
                 }
             
-            Log.d(TAG, "getStoryBar: parsed ${stories.size} valid stories (after filtering expired)")
+            Log.d(TAG, "getStoryBar: parsed ${stories.size} valid stories (after filtering by followed users and expired)")
             
             if (stories.isEmpty()) {
                 return emptyList()
@@ -239,8 +264,95 @@ class FirestoreStoryRepository(
     }
     
     override suspend fun getStoriesForUser(userId: String): List<Story> {
-        // TODO: Implement get stories for user
-        throw UnsupportedOperationException("Not yet implemented")
+        Log.d(TAG, "getStoriesForUser: start for userId=${userId.take(8)}...")
+        val currentUserId = authRepository.getCurrentUserId()
+        if (currentUserId == null) {
+            Log.w(TAG, "getStoriesForUser: currentUserId is null, returning empty list")
+            return emptyList()
+        }
+        
+        return try {
+            // Check if current user follows the target user
+            val isFollowing = if (currentUserId == userId) {
+                true // User viewing their own profile
+            } else {
+                try {
+                    followRepository.isFollowing(userId)
+                } catch (e: Exception) {
+                    Log.e(TAG, "getStoriesForUser: failed to check follow status", e)
+                    false
+                }
+            }
+            
+            Log.d(TAG, "getStoriesForUser: isFollowing=$isFollowing")
+            
+            // Build query: authorId == userId, isActive == true
+            var query = firestore
+                .collection("stories")
+                .whereEqualTo("authorId", userId)
+                .whereEqualTo("isActive", true)
+                .orderBy("createdAt", Query.Direction.DESCENDING)
+            
+            // If not following, only show public stories
+            if (!isFollowing) {
+                query = query.whereEqualTo("visibility", "public")
+            }
+            // If following, show all stories (both public and followers)
+            
+            val snapshot = query.get().await()
+            val rawCount = snapshot.documents.size
+            Log.d(TAG, "getStoriesForUser: fetched $rawCount story documents")
+            
+            if (rawCount == 0) {
+                return emptyList()
+            }
+            
+            val currentTime = System.currentTimeMillis()
+            
+            // Filter expired stories and parse to Story objects
+            val stories = snapshot.documents
+                .mapNotNull { doc ->
+                    try {
+                        // Check if story is expired
+                        val expiresAt = doc.getTimestamp("expiresAt")?.toDate()?.time
+                        if (expiresAt != null && expiresAt < currentTime) {
+                            Log.d(TAG, "getStoriesForUser: skipping expired story ${doc.id}")
+                            return@mapNotNull null
+                        }
+                        
+                        doc.toStory()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "getStoriesForUser: failed to parse story ${doc.id}", e)
+                        null
+                    }
+                }
+            
+            Log.d(TAG, "getStoriesForUser: parsed ${stories.size} valid stories (after filtering expired)")
+            
+            if (stories.isEmpty()) {
+                return emptyList()
+            }
+            
+            // Batch check views and likes
+            val storyIds = stories.map { it.id }
+            val viewedStoryIds = batchCheckViews(storyIds, currentUserId)
+            val likedStoryIds = batchCheckLikes(storyIds, currentUserId)
+            
+            // Update stories with view/like status
+            val storiesWithStatus = stories.map { story ->
+                story.copy(
+                    isViewedByMe = viewedStoryIds.contains(story.id),
+                    isLikedByMe = likedStoryIds.contains(story.id)
+                )
+            }
+            
+            Log.d(TAG, "getStoriesForUser: returning ${storiesWithStatus.size} stories")
+            storiesWithStatus
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "getStoriesForUser: failed", e)
+            throw Exception("Failed to get stories for user: ${e.message}", e)
+        }
     }
     
     override suspend fun markStoryAsViewed(storyId: String) {
@@ -287,8 +399,13 @@ class FirestoreStoryRepository(
     }
     
     override suspend fun getMyStories(): List<Story> {
-        // TODO: Implement get my stories
-        throw UnsupportedOperationException("Not yet implemented")
+        val currentUserId = authRepository.getCurrentUserId()
+        if (currentUserId == null) {
+            Log.w(TAG, "getMyStories: currentUserId is null, returning empty list")
+            return emptyList()
+        }
+        // Use getStoriesForUser with current user's ID
+        return getStoriesForUser(currentUserId)
     }
     
     /**
