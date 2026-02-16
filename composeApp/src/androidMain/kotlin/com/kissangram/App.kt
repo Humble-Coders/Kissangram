@@ -308,6 +308,12 @@ private fun NavigationGraph(
                 onUserClick = { userId -> 
                     navController.navigate(Screen.buildUserProfileRoute(userId))
                 },
+                onPostClick = { postId, post ->
+                    navController.navigate(Screen.buildPostDetailRoute(postId))
+                },
+                onFollowClick = { userId ->
+                    // Follow handled in ViewModel
+                },
                 bottomNavPadding = bottomNavPadding
             )
         }

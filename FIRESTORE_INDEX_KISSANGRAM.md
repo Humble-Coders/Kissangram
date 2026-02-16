@@ -55,3 +55,53 @@ Required for `getReplies(postId, parentCommentId)` — querying replies under a 
 4. Collection ID: `comments` (ensure you're indexing the subcollection under posts)
 5. Add fields: `parentCommentId` (Ascending), `isActive` (Ascending), `createdAt` (Ascending)
 6. Create.
+
+---
+
+## Search Screen Suggestions Indexes
+
+### 1. Random Posts Index
+
+Required for `getRandomPosts()` — fetching random posts for discovery feed.
+
+- **Collection**: `posts`
+- **Query scope**: Collection
+- **Fields**:
+  - `isActive` — Ascending
+  - `createdAt` — Descending
+
+**When you run the app and this query executes, Firebase will show an error in logcat with an exact link like:**
+```
+https://console.firebase.google.com/v1/r/project/kissangram-19531/firestore/indexes?create_composite=ClAKDnBvc3RzGg4KBGlzQWN0aXZlEAEaDAoKY3JlYXRlZEF0EAIaDAoIaXNBY3RpdmUQARoMCgpjcmVhdGVkQXQQAhgC
+```
+
+**Or manually create in Firebase Console:**
+1. Open Firebase Console → Firestore Database.
+2. Select the **kissangram** database.
+3. Indexes → Composite → Create index.
+4. Collection ID: `posts`
+5. Add fields: `isActive` (Ascending), `createdAt` (Descending)
+6. Create.
+
+### 2. Suggested Users Index
+
+Required for `getSuggestedUsers()` — fetching suggested users to follow.
+
+- **Collection**: `users`
+- **Query scope**: Collection
+- **Fields**:
+  - `isActive` — Ascending
+  - `followersCount` — Descending
+
+**When you run the app and this query executes, Firebase will show an error in logcat with an exact link like:**
+```
+https://console.firebase.google.com/v1/r/project/kissangram-19531/firestore/indexes?create_composite=ClAKDXBvc3RzGg4KBGlzQWN0aXZlEAEaEAoOZm9sbG93ZXJzQ291bnQQAhgC
+```
+
+**Or manually create in Firebase Console:**
+1. Open Firebase Console → Firestore Database.
+2. Select the **kissangram** database.
+3. Indexes → Composite → Create index.
+4. Collection ID: `users`
+5. Add fields: `isActive` (Ascending), `followersCount` (Descending)
+6. Create.

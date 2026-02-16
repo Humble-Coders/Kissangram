@@ -168,6 +168,64 @@ final class FirestoreUserRepository: UserRepository {
             return []
         }
     }
+    
+    func getSuggestedUsers(limit: Int32) async throws -> [UserInfo] {
+        guard limit > 0 else {
+            return []
+        }
+        
+        guard let currentUserId = try? await authRepository.getCurrentUserId() else {
+            return []
+        }
+        
+        // Get list of followed user IDs
+        let followingSnapshot = try await usersCollection
+            .document(currentUserId)
+            .collection("following")
+            .getDocuments()
+        
+        var followedUserIds = Set(followingSnapshot.documents.map { $0.documentID })
+        followedUserIds.insert(currentUserId)
+        
+        // Query users excluding current user and followed users
+        // Order by followersCount DESC, prioritize verified users
+        let querySnapshot = try await usersCollection
+            .whereField(Self.fieldIsActive, isEqualTo: true)
+            .order(by: Self.fieldFollowersCount, descending: true)
+            .limit(to: Int(limit * 2)) // Fetch more to shuffle and filter
+            .getDocuments()
+        
+        let allUsers = querySnapshot.documents.compactMap { doc -> UserInfo? in
+            let userId = doc.documentID
+            // Skip current user and already followed users
+            if followedUserIds.contains(userId) {
+                return nil
+            }
+            
+            let data = doc.data()
+            guard let name = data[Self.fieldName] as? String else { return nil }
+            let username = data[Self.fieldUsername] as? String ?? ""
+            let profileImageUrl = data[Self.fieldProfileImageUrl] as? String
+            let roleStr = data[Self.fieldRole] as? String ?? "farmer"
+            let statusStr = data[Self.fieldVerificationStatus] as? String ?? "unverified"
+            
+            return UserInfo(
+                id: userId,
+                name: name,
+                username: username,
+                profileImageUrl: profileImageUrl,
+                role: Self.firestoreToRole(roleStr),
+                verificationStatus: Self.firestoreToVerificationStatus(statusStr)
+            )
+        }
+        
+        // Prioritize verified users, then shuffle for randomness
+        let verifiedUsers = allUsers.filter { $0.verificationStatus == .verified }
+        let otherUsers = allUsers.filter { $0.verificationStatus != .verified }
+        let prioritizedUsers = Array((verifiedUsers + otherUsers).shuffled().prefix(Int(limit)))
+        
+        return prioritizedUsers
+    }
 
     func updateProfile(
         name: String?,

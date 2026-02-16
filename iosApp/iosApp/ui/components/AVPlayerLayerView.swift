@@ -1,11 +1,3 @@
-//
-//  AVPlayerLayerView.swift
-//  iosApp
-//
-//  Created by Rishi Bhardwaj on 16/02/26.
-//
-
-
 import SwiftUI
 import AVFoundation
 

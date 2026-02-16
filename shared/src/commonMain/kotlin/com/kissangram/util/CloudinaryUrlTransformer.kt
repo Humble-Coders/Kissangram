@@ -38,6 +38,41 @@ object CloudinaryUrlTransformer {
     }
     
     /**
+     * Generate thumbnail URL from a video URL.
+     * For Cloudinary videos, adds thumbnail transformations to extract a frame.
+     * Format: /video/upload/w_300,h_300,c_fill/so_0.3/v123/folder/file.jpg
+     * The .jpg extension at the end tells Cloudinary to render the frame as an image.
+     */
+    fun generateVideoThumbnailUrl(videoUrl: String): String {
+        if (!isCloudinaryUrl(videoUrl)) {
+            return videoUrl
+        }
+        
+        val secureUrl = ensureHttps(videoUrl)
+        
+        // Remove any existing query parameters
+        val baseUrl = secureUrl.split("?")[0]
+        
+        // Change file extension from video format to .jpg
+        val urlWithoutExtension = baseUrl.replace(Regex("\\.(mp4|mov|avi|webm|mkv)$"), "")
+        val urlWithJpg = "$urlWithoutExtension.jpg"
+        
+        // Insert transformations and so_ parameter right after /upload/
+        // Format: https://res.cloudinary.com/cloud/video/upload/w_300,h_300,c_fill/so_0.3/v123/folder/file.jpg
+        val uploadIndex = urlWithJpg.indexOf("/upload/")
+        if (uploadIndex != -1) {
+            val afterUpload = urlWithJpg.substring(uploadIndex + "/upload/".length)
+            
+            // Insert transformations and so_ right after /upload/
+            val transformations = "w_300,h_300,c_fill/so_0.3"
+            return urlWithJpg.substring(0, uploadIndex + "/upload/".length) + 
+                   "$transformations/" + afterUpload
+        }
+        
+        return urlWithJpg
+    }
+    
+    /**
      * Get original URL without transformations
      */
     fun getOriginal(url: String): String {

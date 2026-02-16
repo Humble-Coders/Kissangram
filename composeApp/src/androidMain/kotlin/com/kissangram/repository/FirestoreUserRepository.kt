@@ -256,6 +256,89 @@ class FirestoreUserRepository(
     override suspend fun isUsernameAvailable(username: String): Boolean = true
     override suspend fun getFollowers(userId: String, page: Int, pageSize: Int): List<UserInfo> = emptyList()
     override suspend fun getFollowing(userId: String, page: Int, pageSize: Int): List<UserInfo> = emptyList()
+    
+    override suspend fun getSuggestedUsers(limit: Int): List<UserInfo> {
+        Log.d(TAG, "getSuggestedUsers: limit=$limit")
+        require(limit > 0) { "Limit must be positive" }
+        
+        return try {
+            val currentUserId = authRepository.getCurrentUserId() ?: return emptyList()
+            
+            // Get list of followed user IDs
+            val followingSnapshot = usersCollection
+                .document(currentUserId)
+                .collection("following")
+                .get()
+                .await()
+            
+            val followedUserIds = followingSnapshot.documents.map { it.id }.toSet() + currentUserId
+            
+            Log.d(TAG, "getSuggestedUsers: currentUserId=$currentUserId, following ${followedUserIds.size - 1} users")
+            
+            // Query users excluding current user and followed users
+            // Order by followersCount DESC, prioritize verified users
+            // REQUIRES FIRESTORE INDEX:
+            // Collection: users
+            // Fields: isActive (Ascending), followersCount (Descending)
+            // If you see an index error, Firebase will provide a direct link in logcat like:
+            // https://console.firebase.google.com/v1/r/project/kissangram-19531/firestore/indexes?create_composite=...
+            val querySnapshot = usersCollection
+                .whereEqualTo(FIELD_IS_ACTIVE, true)
+                .orderBy(FIELD_FOLLOWERS_COUNT, com.google.firebase.firestore.Query.Direction.DESCENDING)
+                .limit((limit * 2).toLong()) // Fetch more to shuffle and filter
+                .get()
+                .await()
+            
+            val allUsers = querySnapshot.documents.mapNotNull { doc ->
+                val userId = doc.id
+                // Skip current user and already followed users
+                if (userId in followedUserIds) {
+                    return@mapNotNull null
+                }
+                
+                try {
+                    val data = doc.data ?: return@mapNotNull null
+                    val name = data[FIELD_NAME] as? String ?: return@mapNotNull null
+                    val username = data[FIELD_USERNAME] as? String ?: return@mapNotNull null
+                    val profileImageUrl = data[FIELD_PROFILE_IMAGE_URL] as? String
+                    val roleStr = data[FIELD_ROLE] as? String ?: "farmer"
+                    val statusStr = data[FIELD_VERIFICATION_STATUS] as? String ?: "unverified"
+                    
+                    UserInfo(
+                        id = userId,
+                        name = name,
+                        username = username,
+                        profileImageUrl = profileImageUrl,
+                        role = firestoreToRole(roleStr),
+                        verificationStatus = firestoreToVerificationStatus(statusStr)
+                    )
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error parsing user document ${doc.id}", e)
+                    null
+                }
+            }
+            
+            // Prioritize verified users, then shuffle for randomness
+            val verifiedUsers = allUsers.filter { it.verificationStatus == VerificationStatus.VERIFIED }
+            val otherUsers = allUsers.filter { it.verificationStatus != VerificationStatus.VERIFIED }
+            val prioritizedUsers = (verifiedUsers + otherUsers).shuffled().take(limit)
+            
+            Log.d(TAG, "getSuggestedUsers: returning ${prioritizedUsers.size} users")
+            prioritizedUsers
+        } catch (e: Exception) {
+            Log.e(TAG, "getSuggestedUsers: FAILED", e)
+            // If you see an index error, check logcat for the exact Firebase Console link
+            // Example format: https://console.firebase.google.com/v1/r/project/kissangram-19531/firestore/indexes?create_composite=...
+            // Required index: Collection: users, Fields: isActive (Ascending), followersCount (Descending)
+            if (e.message?.contains("index") == true || e.message?.contains("Index") == true) {
+                Log.e(TAG, "MISSING FIRESTORE INDEX for getSuggestedUsers!")
+                Log.e(TAG, "Collection: users")
+                Log.e(TAG, "Fields: isActive (Ascending), followersCount (Descending)")
+                Log.e(TAG, "Check the error message above for the exact Firebase Console link to create this index")
+            }
+            emptyList()
+        }
+    }
 
     private fun generateUsername(name: String, userId: String): String {
         val base = name.trim().lowercase().replace(Regex("[^a-z0-9]"), "_").take(20)

@@ -50,6 +50,9 @@ kotlin {
             implementation("androidx.camera:camera-video:1.3.1")
             implementation("androidx.camera:camera-lifecycle:1.3.1")
             implementation("androidx.camera:camera-view:1.3.1")
+            
+            // Lottie for animations
+            implementation("com.airbnb.android:lottie-compose:6.7.1")
 
 
         }

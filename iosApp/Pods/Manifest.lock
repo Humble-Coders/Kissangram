@@ -1429,6 +1429,7 @@ PODS:
   - GTMSessionFetcher/Core (4.5.0)
   - Kingfisher (8.6.2)
   - leveldb-library (1.22.6)
+  - lottie-ios (4.6.0)
   - nanopb (3.30910.0):
     - nanopb/decode (= 3.30910.0)
     - nanopb/encode (= 3.30910.0)
@@ -1446,6 +1447,7 @@ DEPENDENCIES:
   - Firebase/Firestore
   - Firebase/Storage
   - Kingfisher
+  - lottie-ios
   - shared (from `../shared`)
 
 SPEC REPOS:
@@ -1474,6 +1476,7 @@ SPEC REPOS:
     - GTMSessionFetcher
     - Kingfisher
     - leveldb-library
+    - lottie-ios
     - nanopb
     - PromisesObjC
     - RecaptchaInterop
@@ -1507,11 +1510,12 @@ SPEC CHECKSUMS:
   GTMSessionFetcher: fc75fc972958dceedee61cb662ae1da7a83a91cf
   Kingfisher: 23d18f54677d973b713e54ce6a8f5eef6e7056ba
   leveldb-library: cc8b8f8e013647a295ad3f8cd2ddf49a6f19be19
+  lottie-ios: 8f959969761e9c45d70353667d00af0e5b9cadb3
   nanopb: fad817b59e0457d11a5dfbde799381cd727c1275
   PromisesObjC: f5707f49cb48b9636751c5b2e7d227e43fba9f47
   RecaptchaInterop: 11e0b637842dfb48308d242afc3f448062325aba
   shared: 359db3059f5b37e28dffc6a82370cd6b27486f9d
 
-PODFILE CHECKSUM: d01a825cae6b1be11ad1b1f2385cc60feb8766c9
+PODFILE CHECKSUM: cbe85ff3b9cb4860118a1e29bf45af800a1ace5d
 
 COCOAPODS: 1.16.2

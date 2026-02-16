@@ -11,5 +11,6 @@ target 'iosApp' do
   pod 'Firebase/Storage'
   pod 'Cloudinary'
   pod 'Kingfisher' # Image caching: memory + disk, industry standard for scalable feeds
+  pod 'lottie-ios' # Lottie animations for loading screens
 
 end

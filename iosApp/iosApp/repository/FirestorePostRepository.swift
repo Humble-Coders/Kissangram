@@ -672,6 +672,68 @@ final class FirestorePostRepository: PostRepository {
         return []
     }
     
+    func getRandomPosts(limit: Int32) async throws -> [Post] {
+        guard limit > 0 else {
+            throw NSError(domain: "FirestorePostRepository", code: 400, userInfo: [NSLocalizedDescriptionKey: "Limit must be positive"])
+        }
+        
+        guard let currentUserId = try? await authRepository.getCurrentUserId() else {
+            return []
+        }
+        
+        // Fetch recent posts with media, excluding current user's posts
+        let query = postsCollection
+            .whereField("isActive", isEqualTo: true)
+            .order(by: "createdAt", descending: true)
+            .limit(to: Int(limit * 2)) // Fetch more to shuffle and filter
+        
+        let snapshot = try await query.getDocuments()
+        let allPosts = snapshot.documents.compactMap { doc -> Post? in
+            guard let post = toPost(from: doc, isLikedByMe: false) else { return nil }
+            // Filter out current user's posts and posts without media
+            if post.authorId != currentUserId && !post.media.isEmpty {
+                return post
+            }
+            return nil
+        }
+        
+        // Shuffle for randomness and take limit
+        let shuffledPosts = Array(allPosts.shuffled().prefix(Int(limit)))
+        
+        // Batch check which posts are liked by current user
+        let likedPostIds = try await batchCheckLikes(postIds: shuffledPosts.map { $0.id }, userId: currentUserId)
+        
+        // Update posts with correct isLikedByMe value
+        let result = shuffledPosts.map { post in
+            Post(
+                id: post.id,
+                authorId: post.authorId,
+                authorName: post.authorName,
+                authorUsername: post.authorUsername,
+                authorProfileImageUrl: post.authorProfileImageUrl,
+                authorRole: post.authorRole,
+                authorVerificationStatus: post.authorVerificationStatus,
+                type: post.type,
+                text: post.text,
+                media: post.media,
+                voiceCaption: post.voiceCaption,
+                crops: post.crops,
+                hashtags: post.hashtags,
+                location: post.location,
+                question: post.question,
+                likesCount: post.likesCount,
+                commentsCount: post.commentsCount,
+                savesCount: post.savesCount,
+                isLikedByMe: likedPostIds.contains(post.id),
+                isSavedByMe: post.isSavedByMe,
+                createdAt: post.createdAt,
+                updatedAt: post.updatedAt
+            )
+        }
+        
+        return result
+    }
+    
     // MARK: - Helper Methods
     
     private func toPost(from doc: DocumentSnapshot, isLikedByMe: Bool = false) -> Post? {

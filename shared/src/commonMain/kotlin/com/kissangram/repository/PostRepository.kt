@@ -105,4 +105,12 @@ interface PostRepository {
      */
     @Throws(Exception::class)
     suspend fun deletePost(postId: String)
+    
+    /**
+     * Get random posts for discovery/explore feed
+     * @param limit Number of posts to fetch
+     * @return List of random posts
+     */
+    @Throws(Exception::class)
+    suspend fun getRandomPosts(limit: Int = 20): List<Post>
 }

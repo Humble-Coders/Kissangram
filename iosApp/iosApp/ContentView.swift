@@ -90,7 +90,9 @@ struct ContentView: View {
                     
                     // Search Tab
                     SearchView(
-                        onUserClick: { userId in navigateTo(.userProfile(userId: userId)) }
+                        onUserClick: { userId in navigateTo(.userProfile(userId: userId)) },
+                        onPostClick: { postId, post in navigateTo(.postDetail(postId: postId, post: post)) },
+                        onFollowClick: { _ in }
                     )
                     .tag(BottomNavItem.search)
                     .tabItem {
@@ -274,7 +276,9 @@ struct ContentView: View {
             
         case .search:
             SearchView(
-                onUserClick: { userId in navigateTo(.userProfile(userId: userId)) }
+                onUserClick: { userId in navigateTo(.userProfile(userId: userId)) },
+                onPostClick: { postId, post in navigateTo(.postDetail(postId: postId, post: post)) },
+                onFollowClick: { _ in }
             )
             
         case .createPost:

@@ -661,6 +661,67 @@ class FirestorePostRepository(
         throw UnsupportedOperationException("Not yet implemented")
     }
     
+    override suspend fun getRandomPosts(limit: Int): List<Post> {
+        Log.d(TAG, "getRandomPosts: limit=$limit")
+        require(limit > 0) { "Limit must be positive" }
+        
+        return try {
+            val currentUserId = authRepository.getCurrentUserId()
+            
+            // Fetch recent posts with media, excluding current user's posts
+            // REQUIRES FIRESTORE INDEX:
+            // Collection: posts
+            // Fields: isActive (Ascending), createdAt (Descending)
+            // If you see an index error, Firebase will provide a direct link in logcat like:
+            // https://console.firebase.google.com/v1/r/project/kissangram-19531/firestore/indexes?create_composite=...
+            var query: Query = postsCollection
+                .whereEqualTo("isActive", true)
+                .orderBy("createdAt", Query.Direction.DESCENDING)
+                .limit((limit * 2).toLong()) // Fetch more to shuffle and filter
+            
+            val snapshot = query.get().await()
+            val allPosts = snapshot.documents.mapNotNull { doc ->
+                val post = doc.toPost(isLikedByMe = false)
+                // Filter out current user's posts and posts without media
+                if (post != null && post.authorId != currentUserId && post.media.isNotEmpty()) {
+                    post
+                } else {
+                    null
+                }
+            }
+            
+            // Shuffle for randomness and take limit
+            val shuffledPosts = allPosts.shuffled().take(limit)
+            
+            // Batch check which posts are liked by current user
+            val likedPostIds = if (currentUserId != null && shuffledPosts.isNotEmpty()) {
+                batchCheckLikes(shuffledPosts.map { it.id }, currentUserId)
+            } else {
+                emptySet()
+            }
+            
+            // Update posts with correct isLikedByMe value
+            val result = shuffledPosts.map { post ->
+                post.copy(isLikedByMe = likedPostIds.contains(post.id))
+            }
+            
+            Log.d(TAG, "getRandomPosts: returning ${result.size} posts")
+            result
+        } catch (e: Exception) {
+            Log.e(TAG, "getRandomPosts: FAILED", e)
+            // If you see an index error, check logcat for the exact Firebase Console link
+            // Example format: https://console.firebase.google.com/v1/r/project/kissangram-19531/firestore/indexes?create_composite=...
+            // Required index: Collection: posts, Fields: isActive (Ascending), createdAt (Descending)
+            if (e.message?.contains("index") == true || e.message?.contains("Index") == true) {
+                Log.e(TAG, "MISSING FIRESTORE INDEX for getRandomPosts!")
+                Log.e(TAG, "Collection: posts")
+                Log.e(TAG, "Fields: isActive (Ascending), createdAt (Descending)")
+                Log.e(TAG, "Check the error message above for the exact Firebase Console link to create this index")
+            }
+            throw Exception("Failed to get random posts: ${e.message}", e)
+        }
+    }
+    
     private fun com.google.firebase.firestore.DocumentSnapshot.toPost(isLikedByMe: Boolean = false): Post? {
         return try {
             val data = data ?: return null

@@ -94,4 +94,12 @@ interface UserRepository {
      */
     @Throws(Exception::class)
     suspend fun getFollowing(userId: String, page: Int, pageSize: Int): List<UserInfo>
+    
+    /**
+     * Get suggested users to follow (excluding current user and already followed users)
+     * @param limit Number of suggestions
+     * @return List of suggested users
+     */
+    @Throws(Exception::class)
+    suspend fun getSuggestedUsers(limit: Int = 10): List<UserInfo>
 }

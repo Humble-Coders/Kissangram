@@ -115,6 +115,7 @@ if [[ "$CONFIGURATION" == "Debug" ]]; then
   install_resource "${PODS_CONFIGURATION_BUILD_DIR}/gRPC-C++/grpcpp.bundle"
   install_resource "${PODS_CONFIGURATION_BUILD_DIR}/gRPC-Core/grpc.bundle"
   install_resource "${PODS_CONFIGURATION_BUILD_DIR}/leveldb-library/leveldb_Privacy.bundle"
+  install_resource "${PODS_CONFIGURATION_BUILD_DIR}/lottie-ios/LottiePrivacyInfo.bundle"
   install_resource "${PODS_CONFIGURATION_BUILD_DIR}/nanopb/nanopb_Privacy.bundle"
 fi
 if [[ "$CONFIGURATION" == "Release" ]]; then
@@ -136,6 +137,7 @@ if [[ "$CONFIGURATION" == "Release" ]]; then
   install_resource "${PODS_CONFIGURATION_BUILD_DIR}/gRPC-C++/grpcpp.bundle"
   install_resource "${PODS_CONFIGURATION_BUILD_DIR}/gRPC-Core/grpc.bundle"
   install_resource "${PODS_CONFIGURATION_BUILD_DIR}/leveldb-library/leveldb_Privacy.bundle"
+  install_resource "${PODS_CONFIGURATION_BUILD_DIR}/lottie-ios/LottiePrivacyInfo.bundle"
   install_resource "${PODS_CONFIGURATION_BUILD_DIR}/nanopb/nanopb_Privacy.bundle"
 fi
 
