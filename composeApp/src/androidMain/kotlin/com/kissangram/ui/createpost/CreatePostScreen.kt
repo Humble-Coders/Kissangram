@@ -348,6 +348,26 @@ fun CreatePostScreen(
 
             Spacer(modifier = Modifier.height(18.dp))
 
+            // Voice Caption Button
+            VoiceCaptionSection(
+                voiceCaptionUri = uiState.voiceCaptionUri,
+                voiceCaptionDuration = if (uiState.isRecordingVoice) uiState.recordingDuration else uiState.voiceCaptionDuration,
+                isRecording = uiState.isRecordingVoice,
+                isPlaying = uiState.isPlayingVoice,
+                playbackProgress = uiState.playbackProgress,
+                onRecordClick = {
+                    viewModel.toggleVoiceRecording()
+                },
+                onPlayClick = {
+                    viewModel.toggleVoicePlayback()
+                },
+                onRemoveVoiceCaption = {
+                    viewModel.removeVoiceCaption()
+                }
+            )
+
+            Spacer(modifier = Modifier.height(18.dp))
+
             // Media Selection Buttons
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -476,26 +496,6 @@ fun CreatePostScreen(
                     lineHeight = 25.313.sp
                 ),
                 maxLines = 5
-            )
-
-            Spacer(modifier = Modifier.height(18.dp))
-
-            // Voice Caption Button
-            VoiceCaptionSection(
-                voiceCaptionUri = uiState.voiceCaptionUri,
-                voiceCaptionDuration = if (uiState.isRecordingVoice) uiState.recordingDuration else uiState.voiceCaptionDuration,
-                isRecording = uiState.isRecordingVoice,
-                isPlaying = uiState.isPlayingVoice,
-                playbackProgress = uiState.playbackProgress,
-                onRecordClick = {
-                    viewModel.toggleVoiceRecording()
-                },
-                onPlayClick = {
-                    viewModel.toggleVoicePlayback()
-                },
-                onRemoveVoiceCaption = {
-                    viewModel.removeVoiceCaption()
-                }
             )
 
             Spacer(modifier = Modifier.height(18.dp))
@@ -850,96 +850,100 @@ private fun VoiceCaptionSection(
     onPlayClick: () -> Unit = {},
     onRemoveVoiceCaption: () -> Unit
 ) {
-    if (voiceCaptionUri != null) {
-        // Show recorded voice caption with play button
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(74.dp),
-            shape = RoundedCornerShape(18.dp),
-            color = PrimaryGreen.copy(alpha = 0.1f),
-            border = BorderStroke(
-                width = 1.18.dp,
-                color = PrimaryGreen.copy(alpha = 0.3f)
-            )
-        ) {
-            Row(
+    Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+        Text(
+            text = "Voice Caption",
+            fontSize = 16.875.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = TextPrimary
+        )
+        
+        if (voiceCaptionUri != null) {
+            // Show recorded voice caption with play button
+            Surface(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 14.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                    .fillMaxWidth()
+                    .height(74.dp),
+                shape = RoundedCornerShape(18.dp),
+                color = PrimaryGreen.copy(alpha = 0.1f),
+                border = BorderStroke(
+                    width = 1.18.dp,
+                    color = PrimaryGreen.copy(alpha = 0.3f)
+                )
             ) {
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 14.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Play/Stop button
-                    Box(
-                        modifier = Modifier
-                            .size(40.5.dp)
-                            .background(
-                                color = if (isPlaying) Color(0xFFFF6B6B) else PrimaryGreen,
-                                shape = CircleShape
-                            )
-                            .clickable(onClick = onPlayClick),
-                        contentAlignment = Alignment.Center
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = if (isPlaying) Icons.Default.Stop else Icons.Default.PlayArrow,
-                            contentDescription = if (isPlaying) "Stop" else "Play",
-                            modifier = Modifier.size(22.dp),
-                            tint = Color.White
-                        )
+                        // Play/Stop button
+                        Box(
+                            modifier = Modifier
+                                .size(40.5.dp)
+                                .background(
+                                    color = if (isPlaying) Color(0xFFFF6B6B) else PrimaryGreen,
+                                    shape = CircleShape
+                                )
+                                .clickable(onClick = onPlayClick),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (isPlaying) Icons.Default.Stop else Icons.Default.PlayArrow,
+                                contentDescription = if (isPlaying) "Stop" else "Play",
+                                modifier = Modifier.size(22.dp),
+                                tint = Color.White
+                            )
+                        }
+                        
+                        Column {
+                            Text(
+                                text = if (isPlaying) "Playing..." else "Voice Caption",
+                                fontSize = 14.625.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = TextPrimary
+                            )
+                            Text(
+                                text = if (isPlaying) "${playbackProgress}s / ${voiceCaptionDuration}s" else "${voiceCaptionDuration}s",
+                                fontSize = 12.sp,
+                                color = if (isPlaying) PrimaryGreen else TextSecondary
+                            )
+                        }
                     }
                     
-                    Column {
-                        Text(
-                            text = if (isPlaying) "Playing..." else "Voice Caption",
-                            fontSize = 14.625.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = TextPrimary
-                        )
-                        Text(
-                            text = if (isPlaying) "${playbackProgress}s / ${voiceCaptionDuration}s" else "${voiceCaptionDuration}s",
-                            fontSize = 12.sp,
-                            color = if (isPlaying) PrimaryGreen else TextSecondary
+                    // Remove button
+                    IconButton(onClick = onRemoveVoiceCaption) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Remove",
+                            tint = TextSecondary
                         )
                     }
                 }
-                
-                // Remove button
-                IconButton(onClick = onRemoveVoiceCaption) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Remove",
-                        tint = TextSecondary
-                    )
-                }
             }
-        }
-    } else {
-        // Show record button
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(74.dp)
-                .clickable(onClick = onRecordClick),
-            shape = RoundedCornerShape(18.dp),
-            color = if (isRecording) PrimaryGreen.copy(alpha = 0.15f) else BackgroundColor,
-            border = BorderStroke(
-                width = 1.18.dp,
-                color = if (isRecording) PrimaryGreen else PrimaryGreen.copy(alpha = 0.08f)
-            )
-        ) {
-            Row(
+        } else {
+            // Show record button with "Tap to record" inside
+            Surface(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 19.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                    .fillMaxWidth()
+                    .height(74.dp)
+                    .clickable(onClick = onRecordClick),
+                shape = RoundedCornerShape(18.dp),
+                color = if (isRecording) PrimaryGreen.copy(alpha = 0.15f) else BackgroundColor,
+                border = BorderStroke(
+                    width = 1.18.dp,
+                    color = if (isRecording) PrimaryGreen else PrimaryGreen.copy(alpha = 0.08f)
+                )
             ) {
                 Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 19.dp),
                     horizontalArrangement = Arrangement.spacedBy(13.5.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -959,19 +963,21 @@ private fun VoiceCaptionSection(
                             tint = if (isRecording) Color.White else PrimaryGreen
                         )
                     }
-                    Text(
-                        text = if (isRecording) "Recording..." else "Add voice caption",
-                        fontSize = 16.875.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = TextPrimary
-                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = if (isRecording) "Recording..." else "Add voice caption",
+                            fontSize = 16.875.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = TextPrimary
+                        )
+                        Text(
+                            text = if (isRecording) "Tap to stop" else "Tap to record",
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = if (isRecording) PrimaryGreen else TextSecondary
+                        )
+                    }
                 }
-                Text(
-                    text = if (isRecording) "Tap to stop" else "Tap to record",
-                    fontSize = 14.625.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (isRecording) PrimaryGreen else TextSecondary
-                )
             }
         }
     }

@@ -94,19 +94,10 @@ fun App() {
         }
         
         val destination = startDestination
-        var showSplash by remember { mutableStateOf(true) }
         
-        // Show splash screen while initializing or until splash animation completes
-        if (destination == null || showSplash) {
-            SplashScreen(
-                onSplashComplete = {
-                    showSplash = false
-                }
-            )
-            // Don't show main app until splash is complete and destination is ready
-            if (destination == null || showSplash) {
-                return@MaterialTheme
-            }
+        // Wait for destination to be ready before showing main app
+        if (destination == null) {
+            return@MaterialTheme
         }
         
         val navController = rememberNavController()
@@ -636,87 +627,6 @@ private fun NavigationGraph(
     }
 }
 
-@Composable
-private fun SplashScreen(
-    onSplashComplete: () -> Unit
-) {
-    var visible by remember { mutableStateOf(true) }
-    val context = LocalContext.current
-
-    // Logo scale animation
-    val scale by animateFloatAsState(
-        targetValue = if (visible) 1f else 0.9f,
-        animationSpec = tween(
-            durationMillis = 800,
-            easing = FastOutSlowInEasing
-        ),
-        label = "scale"
-    )
-
-    // Logo alpha for subtle fade in
-    val logoAlpha by animateFloatAsState(
-        targetValue = if (visible) 1f else 0f,
-        animationSpec = tween(durationMillis = 600),
-        label = "logoAlpha"
-    )
-
-    LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(2000) // Show splash for 2 seconds
-        visible = false
-        kotlinx.coroutines.delay(400) // Wait for exit animation
-        onSplashComplete()
-    }
-
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn(animationSpec = tween(400)),
-        exit = fadeOut(animationSpec = tween(400))
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            Color(0xFFFAFAFA),
-                            Color(0xFFFFFFFF)
-                        )
-                    )
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                // Logo with scale and alpha animation
-                Image(
-                    painter = painterResource(id = R.drawable.ic_launcher_playstore),
-                    contentDescription = "Kissangram Logo",
-                    modifier = Modifier
-                        .size(180.dp)
-                        .scale(scale)
-                        .alpha(logoAlpha),
-                    contentScale = ContentScale.Fit
-                )
-
-
-
-            }
-
-            // Loading indicator at bottom
-            CircularProgressIndicator(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 48.dp)
-                    .size(32.dp)
-                    .alpha(logoAlpha * 0.6f),
-                strokeWidth = 3.dp,
-                color = MaterialTheme.colorScheme.primary
-            )
-        }
-    }
-}
 @Composable
 private fun PlaceholderScreen(title: String, bottomNavPadding: PaddingValues = PaddingValues(0.dp)) {
     Box(
