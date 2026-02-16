@@ -247,7 +247,7 @@ private fun SearchBar(
 }
 
 @Composable
-private fun UserSearchResultItem(
+internal fun UserSearchResultItem(
     user: UserInfo,
     onClick: () -> Unit
 ) {

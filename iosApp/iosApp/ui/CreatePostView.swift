@@ -255,6 +255,7 @@ struct CreatePostView: View {
                     .foregroundColor(.textPrimary.opacity(0.5))
                     .padding(.horizontal, 18)
                     .padding(.vertical, 18)
+                    .allowsHitTesting(false)
             }
             
             TextEditor(text: $caption)
@@ -264,6 +265,8 @@ struct CreatePostView: View {
                 .padding(.vertical, 14)
                 .background(Color.clear)
                 .scrollContentBackground(.hidden)
+                .frame(height: 140)
+                .clipped()
         }
     }
     

@@ -13,13 +13,30 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.tooling.preview.Preview
+import android.view.HapticFeedbackConstants
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import androidx.compose.animation.*
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import androidx.compose.foundation.layout.size
+import com.kissangram.R
 import com.google.firebase.auth.FirebaseAuth
 import com.kissangram.navigation.Screen
 import com.kissangram.navigation.PostCache
@@ -52,7 +69,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.font.FontWeight
 
 @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
 @Composable
@@ -72,14 +94,23 @@ fun App() {
         }
         
         val destination = startDestination
-        if (destination == null) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
+        var showSplash by remember { mutableStateOf(true) }
+        
+        // Show splash screen while initializing or until splash animation completes
+        if (destination == null || showSplash) {
+            SplashScreen(
+                onSplashComplete = {
+                    showSplash = false
+                }
+            )
+            // Don't show main app until splash is complete and destination is ready
+            if (destination == null || showSplash) {
+                return@MaterialTheme
             }
-            return@MaterialTheme
         }
         
         val navController = rememberNavController()
+        val view = LocalView.current
         val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
         
         // Determine if we should show bottom navigation
@@ -106,6 +137,7 @@ fun App() {
                     KissangramBottomNavigation(
                         selectedItem = selectedNavItem,
                         onItemSelected = { item ->
+                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                             when (item) {
                                 BottomNavItem.HOME -> navController.navigate(Screen.HOME) {
                                     // Save and restore state for bottom nav tabs
@@ -178,7 +210,31 @@ private fun NavigationGraph(
     
     NavHost(
         navController = navController,
-        startDestination = startDestination
+        startDestination = startDestination,
+        enterTransition = {
+            slideInHorizontally(
+                initialOffsetX = { fullWidth -> fullWidth },
+                animationSpec = tween(500)
+            ) + fadeIn(animationSpec = tween(500))
+        },
+        exitTransition = {
+            slideOutHorizontally(
+                targetOffsetX = { fullWidth -> -fullWidth },
+                animationSpec = tween(500)
+            ) + fadeOut(animationSpec = tween(500))
+        },
+        popEnterTransition = {
+            slideInHorizontally(
+                initialOffsetX = { fullWidth -> -fullWidth },
+                animationSpec = tween(500)
+            ) + fadeIn(animationSpec = tween(500))
+        },
+        popExitTransition = {
+            slideOutHorizontally(
+                targetOffsetX = { fullWidth -> fullWidth },
+                animationSpec = tween(500)
+            ) + fadeOut(animationSpec = tween(500))
+        }
     ) {
         // Auth Flow
         composable(Screen.LANGUAGE_SELECTION) {
@@ -405,6 +461,19 @@ private fun NavigationGraph(
         }
         
         composable(Screen.PROFILE) {
+            val context = LocalContext.current
+            val prefs = remember { AndroidPreferencesRepository(context.applicationContext) }
+            val authRepository = remember {
+                AndroidAuthRepository(
+                    context = context.applicationContext,
+                    activity = null,
+                    preferencesRepository = prefs
+                )
+            }
+            val currentUserId = remember { 
+                FirebaseAuth.getInstance().currentUser?.uid 
+            }
+            
             ProfileScreen(
                 onBackClick = { navController.navigate(Screen.HOME) },
                 onEditProfile = { navController.navigate(Screen.EDIT_PROFILE) },
@@ -416,6 +485,16 @@ private fun NavigationGraph(
                 onPostClick = { postId, post ->
                     post?.let { PostCache.put(postId, it) }
                     navController.navigate(Screen.buildPostDetailRoute(postId))
+                },
+                onFollowersClick = {
+                    currentUserId?.let { userId ->
+                        navController.navigate(Screen.buildFollowersListRoute(userId))
+                    }
+                },
+                onFollowingClick = {
+                    currentUserId?.let { userId ->
+                        navController.navigate(Screen.buildFollowingListRoute(userId))
+                    }
                 },
                 reloadKey = profileReloadKey,
                 bottomNavPadding = bottomNavPadding
@@ -474,6 +553,12 @@ private fun NavigationGraph(
                     onPostClick = { postId, post ->
                         post?.let { PostCache.put(postId, it) }
                         navController.navigate(Screen.buildPostDetailRoute(postId))
+                    },
+                    onFollowersClick = {
+                        navController.navigate(Screen.buildFollowersListRoute(userId))
+                    },
+                    onFollowingClick = {
+                        navController.navigate(Screen.buildFollowingListRoute(userId))
                     }
                 )
             }
@@ -509,6 +594,38 @@ private fun NavigationGraph(
             )
         }
         
+        composable(
+            route = Screen.FOLLOWERS_LIST,
+            arguments = listOf(navArgument("userId") { defaultValue = "" })
+        ) { backStackEntry ->
+            val userId = backStackEntry.arguments?.getString("userId") ?: ""
+            com.kissangram.ui.profile.FollowersListScreen(
+                userId = userId,
+                type = com.kissangram.viewmodel.FollowersListType.FOLLOWERS,
+                onBackClick = { navController.popBackStack() },
+                onUserClick = { targetUserId ->
+                    navController.navigate(Screen.buildUserProfileRoute(targetUserId))
+                },
+                bottomNavPadding = bottomNavPadding
+            )
+        }
+        
+        composable(
+            route = Screen.FOLLOWING_LIST,
+            arguments = listOf(navArgument("userId") { defaultValue = "" })
+        ) { backStackEntry ->
+            val userId = backStackEntry.arguments?.getString("userId") ?: ""
+            com.kissangram.ui.profile.FollowersListScreen(
+                userId = userId,
+                type = com.kissangram.viewmodel.FollowersListType.FOLLOWING,
+                onBackClick = { navController.popBackStack() },
+                onUserClick = { targetUserId ->
+                    navController.navigate(Screen.buildUserProfileRoute(targetUserId))
+                },
+                bottomNavPadding = bottomNavPadding
+            )
+        }
+        
         composable(Screen.NOTIFICATIONS) {
             PlaceholderScreen("Notifications")
         }
@@ -519,6 +636,87 @@ private fun NavigationGraph(
     }
 }
 
+@Composable
+private fun SplashScreen(
+    onSplashComplete: () -> Unit
+) {
+    var visible by remember { mutableStateOf(true) }
+    val context = LocalContext.current
+
+    // Logo scale animation
+    val scale by animateFloatAsState(
+        targetValue = if (visible) 1f else 0.9f,
+        animationSpec = tween(
+            durationMillis = 800,
+            easing = FastOutSlowInEasing
+        ),
+        label = "scale"
+    )
+
+    // Logo alpha for subtle fade in
+    val logoAlpha by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = tween(durationMillis = 600),
+        label = "logoAlpha"
+    )
+
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(2000) // Show splash for 2 seconds
+        visible = false
+        kotlinx.coroutines.delay(400) // Wait for exit animation
+        onSplashComplete()
+    }
+
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(animationSpec = tween(400)),
+        exit = fadeOut(animationSpec = tween(400))
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0xFFFAFAFA),
+                            Color(0xFFFFFFFF)
+                        )
+                    )
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                // Logo with scale and alpha animation
+                Image(
+                    painter = painterResource(id = R.drawable.ic_launcher_playstore),
+                    contentDescription = "Kissangram Logo",
+                    modifier = Modifier
+                        .size(180.dp)
+                        .scale(scale)
+                        .alpha(logoAlpha),
+                    contentScale = ContentScale.Fit
+                )
+
+
+
+            }
+
+            // Loading indicator at bottom
+            CircularProgressIndicator(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 48.dp)
+                    .size(32.dp)
+                    .alpha(logoAlpha * 0.6f),
+                strokeWidth = 3.dp,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+    }
+}
 @Composable
 private fun PlaceholderScreen(title: String, bottomNavPadding: PaddingValues = PaddingValues(0.dp)) {
     Box(

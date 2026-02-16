@@ -60,6 +60,8 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import android.view.HapticFeedbackConstants
 import androidx.core.content.FileProvider
 import androidx.core.content.ContextCompat
 import java.io.File
@@ -1337,7 +1339,11 @@ fun EditProfileScreen(
                             )
                         },
                         navigationIcon = {
-                            IconButton(onClick = { handleBackClick() }) {
+                            val view = LocalView.current
+                            IconButton(onClick = {
+                                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                handleBackClick()
+                            }) {
                                 Icon(
                                     Icons.AutoMirrored.Filled.ArrowBack,
                                     contentDescription = "Back",

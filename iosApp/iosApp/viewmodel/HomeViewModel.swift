@@ -33,6 +33,9 @@ class HomeViewModel: ObservableObject {
     
     // Track posts currently being processed to prevent race conditions
     private var postsBeingProcessed = Set<String>()
+    
+    // Scroll state persistence
+    @Published var savedScrollPostId: String? = nil
 
     init() {
         self.authRepository = IOSAuthRepository(preferencesRepository: prefs)
@@ -108,6 +111,8 @@ class HomeViewModel: ObservableObject {
             self.currentUserId = userId
             self.currentPage = 0
             self.isRefreshing = false
+            // Clear scroll state on refresh
+            clearScrollState()
         } catch {
             Self.log.error("refreshFeed: error=\(error.localizedDescription)")
             self.isRefreshing = false
@@ -294,5 +299,13 @@ class HomeViewModel: ObservableObject {
                 Self.log.error("unfollowAndRemovePosts: failed for authorId=\(authorId)")
             }
         }
+    }
+    
+    func saveScrollState(postId: String?) {
+        savedScrollPostId = postId
+    }
+    
+    func clearScrollState() {
+        savedScrollPostId = nil
     }
 }

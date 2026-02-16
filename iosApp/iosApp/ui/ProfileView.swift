@@ -46,6 +46,8 @@ struct ProfileView: View {
     var onEditProfile: () -> Void = {}
     var onSignOut: () -> Void = {}
     var onPostClick: (String, Post?) -> Void = { _, _ in }
+    var onFollowersClick: () -> Void = {}
+    var onFollowingClick: () -> Void = {}
     var reloadKey: Int = 0 // Key that changes to trigger reload after save
 
     var body: some View {
@@ -90,7 +92,9 @@ struct ProfileView: View {
                                 print("🔵 [ProfileView:85] About to call onPostClick closure - postId: \(postId)")
                                 onPostClick(postId, post)
                                 print("🔵 [ProfileView:87] onPostClick closure call completed")
-                            }
+                            },
+                            onFollowersClick: onFollowersClick,
+                            onFollowingClick: onFollowingClick
                         )
                         .padding(.horizontal, 18)
                         .padding(.top, 24)
@@ -149,6 +153,8 @@ struct ProfileContent: View {
     let isLoadingPosts: Bool
     let onEditProfile: () -> Void
     let onPostClick: (String, Post?) -> Void
+    var onFollowersClick: () -> Void = {}
+    var onFollowingClick: () -> Void = {}
 
     var body: some View {
         VStack(alignment: .leading, spacing: 27) {
@@ -237,9 +243,23 @@ struct ProfileContent: View {
                 Spacer()
                 StatItem(count: Int(user.postsCount), label: "Posts")
                 Spacer()
-                StatItem(count: Int(user.followersCount), label: "Followers")
+                Button(action: {
+                    print("🔵 [ProfileView] Followers button tapped")
+                    onFollowersClick()
+                }) {
+                    StatItem(count: Int(user.followersCount), label: "Followers")
+                }
+                .buttonStyle(PlainButtonStyle())
+                .contentShape(Rectangle())
                 Spacer()
-                StatItem(count: Int(user.followingCount), label: "Following")
+                Button(action: {
+                    print("🔵 [ProfileView] Following button tapped")
+                    onFollowingClick()
+                }) {
+                    StatItem(count: Int(user.followingCount), label: "Following")
+                }
+                .buttonStyle(PlainButtonStyle())
+                .contentShape(Rectangle())
                 Spacer()
                 StatItem(count: 0, label: "Groups")
                 Spacer()

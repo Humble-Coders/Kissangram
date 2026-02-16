@@ -26,6 +26,10 @@ class FirestoreUserRepository(
 
     private val usersCollection
         get() = firestore.collection("users")
+    
+    // Store last document snapshots for pagination (key: "userId_followers" or "userId_following")
+    private val lastFollowersSnapshots = mutableMapOf<String, com.google.firebase.firestore.DocumentSnapshot?>()
+    private val lastFollowingSnapshots = mutableMapOf<String, com.google.firebase.firestore.DocumentSnapshot?>()
 
     override suspend fun createUserProfile(
         userId: String,
@@ -254,8 +258,122 @@ class FirestoreUserRepository(
         }
     }
     override suspend fun isUsernameAvailable(username: String): Boolean = true
-    override suspend fun getFollowers(userId: String, page: Int, pageSize: Int): List<UserInfo> = emptyList()
-    override suspend fun getFollowing(userId: String, page: Int, pageSize: Int): List<UserInfo> = emptyList()
+    
+    override suspend fun getFollowers(userId: String, page: Int, pageSize: Int): List<UserInfo> {
+        return try {
+            val key = userId
+            var query: com.google.firebase.firestore.Query = usersCollection
+                .document(userId)
+                .collection("followers")
+                .orderBy("followedAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
+                .limit(pageSize.toLong())
+            
+            if (page > 0) {
+                val lastSnap = lastFollowersSnapshots[key]
+                if (lastSnap == null) {
+                    Log.w(TAG, "getFollowers: page > 0 but no cursor for userId $userId; returning empty")
+                    return emptyList()
+                }
+                query = query.startAfter(lastSnap)
+            } else {
+                lastFollowersSnapshots[key] = null
+            }
+            
+            val snapshot = query.get().await()
+            
+            // Store last document snapshot for next page
+            if (snapshot.documents.isNotEmpty()) {
+                lastFollowersSnapshots[key] = snapshot.documents.last()
+            } else {
+                lastFollowersSnapshots[key] = null
+            }
+            
+            snapshot.documents.mapNotNull { doc ->
+                try {
+                    val data = doc.data ?: return@mapNotNull null
+                    val id = data[FIELD_ID] as? String ?: doc.id
+                    val name = data[FIELD_NAME] as? String ?: return@mapNotNull null
+                    val username = data[FIELD_USERNAME] as? String ?: return@mapNotNull null
+                    val profileImageUrl = data[FIELD_PROFILE_IMAGE_URL] as? String
+                    val roleStr = data[FIELD_ROLE] as? String ?: "farmer"
+                    val statusStr = data[FIELD_VERIFICATION_STATUS] as? String ?: "unverified"
+                    
+                    UserInfo(
+                        id = id,
+                        name = name,
+                        username = username,
+                        profileImageUrl = profileImageUrl,
+                        role = firestoreToRole(roleStr),
+                        verificationStatus = firestoreToVerificationStatus(statusStr)
+                    )
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error parsing follower document ${doc.id}", e)
+                    null
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting followers for user $userId", e)
+            emptyList()
+        }
+    }
+    
+    override suspend fun getFollowing(userId: String, page: Int, pageSize: Int): List<UserInfo> {
+        return try {
+            val key = userId
+            var query: com.google.firebase.firestore.Query = usersCollection
+                .document(userId)
+                .collection("following")
+                .orderBy("followedAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
+                .limit(pageSize.toLong())
+            
+            if (page > 0) {
+                val lastSnap = lastFollowingSnapshots[key]
+                if (lastSnap == null) {
+                    Log.w(TAG, "getFollowing: page > 0 but no cursor for userId $userId; returning empty")
+                    return emptyList()
+                }
+                query = query.startAfter(lastSnap)
+            } else {
+                lastFollowingSnapshots[key] = null
+            }
+            
+            val snapshot = query.get().await()
+            
+            // Store last document snapshot for next page
+            if (snapshot.documents.isNotEmpty()) {
+                lastFollowingSnapshots[key] = snapshot.documents.last()
+            } else {
+                lastFollowingSnapshots[key] = null
+            }
+            
+            snapshot.documents.mapNotNull { doc ->
+                try {
+                    val data = doc.data ?: return@mapNotNull null
+                    val id = data[FIELD_ID] as? String ?: doc.id
+                    val name = data[FIELD_NAME] as? String ?: return@mapNotNull null
+                    val username = data[FIELD_USERNAME] as? String ?: return@mapNotNull null
+                    val profileImageUrl = data[FIELD_PROFILE_IMAGE_URL] as? String
+                    val roleStr = data[FIELD_ROLE] as? String ?: "farmer"
+                    val statusStr = data[FIELD_VERIFICATION_STATUS] as? String ?: "unverified"
+                    
+                    UserInfo(
+                        id = id,
+                        name = name,
+                        username = username,
+                        profileImageUrl = profileImageUrl,
+                        role = firestoreToRole(roleStr),
+                        verificationStatus = firestoreToVerificationStatus(statusStr)
+                    )
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error parsing following document ${doc.id}", e)
+                    null
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting following for user $userId", e)
+            emptyList()
+        }
+    }
     
     override suspend fun getSuggestedUsers(limit: Int): List<UserInfo> {
         Log.d(TAG, "getSuggestedUsers: limit=$limit")

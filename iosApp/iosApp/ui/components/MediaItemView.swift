@@ -9,6 +9,7 @@ struct MediaItemView: View {
     let media: PostMedia
     let isVisible: Bool
     let onTap: () -> Void
+    var showFullImage: Bool = false // If true, show full image without fixed height constraint
     
     private var imageUrl: String {
         var url = ensureHttps(media.url)
@@ -24,27 +25,46 @@ struct MediaItemView: View {
         Group {
             if media.type == .image {
                 if let url = URL(string: imageUrl) {
-                    CachedImageView(url: url)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 220)
-                        .clipped()
-                        .cornerRadius(14)
-                        .onTapGesture { onTap() }
+                    if showFullImage {
+                        CachedImageView(url: url)
+                            .frame(maxWidth: .infinity)
+                            .aspectRatio(contentMode: .fit)
+                            .contentShape(Rectangle())
+                            .onTapGesture { onTap() }
+                    } else {
+                        CachedImageView(url: url)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 440) // Fixed height for consistent feed display
+                            .clipped()
+                            .contentShape(Rectangle())
+                            .onTapGesture { onTap() }
+                    }
                 } else {
                     Color.gray.opacity(0.3)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 220)
+                        .frame(height: showFullImage ? nil : 440) // Fixed height only for feed
                 }
             } else {
-                FeedVideoPlayer(
-                    media: media,
-                    onTap: onTap
-                )
-                .frame(maxWidth: .infinity)
-                .frame(height: 220)
-                .clipped()
-                .cornerRadius(14)
-                .compositingGroup()
+                if showFullImage {
+                    FeedVideoPlayer(
+                        media: media,
+                        onTap: onTap,
+                        showFullImage: true
+                    )
+                    .frame(maxWidth: .infinity)
+                    .aspectRatio(contentMode: .fit)
+                    .compositingGroup()
+                } else {
+                    FeedVideoPlayer(
+                        media: media,
+                        onTap: onTap,
+                        showFullImage: false
+                    )
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 440) // Fixed height matching images
+                    .clipped()
+                    .compositingGroup()
+                }
             }
         }
     }

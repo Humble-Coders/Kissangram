@@ -92,14 +92,112 @@ final class FirestoreUserRepository: UserRepository {
         return try await getUser(userId: userId)
     }
 
+    // Store last document snapshots for pagination
+    private var lastFollowersSnapshots: [String: DocumentSnapshot?] = [:]
+    private var lastFollowingSnapshots: [String: DocumentSnapshot?] = [:]
+    
     func getFollowers(userId: String, page: Int32, pageSize: Int32) async throws -> [UserInfo] {
-        // TODO: Implement get followers
-        return []
+        do {
+            let key = userId
+            var query: Query = usersCollection
+                .document(userId)
+                .collection("followers")
+                .order(by: "followedAt", descending: true)
+                .limit(to: Int(pageSize))
+            
+            if page > 0 {
+                guard let lastSnap = lastFollowersSnapshots[key] else {
+                    print("getFollowers: page > 0 but no cursor for userId \(userId); returning empty")
+                    return []
+                }
+                query = query.start(afterDocument: lastSnap!)
+            } else {
+                lastFollowersSnapshots[key] = nil
+            }
+            
+            let snapshot = try await query.getDocuments()
+            
+            // Store last document snapshot for next page
+            if let lastDoc = snapshot.documents.last {
+                lastFollowersSnapshots[key] = lastDoc
+            } else {
+                lastFollowersSnapshots[key] = nil
+            }
+            
+            return snapshot.documents.compactMap { doc -> UserInfo? in
+                let data = doc.data()
+                let id = data[Self.fieldId] as? String ?? doc.documentID
+                guard let name = data[Self.fieldName] as? String else { return nil }
+                let username = data[Self.fieldUsername] as? String ?? ""
+                let profileImageUrl = data[Self.fieldProfileImageUrl] as? String
+                let roleStr = data[Self.fieldRole] as? String ?? "farmer"
+                let statusStr = data[Self.fieldVerificationStatus] as? String ?? "unverified"
+                
+                return UserInfo(
+                    id: id,
+                    name: name,
+                    username: username,
+                    profileImageUrl: profileImageUrl,
+                    role: Self.firestoreToRole(roleStr),
+                    verificationStatus: Self.firestoreToVerificationStatus(statusStr)
+                )
+            }
+        } catch {
+            print("Error getting followers for user \(userId): \(error.localizedDescription)")
+            return []
+        }
     }
 
     func getFollowing(userId: String, page: Int32, pageSize: Int32) async throws -> [UserInfo] {
-        // TODO: Implement get following
-        return []
+        do {
+            let key = userId
+            var query: Query = usersCollection
+                .document(userId)
+                .collection("following")
+                .order(by: "followedAt", descending: true)
+                .limit(to: Int(pageSize))
+            
+            if page > 0 {
+                guard let lastSnap = lastFollowingSnapshots[key] else {
+                    print("getFollowing: page > 0 but no cursor for userId \(userId); returning empty")
+                    return []
+                }
+                query = query.start(afterDocument: lastSnap!)
+            } else {
+                lastFollowingSnapshots[key] = nil
+            }
+            
+            let snapshot = try await query.getDocuments()
+            
+            // Store last document snapshot for next page
+            if let lastDoc = snapshot.documents.last {
+                lastFollowingSnapshots[key] = lastDoc
+            } else {
+                lastFollowingSnapshots[key] = nil
+            }
+            
+            return snapshot.documents.compactMap { doc -> UserInfo? in
+                let data = doc.data()
+                let id = data[Self.fieldId] as? String ?? doc.documentID
+                guard let name = data[Self.fieldName] as? String else { return nil }
+                let username = data[Self.fieldUsername] as? String ?? ""
+                let profileImageUrl = data[Self.fieldProfileImageUrl] as? String
+                let roleStr = data[Self.fieldRole] as? String ?? "farmer"
+                let statusStr = data[Self.fieldVerificationStatus] as? String ?? "unverified"
+                
+                return UserInfo(
+                    id: id,
+                    name: name,
+                    username: username,
+                    profileImageUrl: profileImageUrl,
+                    role: Self.firestoreToRole(roleStr),
+                    verificationStatus: Self.firestoreToVerificationStatus(statusStr)
+                )
+            }
+        } catch {
+            print("Error getting following for user \(userId): \(error.localizedDescription)")
+            return []
+        }
     }
 
     func getUser(userId: String) async throws -> User? {

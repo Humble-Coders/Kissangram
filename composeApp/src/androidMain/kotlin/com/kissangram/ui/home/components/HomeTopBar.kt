@@ -24,43 +24,36 @@ fun HomeTopBar(
     onNotificationsClick: () -> Unit,
     onMessagesClick: () -> Unit
 ) {
-    TopAppBar(
+    CenterAlignedTopAppBar(
         title = {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Notifications Button
-                IconButtonWithBadge(
-                    onClick = onNotificationsClick,
-                    icon = Icons.Outlined.Notifications,
-                    contentDescription = "Notifications",
-                    badgeColor = AccentYellow,
-                    showBadge = true
-                )
-                
-                // Logo Text - Matching iOS style
-                Text(
-                    text = "Kissangram",
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Serif, // Georgia-like serif font
-                    color = PrimaryGreen,
-                    modifier = Modifier.padding(vertical = 4.dp)
-                )
-                
-                // Messages Button
-                IconButtonWithBadge(
-                    onClick = onMessagesClick,
-                    icon = Icons.Outlined.Email,
-                    contentDescription = "Messages",
-                    badgeColor = ErrorRed,
-                    showBadge = true
-                )
-            }
+            Text(
+                text = "Kissangram",
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Serif, // Georgia-like serif font
+                color = PrimaryGreen,
+                modifier = Modifier.padding(vertical = 4.dp)
+            )
+        },
+        navigationIcon = {
+            IconButtonWithBadge(
+                onClick = { /* Disabled - not implemented */ },
+                icon = Icons.Outlined.Notifications,
+                contentDescription = "Notifications",
+                badgeColor = AccentYellow,
+                showBadge = true,
+                enabled = false
+            )
+        },
+        actions = {
+            IconButtonWithBadge(
+                onClick = { /* Disabled - not implemented */ },
+                icon = Icons.Outlined.Email,
+                contentDescription = "Messages",
+                badgeColor = ErrorRed,
+                showBadge = true,
+                enabled = false
+            )
         },
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = BackgroundColor.copy(alpha = 0.95f)
@@ -75,7 +68,8 @@ private fun IconButtonWithBadge(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     contentDescription: String,
     badgeColor: Color,
-    showBadge: Boolean
+    showBadge: Boolean,
+    enabled: Boolean = true
 ) {
     Box(
         modifier = Modifier.size(44.dp),
@@ -86,7 +80,8 @@ private fun IconButtonWithBadge(
             modifier = Modifier.size(40.dp),
             shape = CircleShape,
             color = Color.White,
-            shadowElevation = 2.dp
+            shadowElevation = 2.dp,
+            enabled = enabled
         ) {
             Box(
                 modifier = Modifier.fillMaxSize(),
@@ -95,7 +90,7 @@ private fun IconButtonWithBadge(
                 Icon(
                     imageVector = icon,
                     contentDescription = contentDescription,
-                    tint = TextPrimary,
+                    tint = if (enabled) TextPrimary else TextSecondary.copy(alpha = 0.38f),
                     modifier = Modifier.size(22.dp)
                 )
             }

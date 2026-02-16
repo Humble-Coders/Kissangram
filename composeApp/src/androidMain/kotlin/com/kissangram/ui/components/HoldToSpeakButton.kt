@@ -4,7 +4,8 @@ import android.util.Log
 import android.view.HapticFeedbackConstants
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -139,23 +140,24 @@ fun HoldToSpeakButton(
         modifier = modifier
             .fillMaxWidth()
             .height(style.buttonHeight)
-            .pointerInput(Unit) {
-                detectDragGestures(
-                    onDragStart = {
+            .pointerInput(isLoading, isProcessing) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val down = awaitFirstDown(requireUnconsumed = false)
                         if (!isListening && !isLoading && !isProcessing) {
                             view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
                             onStartListening()
                         }
-                    },
-                    onDragEnd = {
-                        Log.d("HoldToSpeakButton", "onDragEnd called - isListening: $isListening")
-                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                        // Always call onStopListening when drag ends, even if isListening is false
-                        // This ensures we stop recognition if it's still running
-                        onStopListening()
-                    },
-                    onDrag = { _, _ -> }
-                )
+                        val up = waitForUpOrCancellation()
+                        if (up != null) {
+                            Log.d("HoldToSpeakButton", "onUp called - isListening: $isListening")
+                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                            // Always call onStopListening when pointer up, even if isListening is false
+                            // This ensures we stop recognition if it's still running
+                            onStopListening()
+                        }
+                    }
+                }
             },
         shape = RoundedCornerShape(style.cornerRadius),
         color = when {

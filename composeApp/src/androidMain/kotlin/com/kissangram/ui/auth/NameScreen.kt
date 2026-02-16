@@ -16,7 +16,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
+import android.view.HapticFeedbackConstants
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -201,8 +203,10 @@ fun NameScreen(
         Spacer(modifier = Modifier.weight(1f))
         
         // Next Button
+        val view = LocalView.current
         Button(
             onClick = {
+                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                 viewModel.saveName(
                     onSuccess = onNameSaved,
                     onError = {}

@@ -20,6 +20,7 @@ private let homeViewLog = Logger(subsystem: "com.kissangram", category: "HomeVie
 struct HomeView: View {
     @StateObject private var viewModel = HomeViewModel()
     @StateObject private var visibilityTracker = DebouncedVisibilityTracker(batchIntervalMs: 80)
+    @State private var hasRestoredScroll = false // Track if we've already restored scroll position
     
     var onNavigateToNotifications: () -> Void = {}
     var onNavigateToMessages: () -> Void = {}
@@ -27,6 +28,9 @@ struct HomeView: View {
     var onNavigateToStory: (String) -> Void = { _ in }
     var onNavigateToCreateStory: () -> Void = {}
     var onNavigateToPostDetail: (String, Post?) -> Void = { _, _ in }
+    
+    // Refresh trigger: when this changes, refresh the feed (used for tab switches)
+    var refreshTrigger: Int = 0
     
     var body: some View {
         NavigationStack {
@@ -58,70 +62,159 @@ struct HomeView: View {
                             Spacer()
                         }
                     } else {
-                        ScrollView {
-                            LazyVStack(spacing: 0) {
-                                // Stories Section — manages its own padding internally
-                                StoriesSection(
-                                    stories: viewModel.stories,
-                                    onStoryClick: onNavigateToStory,
-                                    onCreateStoryClick: onNavigateToCreateStory
-                                )
-                                .frame(maxWidth: .infinity)
-                                
-                                // Spacing between stories and first card
-                                Spacer().frame(height: 12)
-                                
-                                // Post Cards — each card handles its own horizontal padding
-                                ForEach(Array(viewModel.posts.enumerated()), id: \.element.id) { index, post in
-                                    PostCardView(
-                                        post: post,
-                                        isVisible: visibilityTracker.visibleIndices.contains(index),
-                                        isOwnPost: post.authorId == viewModel.currentUserId,
-                                        isFollowingAuthor: viewModel.authorIdToIsFollowing[post.authorId] == true,
-                                        onLikeClick: { viewModel.onLikePost(post.id) },
-                                        onCommentClick: { onNavigateToPostDetail(post.id, post) },
-                                        onShareClick: {},
-                                        onSaveClick: { viewModel.onSavePost(post.id) },
-                                        onAuthorClick: { onNavigateToProfile(post.authorId) },
-                                        onPostClick: { onNavigateToPostDetail(post.id, post) },
-                                        onFollowClick: { viewModel.onFollow(authorId: post.authorId) },
-                                        onUnfollowClick: { viewModel.unfollowAndRemovePosts(authorId: post.authorId) }
+                        ScrollViewReader { proxy in
+                            ScrollView {
+                                LazyVStack(spacing: 0) {
+                                    // Stories Section — manages its own padding internally
+                                    StoriesSection(
+                                        stories: viewModel.stories,
+                                        onStoryClick: onNavigateToStory,
+                                        onCreateStoryClick: onNavigateToCreateStory
                                     )
-                                    .onAppear {
-                                        visibilityTracker.markAppeared(index)
+                                    .frame(maxWidth: .infinity)
+                                    .id("stories_section")
+                                    
+                                    // Spacing between stories and first card
+                                    Spacer().frame(height: 12)
+                                    
+                                // Post Cards — full width, no card styling
+                                ForEach(Array(viewModel.posts.enumerated()), id: \.element.id) { index, post in
+                                    // Add horizontal divider between posts (except before first post)
+                                    if index > 0 {
+                                        Rectangle()
+                                            .fill(Color.black.opacity(0.08))
+                                            .frame(height: 0.5)
+                                            .padding(.vertical, 2)
                                     }
-                                    .onDisappear {
-                                        visibilityTracker.markDisappeared(index)
+                                    
+                                    PostCardView(
+                                            post: post,
+                                            isVisible: visibilityTracker.visibleIndices.contains(index),
+                                            isOwnPost: post.authorId == viewModel.currentUserId,
+                                            isFollowingAuthor: viewModel.authorIdToIsFollowing[post.authorId] == true,
+                                            onLikeClick: { viewModel.onLikePost(post.id) },
+                                            onCommentClick: { 
+                                                // Save scroll state before navigating
+                                                viewModel.saveScrollState(postId: post.id)
+                                                onNavigateToPostDetail(post.id, post) 
+                                            },
+                                            onShareClick: {},
+                                            onSaveClick: { viewModel.onSavePost(post.id) },
+                                            onAuthorClick: { onNavigateToProfile(post.authorId) },
+                                            onPostClick: { 
+                                                // Save scroll state before navigating
+                                                viewModel.saveScrollState(postId: post.id)
+                                                onNavigateToPostDetail(post.id, post) 
+                                            },
+                                            onFollowClick: { viewModel.onFollow(authorId: post.authorId) },
+                                            onUnfollowClick: { viewModel.unfollowAndRemovePosts(authorId: post.authorId) }
+                                        )
+                                        .id(post.id)
+                                        .onAppear {
+                                            visibilityTracker.markAppeared(index)
+                                        }
+                                        .onDisappear {
+                                            visibilityTracker.markDisappeared(index)
+                                        }
+                                    }
+                                    
+                                    if viewModel.isLoadingMore {
+                                        ProgressView()
+                                            .padding()
+                                    }
+                                    
+                                    if !viewModel.hasMorePosts && !viewModel.posts.isEmpty {
+                                        EndOfFeedSection()
+                                    }
+                                    
+                                    // Bottom padding to ensure content doesn't get cut off by bottom nav
+                                    Spacer().frame(height: 12)
+                                }
+                            }
+                            .refreshable {
+                                await viewModel.refreshFeed()
+                            }
+                            .scrollContentBackground(.hidden)
+                            .onChange(of: viewModel.posts.count) { _ in
+                                // Restore scroll position when posts are loaded
+                                if let savedPostId = viewModel.savedScrollPostId,
+                                   !hasRestoredScroll,
+                                   !viewModel.posts.isEmpty,
+                                   viewModel.posts.contains(where: { $0.id == savedPostId }) {
+                                    // Use a longer delay to ensure the view is fully rendered
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                        withAnimation(.easeInOut(duration: 0.3)) {
+                                            proxy.scrollTo(savedPostId, anchor: .top)
+                                        }
+                                        // Clear saved state after restoring
+                                        viewModel.clearScrollState()
+                                        hasRestoredScroll = true
                                     }
                                 }
-                                
-                                if viewModel.isLoadingMore {
-                                    ProgressView()
-                                        .padding()
+                            }
+                            .onChange(of: viewModel.savedScrollPostId) { savedPostId in
+                                // Also restore when savedScrollPostId changes (e.g., when navigating back)
+                                if let savedPostId = savedPostId,
+                                   !hasRestoredScroll,
+                                   !viewModel.posts.isEmpty,
+                                   viewModel.posts.contains(where: { $0.id == savedPostId }) {
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                        withAnimation(.easeInOut(duration: 0.3)) {
+                                            proxy.scrollTo(savedPostId, anchor: .top)
+                                        }
+                                        // Clear saved state after restoring
+                                        viewModel.clearScrollState()
+                                        hasRestoredScroll = true
+                                    }
                                 }
-                                
-                                if !viewModel.hasMorePosts && !viewModel.posts.isEmpty {
-                                    EndOfFeedSection()
+                            }
+                            .onAppear {
+                                // Try to restore scroll position if we have a saved state and posts are already loaded
+                                if let savedPostId = viewModel.savedScrollPostId,
+                                   !hasRestoredScroll,
+                                   !viewModel.posts.isEmpty,
+                                   viewModel.posts.contains(where: { $0.id == savedPostId }) {
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                        withAnimation(.easeInOut(duration: 0.3)) {
+                                            proxy.scrollTo(savedPostId, anchor: .top)
+                                        }
+                                        viewModel.clearScrollState()
+                                        hasRestoredScroll = true
+                                    }
+                                } else if viewModel.savedScrollPostId == nil {
+                                    // Reset restoration flag if no saved state
+                                    hasRestoredScroll = false
                                 }
-                                
-                                // Bottom padding to ensure content doesn't get cut off by bottom nav
-                                Spacer().frame(height: 12)
+                            }
+                            .onDisappear {
+                                // Reset restoration flag when navigating away
+                                hasRestoredScroll = false
                             }
                         }
-                        .refreshable {
-                            await viewModel.refreshFeed()
-                        }
-                        .scrollContentBackground(.hidden)
                     }
                 }
                 .onAppear {
                     homeViewLog.debug("HomeView onAppear: posts=\(viewModel.posts.count) isLoading=\(viewModel.isLoading) error=\(viewModel.error ?? "nil")")
+                }
+                .onChange(of: refreshTrigger) { _ in
+                    // Refresh feed when trigger changes (tab switch from bottom bar)
+                    // This preserves state when returning from post details (no trigger change)
+                    if refreshTrigger > 0 {
+                        homeViewLog.debug("HomeView refreshTrigger changed, refreshing feed")
+                        Task {
+                            await viewModel.refreshFeed()
+                        }
+                    }
                 }
                 .onChange(of: viewModel.posts.count) { _ in
                     homeViewLog.debug("HomeView uiState: posts=\(viewModel.posts.count) isLoading=\(viewModel.isLoading) error=\(viewModel.error ?? "nil")")
                 }
                 .onChange(of: viewModel.isLoading) { _ in
                     homeViewLog.debug("HomeView uiState: posts=\(viewModel.posts.count) isLoading=\(viewModel.isLoading) error=\(viewModel.error ?? "nil")")
+                    // Reset restoration flag when refreshing/loading
+                    if viewModel.isLoading {
+                        hasRestoredScroll = false
+                    }
                 }
                 .onChange(of: viewModel.error) { _ in
                     homeViewLog.debug("HomeView uiState: posts=\(viewModel.posts.count) isLoading=\(viewModel.isLoading) error=\(viewModel.error ?? "nil")")
@@ -136,19 +229,21 @@ struct HomeView: View {
                     }
                     
                     ToolbarItem(placement: .navigationBarLeading) {
-                        Button(action: onNavigateToNotifications) {
+                        Button(action: { /* Disabled - not implemented */ }) {
                             Image(systemName: "bell")
                                 .font(.system(size: 18))
-                                .foregroundColor(.textPrimary)
+                                .foregroundColor(.textSecondary.opacity(0.38))
                         }
+                        .disabled(true)
                     }
                     
                     ToolbarItem(placement: .navigationBarTrailing) {
-                        Button(action: onNavigateToMessages) {
+                        Button(action: { /* Disabled - not implemented */ }) {
                             Image(systemName: "envelope")
                                 .font(.system(size: 18))
-                                .foregroundColor(.textPrimary)
+                                .foregroundColor(.textSecondary.opacity(0.38))
                         }
+                        .disabled(true)
                     }
                 }
             }
@@ -280,13 +375,6 @@ struct StoryCard: View {
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(.textPrimary)
                         .lineLimit(1)
-                    Text("🌾 Wheat")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(.primaryGreen)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.primaryGreen.opacity(0.08))
-                        .cornerRadius(16)
                 }
                 .frame(width: 120, height: 67)
             }
@@ -321,13 +409,6 @@ struct CreateStoryCard: View {
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(.textPrimary)
                         .lineLimit(1)
-                    Text("+ Add")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(.primaryGreen)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.primaryGreen.opacity(0.08))
-                        .cornerRadius(16)
                 }
                 .frame(width: 120, height: 67)
             }
@@ -401,27 +482,26 @@ struct PostCardView: View {
                 onUnfollowClick: onUnfollowClick
             )
                 .padding(.horizontal, 16)
-                .padding(.top, 16)
+                .padding(.top, 12)
 
             // Tags Row
-            Spacer().frame(height: 10)
+            Spacer().frame(height: 6)
             PostTagsRow(post: post)
                 .padding(.horizontal, 16)
 
-            // Media — full width inside card, rounded corners
+            // Media — full width, no padding
             if !post.media.isEmpty {
-                Spacer().frame(height: 12)
+                Spacer().frame(height: 8)
                 MediaCarousel(
                     media: post.media,
                     onMediaClick: onPostClick,
                     isVisible: isVisible
                 )
-                .padding(.horizontal, 16) // ← inset from card edges
             }
 
             // Post Text
             if !post.text.isEmpty || post.voiceCaption != nil {
-                Spacer().frame(height: post.media.isEmpty ? 10 : 14)
+                Spacer().frame(height: post.media.isEmpty ? 6 : 8)
                 PostTextContent(
                     text: post.text,
                     voiceCaption: post.voiceCaption,
@@ -431,7 +511,7 @@ struct PostCardView: View {
             }
 
             // Action Bar - use local state for instant feedback
-            Spacer().frame(height: 4)
+            Spacer().frame(height: 2)
             PostActionBar(
                 post: Post(
                     id: post.id,
@@ -482,9 +562,6 @@ struct PostCardView: View {
             .padding(.horizontal, 8)   // ← slight inset so buttons align nicely
             .padding(.bottom, 8)
         }
-        .background(Color.white)              // ← white card background
-        .cornerRadius(18)                     // ← rounded corners
-        .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 2) // ← relief shadow
         .onChange(of: post.isLikedByMe) { newValue in
             // Sync local state with actual post state when it changes (from ViewModel or refresh)
             localLikedState = newValue
@@ -493,8 +570,6 @@ struct PostCardView: View {
             // Sync local state with actual post state when it changes
             localLikesCount = newValue
         }
-        .padding(.horizontal, 18)             // ← 18pt screen margins (left & right)
-        .padding(.vertical, 6)               // ← gap between cards
     }
 }
 
@@ -659,6 +734,11 @@ struct PostTextContent: View {
     let voiceCaption: VoiceContent?
     let onReadMore: () -> Void
     
+    @State private var isExpanded = false
+    private var shouldShowReadMore: Bool {
+        text.count > 150
+    }
+    
     @State private var isPlaying = false
     @State private var playbackProgress = 0
     @State private var audioPlayer: AVPlayer?
@@ -696,22 +776,31 @@ struct PostTextContent: View {
                     )
             }
             
-            // Text caption (right side)
+            // Text caption (right side) - aligned with icon center
+            // Icon is 40pt, so center is at 20pt. Text font size is 17pt, so we add padding to align first line center
             if !text.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(text)
                         .font(.system(size: 17))
                         .foregroundColor(.textPrimary)
-                        .lineLimit(3)
+                        .lineLimit(isExpanded ? nil : 3)
                         .lineSpacing(6)
                         .fixedSize(horizontal: false, vertical: true)
-                    if text.count > 150 {
-                        Button("Read more", action: onReadMore)
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(.primaryGreen)
+                    if shouldShowReadMore {
+                        Button(action: {
+                            isExpanded.toggle()
+                            if isExpanded {
+                                onReadMore() // Call callback when expanded
+                            }
+                        }) {
+                            Text(isExpanded ? "Show less" : "Read more")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.primaryGreen)
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 11.5) // (40pt icon height - 17pt text height) / 2 ≈ 11.5pt to center text with icon
             } else {
                 // If no text but has voice caption, take up space
                 Spacer()
@@ -833,9 +922,10 @@ struct PostActionBar: View {
             ActionButton(
                 icon: "square.and.arrow.up",
                 label: "Share",
-                color: .textSecondary,
-                action: onShareClick
+                color: .textSecondary.opacity(0.38),
+                action: { /* Disabled - not implemented */ }
             )
+            .disabled(true)
             Spacer()
             Button(action: onSaveClick) {
                 Image(systemName: post.isSavedByMe ? "bookmark.fill" : "bookmark")
@@ -844,7 +934,8 @@ struct PostActionBar: View {
                     .padding(.trailing, 8)
             }
         }
-        .padding(.top, 4)
+        .padding(.top, 2)
+        .padding(.bottom, 4)
     }
 }
 

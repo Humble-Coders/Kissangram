@@ -23,6 +23,8 @@ sealed class Screen {
     data class OwnPostDetail(val postId: String) : Screen()
     data class UserProfile(val userId: String) : Screen()
     data class Story(val userId: String) : Screen()
+    data class FollowersList(val userId: String) : Screen()
+    data class FollowingList(val userId: String) : Screen()
     object Notifications : Screen()
     object Messages : Screen()
     object EditProfile : Screen()
@@ -46,6 +48,8 @@ sealed class Screen {
         const val OWN_POST_DETAIL = "own_post_detail/{postId}"
         const val USER_PROFILE = "user_profile/{userId}"
         const val STORY = "story/{userId}"
+        const val FOLLOWERS_LIST = "followers_list/{userId}"
+        const val FOLLOWING_LIST = "following_list/{userId}"
         const val NOTIFICATIONS = "notifications"
         const val MESSAGES = "messages"
         const val EDIT_PROFILE = "edit_profile"
@@ -70,6 +74,8 @@ sealed class Screen {
                 is OwnPostDetail -> buildOwnPostDetailRoute(postId)
                 is UserProfile -> buildUserProfileRoute(userId)
                 is Story -> buildStoryRoute(userId)
+                is FollowersList -> buildFollowersListRoute(userId)
+                is FollowingList -> buildFollowingListRoute(userId)
                 is Notifications -> NOTIFICATIONS
                 is Messages -> MESSAGES
                 is EditProfile -> EDIT_PROFILE
@@ -103,6 +109,14 @@ sealed class Screen {
         
         fun buildStoryRoute(userId: String): String {
             return "story/$userId"
+        }
+        
+        fun buildFollowersListRoute(userId: String): String {
+            return "followers_list/$userId"
+        }
+        
+        fun buildFollowingListRoute(userId: String): String {
+            return "following_list/$userId"
         }
     }
 }

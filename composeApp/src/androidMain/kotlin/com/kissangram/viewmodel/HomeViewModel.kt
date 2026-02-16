@@ -120,7 +120,9 @@ class HomeViewModel(
                     posts = posts,
                     authorIdToIsFollowing = followingMap,
                     currentUserId = userId,
-                    isRefreshing = false
+                    isRefreshing = false,
+                    savedScrollIndex = 0,
+                    savedScrollOffset = 0
                 )
             } catch (e: Exception) {
                 Log.e(TAG, "refreshFeed: failed", e)
@@ -288,6 +290,20 @@ class HomeViewModel(
         }
     }
     
+    fun saveScrollState(index: Int, offset: Int) {
+        _uiState.value = _uiState.value.copy(
+            savedScrollIndex = index,
+            savedScrollOffset = offset
+        )
+    }
+    
+    fun clearScrollState() {
+        _uiState.value = _uiState.value.copy(
+            savedScrollIndex = 0,
+            savedScrollOffset = 0
+        )
+    }
+    
     /**
      * Upload India states and districts data to Firestore.
      * This is a one-time operation for seeding reference data.
@@ -382,5 +398,7 @@ data class HomeUiState(
     val isLoadingMore: Boolean = false,
     val hasMorePosts: Boolean = true,
     val currentPage: Int = 0,
-    val error: String? = null
+    val error: String? = null,
+    val savedScrollIndex: Int = 0,
+    val savedScrollOffset: Int = 0
 )

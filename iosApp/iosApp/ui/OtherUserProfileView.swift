@@ -8,6 +8,8 @@ struct OtherUserProfileView: View {
     let userId: String
     var onBackClick: () -> Void = {}
     var onPostClick: (String, Post?) -> Void = { _, _ in }
+    var onFollowersClick: () -> Void = {}
+    var onFollowingClick: () -> Void = {}
     
     @StateObject private var viewModel = OtherUserProfileViewModel()
 
@@ -46,7 +48,9 @@ struct OtherUserProfileView: View {
                             isFollowing: viewModel.isFollowing,
                             isFollowLoading: viewModel.isFollowLoading,
                             onFollowClick: { viewModel.toggleFollow() },
-                            onPostClick: onPostClick
+                            onPostClick: onPostClick,
+                            onFollowersClick: onFollowersClick,
+                            onFollowingClick: onFollowingClick
                         )
                         .padding(.horizontal, 18)
                         .padding(.top, 24)
@@ -86,6 +90,8 @@ struct OtherUserProfileContent: View {
     let isFollowLoading: Bool
     let onFollowClick: () -> Void
     let onPostClick: (String, Post?) -> Void
+    var onFollowersClick: () -> Void = {}
+    var onFollowingClick: () -> Void = {}
 
     var body: some View {
         VStack(alignment: .leading, spacing: 27) {
@@ -211,9 +217,15 @@ struct OtherUserProfileContent: View {
                 Spacer()
                 StatItem(count: Int(user.postsCount), label: "Posts")
                 Spacer()
-                StatItem(count: Int(user.followersCount), label: "Followers")
+                Button(action: onFollowersClick) {
+                    StatItem(count: Int(user.followersCount), label: "Followers")
+                }
+                .buttonStyle(PlainButtonStyle())
                 Spacer()
-                StatItem(count: Int(user.followingCount), label: "Following")
+                Button(action: onFollowingClick) {
+                    StatItem(count: Int(user.followingCount), label: "Following")
+                }
+                .buttonStyle(PlainButtonStyle())
                 Spacer()
                 StatItem(count: 0, label: "Groups")
                 Spacer()

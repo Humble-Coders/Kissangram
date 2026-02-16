@@ -48,6 +48,8 @@ import java.io.FileInputStream
 import java.io.OutputStream
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalView
+import android.view.HapticFeedbackConstants
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.input.pointer.pointerInput
@@ -376,7 +378,11 @@ fun CreateStoryScreen(
                 )
             },
             navigationIcon = {
-                IconButton(onClick = onBackClick) {
+                val view = LocalView.current
+                IconButton(onClick = {
+                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    onBackClick()
+                }) {
                     Icon(
                         imageVector = Icons.Default.ArrowBack,
                         contentDescription = "Back",

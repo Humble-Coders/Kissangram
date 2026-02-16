@@ -320,6 +320,7 @@ internal struct PostHeaderSection: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            // Author Header - with padding
             HStack(spacing: 12) {
                 Button(action: onAuthorClick) {
                     ProfileImageLoader(
@@ -348,19 +349,21 @@ internal struct PostHeaderSection: View {
                 
                 Spacer()
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 18)
             .padding(.top, 16)
             .padding(.bottom, 12)
             
+            // Media Carousel - full width, no padding, show full images
             if !post.media.isEmpty {
                 MediaCarousel(
                     media: post.media,
                     onMediaClick: { /* TODO: Open media viewer */ },
-                    isVisible: true
+                    isVisible: true,
+                    showFullImage: true // Show full image in detail view
                 )
-                .padding(.horizontal, 16)
             }
             
+            // Action Buttons - with padding
             HStack(spacing: 0) {
                 ActionButton(
                     icon: localLikedState ? "heart.fill" : "heart",
@@ -379,15 +382,17 @@ internal struct PostHeaderSection: View {
                 ActionButton(
                     icon: "square.and.arrow.up",
                     label: "Share",
-                    color: .textSecondary
+                    color: .textSecondary.opacity(0.38)
                 ) {
-                    // TODO
+                    // Disabled - not implemented
                 }
+                .disabled(true)
                 
                 Spacer()
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            .padding(.horizontal, 18)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
             .onChange(of: post.isLikedByMe) { newValue in
                 localLikedState = newValue
             }
@@ -395,16 +400,18 @@ internal struct PostHeaderSection: View {
                 localLikesCount = newValue
             }
             
+            // Post Text - with padding
             if !post.text.isEmpty || post.voiceCaption != nil {
                 PostTextContent(
                     text: post.text,
                     voiceCaption: post.voiceCaption,
                     onReadMore: { /* TODO: Expand text */ }
                 )
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 18)
                 .padding(.vertical, 12)
             }
             
+            // Crops - with padding
             if !post.crops.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 9) {
@@ -421,10 +428,11 @@ internal struct PostHeaderSection: View {
                     }
                     .padding(.horizontal, 0)
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 18)
                 .padding(.bottom, 16)
             }
             
+            // Divider
             Rectangle()
                 .fill(Color.black.opacity(0.08))
                 .frame(height: 8)

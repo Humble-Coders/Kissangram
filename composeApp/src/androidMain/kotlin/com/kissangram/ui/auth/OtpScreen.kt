@@ -20,7 +20,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
+import android.view.HapticFeedbackConstants
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -98,8 +100,12 @@ fun OtpScreen(
             modifier = Modifier.fillMaxWidth()
         ) {
             // Back Button
+            val view = LocalView.current
             IconButton(
-                onClick = onBackClick,
+                onClick = {
+                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    onBackClick()
+                },
                 modifier = Modifier
                     .size((54 * scaleFactor).dp)
                     .clip(CircleShape)
@@ -116,39 +122,16 @@ fun OtpScreen(
             Spacer(modifier = Modifier.height(padding))
             
             // Header
-            Row(
+            AutoSizeText(
+                text = stringResource(Res.string.enter_otp),
+                fontSize = (31.5 * scaleFactor).sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF1B1B1B),
+                lineHeight = (47.25 * scaleFactor).sp,
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                AutoSizeText(
-                    text = stringResource(Res.string.enter_otp),
-                    fontSize = (31.5 * scaleFactor).sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF1B1B1B),
-                    lineHeight = (47.25 * scaleFactor).sp,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                    minFontSizeScale = 0.6f
-                )
-                
-                // Tap to speak button (header)
-                IconButton(
-                    onClick = {
-                        if (uiState.isListening) {
-                            viewModel.stopSpeechRecognition()
-                        } else {
-                            handleSpeechRecognitionStart()
-                        }
-                    },
-                    modifier = Modifier
-                        .size((36 * scaleFactor).dp)
-                        .clip(CircleShape)
-                        .background(if (uiState.isListening) Color(0xFFFFB703) else Color(0x33FFB703))
-                ) {
-                    // Microphone icon would go here if needed
-                }
-            }
+                maxLines = 1,
+                minFontSizeScale = 0.6f
+            )
             
             Spacer(modifier = Modifier.height((9 * scaleFactor).dp))
             
@@ -234,8 +217,12 @@ fun OtpScreen(
         Spacer(modifier = Modifier.height(spacing))
         
             // Resend OTP
+            val view = LocalView.current
             TextButton(
-                onClick = { viewModel.resendOtp(onResendOtp) },
+                onClick = {
+                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    viewModel.resendOtp(onResendOtp)
+                },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 AutoSizeText(
@@ -265,6 +252,7 @@ fun OtpScreen(
             // Verify & Continue Button
             Button(
                 onClick = {
+                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                     viewModel.verifyOtp(
                         onExistingUser = onExistingUser,
                         onNewUser = onNewUser,

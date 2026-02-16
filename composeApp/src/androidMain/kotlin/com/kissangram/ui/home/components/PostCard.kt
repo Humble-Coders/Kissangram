@@ -34,6 +34,8 @@ import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import androidx.compose.ui.platform.LocalView
+import android.view.HapticFeedbackConstants
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.runtime.DisposableEffect
@@ -69,18 +71,9 @@ fun PostCard(
         localLikesCount = post.likesCount
     }
 
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 18.dp, vertical = 6.dp),
-        shape = RoundedCornerShape(18.dp),
-        color = Color.White,
-        shadowElevation = 8.dp,
-        tonalElevation = 0.dp
+    Column(
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Column(
-            modifier = Modifier.fillMaxWidth()
-        ) {
             // Author Header
             PostAuthorHeader(
                 post = post,
@@ -91,25 +84,24 @@ fun PostCard(
                 onUnfollowClick = onUnfollowClick
             )
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
             // Tags Row
             PostTagsRow(post = post)
 
             // Post Media (if any)
             if (post.media.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(8.dp))
                 MediaCarousel(
                     media = post.media,
                     onMediaClick = onPostClick,
-                    isVisible = isVisible,
-                    modifier = Modifier.padding(horizontal = 16.dp)
+                    isVisible = isVisible
                 )
             }
 
             // Post Text
             if (post.text.isNotEmpty() || post.voiceCaption != null) {
-                Spacer(modifier = Modifier.height(if (post.media.isEmpty()) 10.dp else 14.dp))
+                Spacer(modifier = Modifier.height(if (post.media.isEmpty()) 6.dp else 8.dp))
                 PostTextContent(
                     text = post.text,
                     voiceCaption = post.voiceCaption,
@@ -118,7 +110,7 @@ fun PostCard(
             }
 
             // Action Bar - use local state for instant feedback
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(2.dp))
             PostActionBar(
                 post = post.copy(
                     isLikedByMe = localLikedState,
@@ -147,7 +139,6 @@ fun PostCard(
                 onSaveClick = onSaveClick
             )
         }
-    }
 }
 
 @Composable
@@ -159,13 +150,18 @@ private fun PostAuthorHeader(
     onFollowClick: () -> Unit,
     onUnfollowClick: () -> Unit
 ) {
+    val view = LocalView.current
     var showUnfollowMenu by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
-            .padding(top = 16.dp)
-            .clickable { onAuthorClick() },
+            .padding(top = 12.dp)
+            .padding(bottom = 6.dp)
+            .clickable { 
+                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                onAuthorClick()
+            },
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -237,7 +233,10 @@ private fun PostAuthorHeader(
         if (!isOwnPost && post.authorRole != UserRole.EXPERT) {
             if (isFollowingAuthor) {
                 Box {
-                    IconButton(onClick = { showUnfollowMenu = true }) {
+                    IconButton(onClick = { 
+                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        showUnfollowMenu = true 
+                    }) {
                         Icon(
                             Icons.Outlined.MoreVert,
                             contentDescription = "More options",
@@ -254,6 +253,7 @@ private fun PostAuthorHeader(
                                 Text("Unfollow", color = Color(0xFFBC4749))
                             },
                             onClick = {
+                                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                                 showUnfollowMenu = false
                                 onUnfollowClick()
                             }
@@ -262,7 +262,10 @@ private fun PostAuthorHeader(
                 }
             } else {
                 Button(
-                    onClick = onFollowClick,
+                    onClick = {
+                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        onFollowClick()
+                    },
                     colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen),
                     shape = RoundedCornerShape(25.dp),
                     contentPadding = PaddingValues(horizontal = 19.dp, vertical = 12.dp)
@@ -379,6 +382,10 @@ fun PostTextContent(
     voiceCaption: com.kissangram.model.VoiceContent?,
     onReadMore: () -> Unit
 ) {
+    // Text expansion state
+    var isExpanded by remember { mutableStateOf(false) }
+    val shouldShowReadMore = text.length > 150
+    
     // Playback state
     var isPlaying by remember { mutableStateOf(false) }
     var playbackProgress by remember { mutableStateOf(0) }
@@ -561,28 +568,37 @@ fun PostTextContent(
 
         Spacer(modifier = Modifier.width(11.dp))
 
-        // Text caption (right side)
+        // Text caption (right side) - aligned with icon center
+        // Icon is 40dp, so center is at 20dp. Text font size is 17sp, so we add padding to align first line center
         if (text.isNotEmpty()) {
             Column(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(top = 11.5.dp), // (40dp icon height - 17sp text height) / 2 ≈ 11.5dp to center text with icon
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Text(
                     text = text,
                     fontSize = 17.sp,
                     color = TextPrimary,
-                    maxLines = 3,
+                    maxLines = if (isExpanded) Int.MAX_VALUE else 3,
                     overflow = TextOverflow.Ellipsis,
-                    lineHeight = 23.sp // Approximate lineSpacing of 6dp (17sp + 6dp ≈ 23sp)
+                    lineHeight = 23.sp, // Approximate lineSpacing of 6dp (17sp + 6dp ≈ 23sp)
+                    modifier = Modifier.align(Alignment.Start)
                 )
 
-                if (text.length > 150) {
+                if (shouldShowReadMore) {
                     TextButton(
-                        onClick = onReadMore,
+                        onClick = {
+                            isExpanded = !isExpanded
+                            if (isExpanded) {
+                                onReadMore() // Call callback when expanded
+                            }
+                        },
                         contentPadding = PaddingValues(0.dp)
                     ) {
                         Text(
-                            text = "Read more",
+                            text = if (isExpanded) "Show less" else "Read more",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = PrimaryGreen
@@ -609,7 +625,7 @@ private fun PostActionBar(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp)
-            .padding(top = 4.dp, bottom = 8.dp),
+            .padding(top = 2.dp, bottom = 4.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -629,16 +645,21 @@ private fun PostActionBar(
             onClick = onCommentClick
         )
 
-        // Share
+        // Share (disabled - not implemented)
         ActionButton(
             icon = Icons.Outlined.Share,
             label = "Share",
             tint = TextSecondary,
-            onClick = onShareClick
+            onClick = { /* Disabled - not implemented */ },
+            enabled = false
         )
 
         // Save
-        IconButton(onClick = onSaveClick) {
+        val view = LocalView.current
+        IconButton(onClick = {
+            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            onSaveClick()
+        }) {
             Icon(
                 imageVector = if (post.isSavedByMe) Icons.Outlined.Bookmark else Icons.Outlined.BookmarkBorder,
                 contentDescription = "Save",
@@ -654,19 +675,26 @@ private fun ActionButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
     tint: Color,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    enabled: Boolean = true
 ) {
+    val view = LocalView.current
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(22.dp))
-            .clickable { onClick() }
+            .clickable(enabled = enabled) { 
+                if (enabled) {
+                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    onClick()
+                }
+            }
             .padding(horizontal = 10.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
             imageVector = icon,
             contentDescription = label,
-            tint = tint,
+            tint = if (enabled) tint else tint.copy(alpha = 0.38f),
             modifier = Modifier.size(18.dp)
         )
         Spacer(modifier = Modifier.width(7.dp))
@@ -674,7 +702,7 @@ private fun ActionButton(
             text = label,
             fontSize = 15.sp,
             fontWeight = FontWeight.SemiBold,
-            color = tint,
+            color = if (enabled) tint else tint.copy(alpha = 0.38f),
             maxLines = 1
         )
     }

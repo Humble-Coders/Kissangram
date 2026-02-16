@@ -10,7 +10,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,7 +18,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
+import android.view.HapticFeedbackConstants
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -118,44 +119,16 @@ fun PhoneNumberScreen(
             Spacer(modifier = Modifier.height(padding))
             
             // Header
-            Row(
+            AutoSizeText(
+                text = stringResource(Res.string.enter_phone_number),
+                fontSize = (31.5 * scaleFactor).sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF1B1B1B),
+                lineHeight = (47.25 * scaleFactor).sp,
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                AutoSizeText(
-                    text = stringResource(Res.string.enter_phone_number),
-                    fontSize = (31.5 * scaleFactor).sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF1B1B1B),
-                    lineHeight = (47.25 * scaleFactor).sp,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 2,
-                    minFontSizeScale = 0.6f
-                )
-            
-            // Tap to speak button (header)
-            IconButton(
-                onClick = {
-                    if (uiState.isListening) {
-                        viewModel.stopSpeechRecognition()
-                    } else {
-                        handleSpeechRecognitionStart()
-                    }
-                },
-                modifier = Modifier
-                    .size((36 * scaleFactor).dp)
-                    .clip(CircleShape)
-                    .background(if (uiState.isListening) Color(0xFFFFB703) else Color(0x33FFB703))
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Mic,
-                    contentDescription = "Tap to speak",
-                    tint = if (uiState.isListening) Color.White else Color(0xFFFFB703),
-                    modifier = Modifier.size((20 * scaleFactor).dp)
-                )
-            }
-        }
+                maxLines = 2,
+                minFontSizeScale = 0.6f
+            )
         
         Spacer(modifier = Modifier.height((9 * scaleFactor).dp))
         
@@ -250,8 +223,10 @@ fun PhoneNumberScreen(
             Spacer(modifier = Modifier.weight(1f))
             
             // Get OTP Button
+            val view = LocalView.current
             Button(
                 onClick = {
+                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                     viewModel.sendOtp(
                         onSuccess = onOtpSent,
                         onError = {}

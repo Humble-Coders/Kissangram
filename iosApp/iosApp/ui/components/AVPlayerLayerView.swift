@@ -6,16 +6,18 @@ import AVFoundation
 /// the last video leaves the screen. Used for feed videos (Instagram-style).
 struct AVPlayerLayerView: UIViewRepresentable {
     let player: AVPlayer
+    var videoGravity: AVLayerVideoGravity = .resizeAspectFill // Default to fill for feed
     
     func makeUIView(context: Context) -> PlayerLayerHostView {
         let view = PlayerLayerHostView()
         view.playerLayer.player = player
-        view.playerLayer.videoGravity = .resizeAspectFill
+        view.playerLayer.videoGravity = videoGravity
         return view
     }
     
     func updateUIView(_ uiView: PlayerLayerHostView, context: Context) {
         uiView.playerLayer.player = player
+        uiView.playerLayer.videoGravity = videoGravity
     }
 }
 

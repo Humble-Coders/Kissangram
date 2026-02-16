@@ -2,6 +2,7 @@ package com.kissangram.ui.profile
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
@@ -52,6 +53,8 @@ fun OtherUserProfileScreen(
     userId: String,
     onBackClick: () -> Unit = {},
     onPostClick: (String, Post?) -> Unit = { _, _ -> },
+    onFollowersClick: () -> Unit = {},
+    onFollowingClick: () -> Unit = {},
     viewModel: OtherUserProfileViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -131,7 +134,9 @@ fun OtherUserProfileScreen(
                                 isFollowing = uiState.isFollowing,
                                 isFollowLoading = uiState.isFollowLoading,
                                 onFollowClick = { viewModel.toggleFollow() },
-                                onPostClick = onPostClick
+                                onPostClick = onPostClick,
+                                onFollowersClick = onFollowersClick,
+                                onFollowingClick = onFollowingClick
                             )
                         } ?: run {
                             Box(
@@ -156,7 +161,9 @@ private fun OtherUserProfileContent(
     isFollowing: Boolean,
     isFollowLoading: Boolean,
     onFollowClick: () -> Unit,
-    onPostClick: (String, Post?) -> Unit
+    onPostClick: (String, Post?) -> Unit,
+    onFollowersClick: () -> Unit = {},
+    onFollowingClick: () -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -362,8 +369,16 @@ private fun OtherUserProfileContent(
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
             StatItem(count = user.postsCount, label = "Posts")
-            StatItem(count = user.followersCount, label = "Followers")
-            StatItem(count = user.followingCount, label = "Following")
+            StatItem(
+                count = user.followersCount,
+                label = "Followers",
+                onClick = onFollowersClick
+            )
+            StatItem(
+                count = user.followingCount,
+                label = "Following",
+                onClick = onFollowingClick
+            )
             StatItem(count = 0, label = "Groups")
         }
 
@@ -419,8 +434,21 @@ private fun OtherUserProfileContent(
 }
 
 @Composable
-private fun StatItem(count: Int, label: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+private fun StatItem(
+    count: Int,
+    label: String,
+    onClick: (() -> Unit)? = null
+) {
+    val modifier = if (onClick != null) {
+        Modifier.clickable(onClick = onClick)
+    } else {
+        Modifier
+    }
+    
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
         Text(
             text = count.toString(),
             fontSize = 18.sp,

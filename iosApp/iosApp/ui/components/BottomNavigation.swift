@@ -80,19 +80,24 @@ struct BottomNavItemButton: View {
     let useHindi: Bool
     let action: () -> Void
     
+    private var isDisabled: Bool {
+        item == .reels // Disable Reels as it's not implemented
+    }
+    
     var body: some View {
-        Button(action: action) {
+        Button(action: isDisabled ? {} : action) {
             VStack(spacing: 4) {
                 Image(systemName: isSelected ? item.selectedIcon : item.icon)
                     .font(.system(size: 22))
-                    .foregroundColor(isSelected ? .primaryGreen : .textSecondary)
+                    .foregroundColor(isDisabled ? .textSecondary.opacity(0.38) : (isSelected ? .primaryGreen : .textSecondary))
                 
                 Text(useHindi ? item.labelHindi : item.label)
                     .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
-                    .foregroundColor(isSelected ? .primaryGreen : .textSecondary)
+                    .foregroundColor(isDisabled ? .textSecondary.opacity(0.38) : (isSelected ? .primaryGreen : .textSecondary))
             }
             .frame(width: 68, height: 61)
         }
+        .disabled(isDisabled)
     }
 }
 

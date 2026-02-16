@@ -15,6 +15,8 @@ struct ContentView: View {
     @State private var selectedTab: BottomNavItem = .home
     @State private var hasCheckedSession = false
     @State private var profileReloadKey: Int = 0 // Key to trigger ProfileView reload after save
+    @State private var homeRefreshTrigger: Int = 0 // Key to trigger HomeView refresh when switching tabs
+    @State private var previousTab: BottomNavItem? = nil // Track previous tab to detect tab switches
     
     private let prefs = IOSPreferencesRepository()
     
@@ -81,7 +83,8 @@ struct ContentView: View {
                         onNavigateToProfile: { userId in navigateTo(.userProfile(userId: userId)) },
                         onNavigateToStory: { userId in navigateTo(.story(userId: userId)) },
                         onNavigateToCreateStory: { navigateTo(.createStory) },
-                        onNavigateToPostDetail: { postId, post in navigateTo(.postDetail(postId: postId, post: post)) }
+                        onNavigateToPostDetail: { postId, post in navigateTo(.postDetail(postId: postId, post: post)) },
+                        refreshTrigger: homeRefreshTrigger
                     )
                     .tag(BottomNavItem.home)
                     .tabItem {
@@ -141,6 +144,16 @@ struct ContentView: View {
                 .onChange(of: selectedTab) { newValue in
                     // Clear navigation stack when using bottom nav
                     navigationStack = []
+                    
+                    // If switching to home tab from another bottom bar tab, refresh the feed
+                    // This preserves state when returning from post details (which doesn't change selectedTab)
+                    if newValue == .home, let prevTab = previousTab, prevTab != .home {
+                        // Switching to home from another bottom bar tab (search, profile, etc.)
+                        // Trigger refresh
+                        homeRefreshTrigger += 1
+                    }
+                    
+                    previousTab = newValue
                     switch newValue {
                     case .home: currentScreen = .home
                     case .search: currentScreen = .search
@@ -174,6 +187,10 @@ struct ContentView: View {
                     } else if case .notifications = currentScreen {
                         mainAppContent
                     } else if case .messages = currentScreen {
+                        mainAppContent
+                    } else if case .followersList = currentScreen {
+                        mainAppContent
+                    } else if case .followingList = currentScreen {
                         mainAppContent
                     } else {
                         authFlowContent
@@ -274,7 +291,8 @@ struct ContentView: View {
                 onNavigateToProfile: { userId in navigateTo(.userProfile(userId: userId)) },
                 onNavigateToStory: { userId in navigateTo(.story(userId: userId)) },
                 onNavigateToCreateStory: { navigateTo(.createStory) },
-                onNavigateToPostDetail: { postId, post in navigateTo(.postDetail(postId: postId, post: post)) }
+                onNavigateToPostDetail: { postId, post in navigateTo(.postDetail(postId: postId, post: post)) },
+                refreshTrigger: homeRefreshTrigger
             )
             
         case .search:
@@ -314,6 +332,24 @@ struct ContentView: View {
                 onPostClick: { postId, post in
                     navigateTo(.postDetail(postId: postId, post: post))
                 },
+                onFollowersClick: {
+                    // Get userId dynamically when button is tapped
+                    if let currentUserId = Auth.auth().currentUser?.uid {
+                        print("🔵 [ContentView] Navigating to followers list for userId: \(currentUserId)")
+                        navigateTo(.followersList(userId: currentUserId))
+                    } else {
+                        print("🔴 [ContentView] Cannot navigate: currentUserId is nil")
+                    }
+                },
+                onFollowingClick: {
+                    // Get userId dynamically when button is tapped
+                    if let currentUserId = Auth.auth().currentUser?.uid {
+                        print("🔵 [ContentView] Navigating to following list for userId: \(currentUserId)")
+                        navigateTo(.followingList(userId: currentUserId))
+                    } else {
+                        print("🔴 [ContentView] Cannot navigate: currentUserId is nil")
+                    }
+                },
                 reloadKey: profileReloadKey
             )
             
@@ -343,6 +379,12 @@ struct ContentView: View {
                         selectedTab = .home
                     },
                     onPostClick: { postId, post in navigateTo(.postDetail(postId: postId, post: post)) },
+                    onFollowersClick: {
+                        navigateTo(.followersList(userId: userId))
+                    },
+                    onFollowingClick: {
+                        navigateTo(.followingList(userId: userId))
+                    },
                     reloadKey: profileReloadKey
                 )
             } else {
@@ -350,7 +392,13 @@ struct ContentView: View {
                 OtherUserProfileView(
                     userId: userId,
                     onBackClick: { navigateBack() },
-                    onPostClick: { postId, post in navigateTo(.postDetail(postId: postId, post: post)) }
+                    onPostClick: { postId, post in navigateTo(.postDetail(postId: postId, post: post)) },
+                    onFollowersClick: {
+                        navigateTo(.followersList(userId: userId))
+                    },
+                    onFollowingClick: {
+                        navigateTo(.followingList(userId: userId))
+                    }
                 )
             }
             
@@ -368,6 +416,22 @@ struct ContentView: View {
                 initialPost: post,
                 onBackClick: { navigateBack() },
                 onNavigateToProfile: { userId in navigateTo(.userProfile(userId: userId)) }
+            )
+            
+        case .followersList(let userId):
+            FollowersListView(
+                userId: userId,
+                type: .followers,
+                onBackClick: { navigateBack() },
+                onUserClick: { targetUserId in navigateTo(.userProfile(userId: targetUserId)) }
+            )
+            
+        case .followingList(let userId):
+            FollowersListView(
+                userId: userId,
+                type: .following,
+                onBackClick: { navigateBack() },
+                onUserClick: { targetUserId in navigateTo(.userProfile(userId: targetUserId)) }
             )
             
         default:
@@ -408,17 +472,35 @@ struct ContentView: View {
             "currentScreen": "\(currentScreen)",
             "navigationStackCount": navigationStack.count
         ])
+        
+        // Check if we're navigating away from post details
+        let wasPostDetail = if case .postDetail = currentScreen { true } else { false }
+        
         navigationStack.append(currentScreen)
         currentScreen = screen
         print("🔵 [ContentView:navigateTo] currentScreen updated to: \(currentScreen)")
         
         // Update selected tab when navigating to main screens
         switch screen {
-        case .home: selectedTab = .home
-        case .search: selectedTab = .search
-        case .createPost: selectedTab = .post
-        case .reels: selectedTab = .reels
-        case .profile: selectedTab = .profile
+        case .home: 
+            selectedTab = .home
+            // Only refresh if switching from another bottom bar tab, not from post details
+            if !wasPostDetail, let prevTab = previousTab, prevTab != .home {
+                homeRefreshTrigger += 1
+            }
+            previousTab = .home
+        case .search: 
+            selectedTab = .search
+            previousTab = .search
+        case .createPost: 
+            selectedTab = .post
+            previousTab = .post
+        case .reels: 
+            selectedTab = .reels
+            previousTab = .reels
+        case .profile: 
+            selectedTab = .profile
+            previousTab = .profile
         default: break
         }
         print("🔵 [ContentView:navigateTo] Navigation completed")
@@ -426,22 +508,36 @@ struct ContentView: View {
     
     private func navigateBack() {
         if let previousScreen = navigationStack.popLast() {
+            // When returning from post details, preserve state (don't refresh)
+            // The refresh only happens when switching tabs via selectedTab onChange
+            let wasPostDetail = if case .postDetail = currentScreen { true } else { false }
+            
             currentScreen = previousScreen
             
             // Update selected tab based on the previous screen
             switch previousScreen {
-            case .home: selectedTab = .home
+            case .home: 
+                selectedTab = .home
+                // Don't trigger refresh when returning from post details - preserve state
+                // Refresh only happens when switching tabs (handled in onChange(of: selectedTab))
             case .search: selectedTab = .search
             case .createPost: selectedTab = .post
             case .reels: selectedTab = .reels
             case .profile: selectedTab = .profile
             default: break
             }
+            
+            // Only update previousTab if not returning from post details
+            // This ensures tab switches trigger refresh, but back navigation preserves state
+            if !wasPostDetail {
+                previousTab = selectedTab
+            }
         } else {
             // If stack is empty and we're on a main screen, navigate to home
             if case .createPost = currentScreen {
                 currentScreen = .home
                 selectedTab = .home
+                previousTab = .home
             }
         }
     }

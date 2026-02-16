@@ -22,6 +22,7 @@ import com.kissangram.viewmodel.HomeViewModel
 import com.kissangram.model.Post
 import com.google.accompanist.swiperefresh.SwipeRefresh
 import com.google.accompanist.swiperefresh.rememberSwipeRefreshState
+import kotlinx.coroutines.launch
 
 val BackgroundColor = Color(0xFFF8F9F1)
 val PrimaryGreen = Color(0xFF2D6A4F)
@@ -44,25 +45,71 @@ fun HomeScreen(
     bottomNavPadding: PaddingValues = PaddingValues(0.dp)
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val listState = rememberLazyListState()
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = uiState.savedScrollIndex,
+        initialFirstVisibleItemScrollOffset = uiState.savedScrollOffset
+    )
     
     // Load content when screen is first created (same as ViewModel init)
     LaunchedEffect(Unit) {
         viewModel.loadContent()
     }
     
-    // Track visible post indices for video auto-play
+    // Track if we've already restored scroll position to avoid restoring on initial load
+    var hasRestoredScroll by remember { mutableStateOf(false) }
+    
+    // Restore scroll position when returning to screen
+    LaunchedEffect(uiState.posts.size, uiState.savedScrollIndex) {
+        if (uiState.posts.isNotEmpty() && uiState.savedScrollIndex > 0 && !hasRestoredScroll) {
+            kotlinx.coroutines.delay(100) // Small delay to ensure layout is ready
+            listState.animateScrollToItem(
+                index = uiState.savedScrollIndex,
+                scrollOffset = uiState.savedScrollOffset
+            )
+            hasRestoredScroll = true
+            // Clear saved state after restoring
+            viewModel.clearScrollState()
+        }
+    }
+    
+    // Reset restoration flag when posts change significantly (e.g., refresh)
+    LaunchedEffect(uiState.isRefreshing) {
+        if (uiState.isRefreshing) {
+            hasRestoredScroll = false
+        }
+    }
+    
+    // Wrapper function to save scroll state before navigating
+    val onNavigateToPostDetailWithScrollSave: (String, Post?) -> Unit = { postId, post ->
+        // Save current scroll position before navigating
+        val firstVisibleItemIndex = listState.firstVisibleItemIndex
+        val firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset
+        viewModel.saveScrollState(firstVisibleItemIndex, firstVisibleItemScrollOffset)
+        // Navigate
+        onNavigateToPostDetail(postId, post)
+    }
+    
+    // Track visible post indices for video auto-play - OPTIMIZED with debouncing
     val visiblePostIndices = remember { mutableStateSetOf<Int>() }
     
-    // Update visible posts when layout changes
+    // Debounce visibility updates to reduce recompositions during fast scrolling
     LaunchedEffect(listState) {
+        var debounceJob: kotlinx.coroutines.Job? = null
+        val scope = kotlinx.coroutines.CoroutineScope(coroutineContext)
         snapshotFlow { listState.layoutInfo.visibleItemsInfo.map { it.index } }
             .collect { visibleIndices ->
-                // Filter out story section (index 0) and get post indices
-                // Posts start from index 1 (after stories)
-                val postIndices = visibleIndices.filter { it > 0 }.map { it - 1 }
-                visiblePostIndices.clear()
-                visiblePostIndices.addAll(postIndices)
+                // Cancel previous debounce job
+                debounceJob?.cancel()
+                
+                // Debounce updates to reduce recompositions during fast scrolling
+                debounceJob = scope.launch {
+                    kotlinx.coroutines.delay(100) // Wait 100ms after scroll stops
+                    // Filter out story section (index 0) and get post indices
+                    // Posts start from index 1 (after stories)
+                    val postIndices = visibleIndices.filter { it > 0 }.map { it - 1 }
+                    visiblePostIndices.clear()
+                    visiblePostIndices.addAll(postIndices)
+                }
             }
     }
 
@@ -182,17 +229,27 @@ fun HomeScreen(
                         val isVisible = visiblePostIndices.contains(index)
                         val isOwnPost = post.authorId == uiState.currentUserId
                         val isFollowingAuthor = uiState.authorIdToIsFollowing[post.authorId] == true
+                        
+                        // Add horizontal divider between posts (except before first post)
+                        if (index > 0) {
+                            HorizontalDivider(
+                                color = Color.Black.copy(alpha = 0.08f),
+                                thickness = 0.5.dp,
+                                modifier = Modifier.padding(vertical = 2.dp)
+                            )
+                        }
+                        
                         PostCard(
                             post = post,
                             isVisible = isVisible,
                             isOwnPost = isOwnPost,
                             isFollowingAuthor = isFollowingAuthor,
                             onLikeClick = { viewModel.onLikePost(post.id) },
-                            onCommentClick = { onNavigateToPostDetail(post.id, post) },
+                            onCommentClick = { onNavigateToPostDetailWithScrollSave(post.id, post) },
                             onShareClick = { /* Share */ },
                             onSaveClick = { viewModel.onSavePost(post.id) },
                             onAuthorClick = { onNavigateToProfile(post.authorId) },
-                            onPostClick = { onNavigateToPostDetail(post.id, post) },
+                            onPostClick = { onNavigateToPostDetailWithScrollSave(post.id, post) },
                             onFollowClick = { viewModel.onFollow(post.authorId) },
                             onUnfollowClick = { viewModel.unfollowAndRemovePosts(post.authorId) }
                         )

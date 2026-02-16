@@ -36,6 +36,7 @@ fun KissangramBottomNavigation(
     ) {
         BottomNavItem.values().forEach { item ->
             val isSelected = item == selectedItem
+            val isDisabled = item == BottomNavItem.REELS // Disable Reels as it's not implemented
             NavigationBarItem(
                 icon = {
                     Icon(
@@ -47,7 +48,8 @@ fun KissangramBottomNavigation(
                     Text(text = if (useHindi) item.labelHindi else item.label)
                 },
                 selected = isSelected,
-                onClick = { onItemSelected(item) },
+                onClick = { if (!isDisabled) onItemSelected(item) },
+                enabled = !isDisabled,
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = PrimaryGreen,
                     selectedTextColor = PrimaryGreen,

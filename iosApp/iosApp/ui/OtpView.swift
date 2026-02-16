@@ -59,34 +59,14 @@ struct OtpView: View {
                         .frame(height: padding)
                     
                     // Header
-                    HStack {
-                        Text("Enter OTP")
-                            .font(.system(size: 31.5 * scaleFactor, weight: .bold))
-                            .foregroundColor(Color(hex: 0x1B1B1B))
-                            .lineSpacing(0)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.6)
-                        
-                        Spacer()
-                        
-                        // Tap to speak button (header)
-                        Button(action: {
-                            if viewModel.isListening {
-                                Task {
-                                    await viewModel.stopSpeechRecognition()
-                                }
-                            } else {
-                                Task {
-                                    await viewModel.startSpeechRecognition()
-                                }
-                            }
-                        }) {
-                            Circle()
-                                .fill(viewModel.isListening ? Color(hex: 0xFFB703) : Color(hex: 0xFFB703).opacity(0.2))
-                                .frame(width: 36 * scaleFactor, height: 36 * scaleFactor)
-                        }
-                    }
-                    .padding(.horizontal, padding)
+                    Text("Enter OTP")
+                        .font(.system(size: 31.5 * scaleFactor, weight: .bold))
+                        .foregroundColor(Color(hex: 0x1B1B1B))
+                        .lineSpacing(0)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, padding)
                     
                     Spacer()
                         .frame(height: 9 * scaleFactor)

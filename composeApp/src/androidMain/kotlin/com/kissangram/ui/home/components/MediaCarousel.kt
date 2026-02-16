@@ -22,7 +22,9 @@ fun MediaCarousel(
     media: List<PostMedia>,
     modifier: Modifier = Modifier,
     onMediaClick: () -> Unit,
-    isVisible: Boolean = true
+    isVisible: Boolean = true,
+    showFullImage: Boolean = false, // If true, show full images without fixed height constraint
+    autoPlay: Boolean = false // If true, videos will auto-play when visible
 ) {
     if (media.isEmpty()) {
         return
@@ -34,7 +36,9 @@ fun MediaCarousel(
             media = media.first(),
             modifier = modifier,
             isVisible = isVisible,
-            onTap = onMediaClick
+            onTap = onMediaClick,
+            showFullImage = showFullImage,
+            autoPlay = autoPlay
         )
         return
     }
@@ -42,18 +46,20 @@ fun MediaCarousel(
     // Multiple media items - show carousel with HorizontalPager
     val pagerState = rememberPagerState(pageCount = { media.size })
     
-    Box(modifier = modifier) {
+    Box(modifier = modifier.fillMaxWidth()) {
         HorizontalPager(
             state = pagerState,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(220.dp) // Match iOS height
+                .then(if (!showFullImage) Modifier.height(440.dp) else Modifier) // Fixed height only for feed
         ) { page ->
             MediaItemView(
                 media = media[page],
                 modifier = Modifier.fillMaxSize(),
                 isVisible = isVisible && (page == pagerState.currentPage),
-                onTap = onMediaClick
+                onTap = onMediaClick,
+                showFullImage = showFullImage,
+                autoPlay = autoPlay
             )
         }
         

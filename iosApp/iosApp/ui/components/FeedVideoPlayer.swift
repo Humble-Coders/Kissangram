@@ -11,15 +11,17 @@ struct FeedVideoPlayer: View {
     let media: PostMedia
     let onTap: () -> Void
     let player: AVPlayer
+    var showFullImage: Bool = false
     
     @State private var loopObserver: NSObjectProtocol?
     @State private var isPlaying = false
     @State private var isMuted = true
     @State private var showThumbnail = true
     
-    init(media: PostMedia, onTap: @escaping () -> Void) {
+    init(media: PostMedia, onTap: @escaping () -> Void, showFullImage: Bool = false) {
         self.media = media
         self.onTap = onTap
+        self.showFullImage = showFullImage
         let url = URL(string: ensureHttps(media.url)) ?? URL(fileURLWithPath: "")
         self.player = VideoPlayerCache.shared.player(for: url)
     }
@@ -27,10 +29,13 @@ struct FeedVideoPlayer: View {
     var body: some View {
         ZStack {
             // AVPlayerLayer—lightweight, cheap teardown when cell scrolls out
-            AVPlayerLayerView(player: player)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .clipped()
-                .onTapGesture { onTap() }
+            AVPlayerLayerView(
+                player: player,
+                videoGravity: showFullImage ? .resizeAspect : .resizeAspectFill
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
+            .onTapGesture { onTap() }
             
             // Thumbnail overlay — use opacity instead of conditional to keep stable hierarchy
             Group {
@@ -78,7 +83,7 @@ struct FeedVideoPlayer: View {
                 Spacer()
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity)
         .onAppear {
             player.isMuted = isMuted
             player.actionAtItemEnd = .none

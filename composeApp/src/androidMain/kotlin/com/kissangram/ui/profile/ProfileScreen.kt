@@ -26,6 +26,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalView
+import android.view.HapticFeedbackConstants
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.kissangram.model.User
@@ -60,6 +62,8 @@ fun ProfileScreen(
     onEditProfile: () -> Unit = {},
     onSignOut: () -> Unit = {},
     onPostClick: (String, Post?) -> Unit = { _, _ -> },
+    onFollowersClick: () -> Unit = {},
+    onFollowingClick: () -> Unit = {},
     reloadKey: Int = 0, // Key that changes to trigger reload after save
     viewModel: ProfileViewModel = viewModel(),
     bottomNavPadding: PaddingValues = PaddingValues(0.dp)
@@ -88,7 +92,11 @@ fun ProfileScreen(
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBackClick) {
+                    val view = LocalView.current
+                    IconButton(onClick = {
+                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        onBackClick()
+                    }) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
@@ -97,8 +105,12 @@ fun ProfileScreen(
                     }
                 },
                 actions = {
+                    val view = LocalView.current
                     Box {
-                        IconButton(onClick = { showMenu = true }) {
+                        IconButton(onClick = {
+                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                            showMenu = true
+                        }) {
                             Icon(
                                 Icons.Outlined.MoreVert,
                                 contentDescription = "More",
@@ -112,6 +124,7 @@ fun ProfileScreen(
                             DropdownMenuItem(
                                 text = { Text("Sign out", color = Color(0xFFBC4749)) },
                                 onClick = {
+                                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                                     showMenu = false
                                     viewModel.signOut(onSignOut)
                                 }
@@ -165,6 +178,8 @@ fun ProfileScreen(
                                 isLoadingPosts = uiState.isLoadingPosts,
                                 onEditProfile = onEditProfile,
                                 onPostClick = onPostClick,
+                                onFollowersClick = onFollowersClick,
+                                onFollowingClick = onFollowingClick,
                                 paddingValues = PaddingValues(bottom = bottomNavPadding.calculateBottomPadding())
                             )
                         } ?: run {
@@ -188,6 +203,8 @@ private fun ProfileContent(
     isLoadingPosts: Boolean,
     onEditProfile: () -> Unit,
     onPostClick: (String, Post?) -> Unit,
+    onFollowersClick: () -> Unit = {},
+    onFollowingClick: () -> Unit = {},
     paddingValues: PaddingValues
 ) {
     Column(
@@ -327,8 +344,12 @@ private fun ProfileContent(
             }
         }
         Spacer(Modifier.height(24.dp))
+        val view = LocalView.current
         Button(
-            onClick = onEditProfile,
+            onClick = {
+                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                onEditProfile()
+            },
             modifier = Modifier.fillMaxWidth().height(48.dp),
             shape = RoundedCornerShape(24.dp),
             colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen)
@@ -342,8 +363,16 @@ private fun ProfileContent(
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
             StatItem(count = user.postsCount, label = "Posts")
-            StatItem(count = user.followersCount, label = "Followers")
-            StatItem(count = user.followingCount, label = "Following")
+            StatItem(
+                count = user.followersCount,
+                label = "Followers",
+                onClick = onFollowersClick
+            )
+            StatItem(
+                count = user.followingCount,
+                label = "Following",
+                onClick = onFollowingClick
+            )
             StatItem(count = 0, label = "Groups")
         }
         Spacer(Modifier.height(24.dp))
@@ -385,8 +414,25 @@ private fun ProfileContent(
 }
 
 @Composable
-private fun StatItem(count: Int, label: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+private fun StatItem(
+    count: Int,
+    label: String,
+    onClick: (() -> Unit)? = null
+) {
+    val view = LocalView.current
+    val modifier = if (onClick != null) {
+        Modifier.clickable {
+            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            onClick()
+        }
+    } else {
+        Modifier
+    }
+    
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
         Text(
             text = count.toString(),
             fontSize = 18.sp,
@@ -481,40 +527,28 @@ private fun PostThumbnailItem(
                     )
                 }
                 MediaType.VIDEO -> {
-                    val thumbnailUrl = remember(firstMedia.thumbnailUrl, firstMedia.url) {
-                        if (firstMedia.thumbnailUrl != null) {
-                            try {
-                                CloudinaryUrlTransformer.transformForThumbnail(firstMedia.thumbnailUrl!!)
-                            } catch (e: Exception) {
-                                firstMedia.thumbnailUrl!!
+                    val thumbnailUrl = remember(firstMedia.type, firstMedia.thumbnailUrl, firstMedia.url) {
+                        when {
+                            firstMedia.thumbnailUrl != null -> {
+                                try {
+                                    CloudinaryUrlTransformer.transformForThumbnail(firstMedia.thumbnailUrl!!)
+                                } catch (e: Exception) {
+                                    firstMedia.thumbnailUrl!!
+                                }
                             }
-                        } else {
-                            null
+                            else -> {
+                                // Generate thumbnail from video URL
+                                CloudinaryUrlTransformer.generateVideoThumbnailUrl(firstMedia.url)
+                            }
                         }
                     }
                     
-                    if (thumbnailUrl != null) {
-                        AsyncImage(
-                            model = thumbnailUrl,
-                            contentDescription = null,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
-                        )
-                    } else {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(Color.Black.copy(alpha = 0.3f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.PlayArrow,
-                                contentDescription = "Video",
-                                tint = Color.White,
-                                modifier = Modifier.size(32.dp)
-                            )
-                        }
-                    }
+                    AsyncImage(
+                        model = thumbnailUrl,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
                     
                     // Play icon overlay
                     Box(

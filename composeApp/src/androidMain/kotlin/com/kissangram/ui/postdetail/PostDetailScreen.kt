@@ -10,7 +10,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -35,7 +36,9 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
+import android.view.HapticFeedbackConstants
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
@@ -151,7 +154,11 @@ fun PostDetailScreen(
             TopAppBar(
                 title = { Text("Post", fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary) },
                 navigationIcon = {
-                    IconButton(onClick = onBackClick) {
+                    val view = LocalView.current
+                    IconButton(onClick = {
+                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        onBackClick()
+                    }) {
                         Icon(Icons.Outlined.ArrowBack, contentDescription = "Back", tint = TextPrimary)
                     }
                 },
@@ -160,8 +167,12 @@ fun PostDetailScreen(
                     val isOwnPost = post != null && currentUserId != null && post.authorId == currentUserId
                     
                     if (isOwnPost) {
+                        val view = LocalView.current
                         IconButton(
-                            onClick = { viewModel.showDeletePostConfirmation() },
+                            onClick = {
+                                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                viewModel.showDeletePostConfirmation()
+                            },
                             enabled = !uiState.isDeletingPost
                         ) {
                             if (uiState.isDeletingPost) {
@@ -199,16 +210,14 @@ fun PostDetailScreen(
                     .imePadding(),
                 contentPadding = PaddingValues(bottom = 80.dp)
             ) {
-                // Post Header Section - matching iOS padding
+                // Post Header Section - no card, full width media
                 item {
                     uiState.post?.let { post ->
-                        Box(modifier = Modifier.padding(horizontal = 18.dp)) {
-                            PostHeaderSection(
-                                post = post,
-                                onAuthorClick = { onNavigateToProfile(post.authorId) },
-                                onLikeClick = { viewModel.onLikePost(post.id) }
-                            )
-                        }
+                        PostHeaderSection(
+                            post = post,
+                            onAuthorClick = { onNavigateToProfile(post.authorId) },
+                            onLikeClick = { viewModel.onLikePost(post.id) }
+                        )
                     }
                 }
 
@@ -406,157 +415,151 @@ internal fun PostHeaderSection(
         localLikesCount = post.likesCount
     }
 
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        color = Color.White,
-        shadowElevation = 2.dp,
-        tonalElevation = 0.dp
-    ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            // Author Header - matching iOS exactly
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .padding(top = 16.dp)
-                    .padding(bottom = 12.dp)
-                    .clickable { onAuthorClick() },
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                ProfileImageLoader(
-                    authorId = post.authorId,
-                    authorName = post.authorName,
-                    authorProfileImageUrl = post.authorProfileImageUrl,
-                    size = 48.dp
+    Column(modifier = Modifier.fillMaxWidth()) {
+        // Author Header - with padding
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp)
+                .padding(top = 16.dp)
+                .padding(bottom = 12.dp)
+                .clickable { onAuthorClick() },
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            ProfileImageLoader(
+                authorId = post.authorId,
+                authorName = post.authorName,
+                authorProfileImageUrl = post.authorProfileImageUrl,
+                size = 48.dp
+            )
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(
+                    text = post.authorName,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextPrimary
                 )
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(
-                        text = post.authorName,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = TextPrimary
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Icon(
+                        imageVector = Icons.Outlined.LocationOn,
+                        contentDescription = null,
+                        tint = TextSecondary,
+                        modifier = Modifier.size(12.dp)
                     )
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Icon(
-                            imageVector = Icons.Outlined.LocationOn,
-                            contentDescription = null,
-                            tint = TextSecondary,
-                            modifier = Modifier.size(12.dp)
-                        )
-                        Text(
-                            text = post.location?.name ?: "Location not set",
-                            fontSize = 14.sp,
-                            color = TextSecondary
-                        )
-                    }
+                    Text(
+                        text = post.location?.name ?: "Location not set",
+                        fontSize = 14.sp,
+                        color = TextSecondary
+                    )
                 }
             }
+        }
 
-            // Media Carousel - matching iOS padding
-            if (post.media.isNotEmpty()) {
-                MediaCarousel(
-                    media = post.media,
-                    onMediaClick = { },
-                    isVisible = true,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                )
-            }
+        // Media Carousel - full width, no padding, show full images
+        if (post.media.isNotEmpty()) {
+            MediaCarousel(
+                media = post.media,
+                onMediaClick = { },
+                isVisible = true,
+                showFullImage = true, // Show full image in detail view
+                autoPlay = true, // Auto-play videos in detail view
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
 
-            // Action Buttons - matching PostCard layout
+        // Action Buttons - with padding
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp)
+                .padding(top = 12.dp)
+                .padding(bottom = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp)
-                    .padding(top = 4.dp, bottom = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(0.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(0.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    ActionButton(
-                        icon = if (localLikedState) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder,
-                        label = localLikesCount.toString(),
-                        tint = if (localLikedState) ErrorRed else TextSecondary,
-                        onClick = {
-                            val newLikedState = !localLikedState
-                            val newLikesCount = if (newLikedState) localLikesCount + 1 else localLikesCount - 1
-                            val accepted = onLikeClick()
-                            if (accepted) {
-                                localLikedState = newLikedState
-                                localLikesCount = newLikesCount
-                            }
-                        }
-                    )
-                    ActionButton(
-                        icon = Icons.Outlined.Share,
-                        label = "Share",
-                        tint = TextSecondary,
-                        onClick = { }
-                    )
-                }
-                // Right side spacer (matching PostCard which has Save button on right)
-                Spacer(modifier = Modifier.width(48.dp)) // Space for potential save button
-            }
-
-            // Post Text - matching iOS padding
-            if (post.text.isNotEmpty() || post.voiceCaption != null) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                        .padding(vertical = 12.dp)
-                ) {
-                    PostTextContent(
-                        text = post.text,
-                        voiceCaption = post.voiceCaption,
-                        onReadMore = { }
-                    )
-                }
-            }
-
-            // Crops - matching iOS styling
-            if (post.crops.isNotEmpty()) {
-                LazyRow(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                        .padding(bottom = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(9.dp),
-                    contentPadding = PaddingValues(horizontal = 0.dp)
-                ) {
-                    items(post.crops) { crop ->
-                        Surface(
-                            color = AccentYellow.copy(alpha = 0.08f),
-                            shape = RoundedCornerShape(18.dp)
-                        ) {
-                            Text(
-                                text = crop.replaceFirstChar { it.uppercase() },
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = TextPrimary,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp)
-                            )
+                ActionButton(
+                    icon = if (localLikedState) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder,
+                    label = localLikesCount.toString(),
+                    tint = if (localLikedState) ErrorRed else TextSecondary,
+                    onClick = {
+                        val newLikedState = !localLikedState
+                        val newLikesCount = if (newLikedState) localLikesCount + 1 else localLikesCount - 1
+                        val accepted = onLikeClick()
+                        if (accepted) {
+                            localLikedState = newLikedState
+                            localLikesCount = newLikesCount
                         }
                     }
-                }
+                )
+                ActionButton(
+                    icon = Icons.Outlined.Share,
+                    label = "Share",
+                    tint = TextSecondary,
+                    onClick = { /* Disabled - not implemented */ },
+                    enabled = false
+                )
             }
+            // Right side spacer (matching PostCard which has Save button on right)
+            Spacer(modifier = Modifier.width(48.dp)) // Space for potential save button
+        }
 
-            // Divider - matching iOS styling
+        // Post Text - with padding (PostTextContent has 16dp built-in, adding 2dp to reach 18dp total)
+        if (post.text.isNotEmpty() || post.voiceCaption != null) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(8.dp)
-                    .background(Color.Black.copy(alpha = 0.08f))
-            )
+                    .padding(horizontal = 2.dp)
+                    .padding(vertical = 12.dp)
+            ) {
+                PostTextContent(
+                    text = post.text,
+                    voiceCaption = post.voiceCaption,
+                    onReadMore = { }
+                )
+            }
         }
+
+        // Crops - with padding
+        if (post.crops.isNotEmpty()) {
+            LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 18.dp)
+                    .padding(bottom = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(9.dp),
+                contentPadding = PaddingValues(horizontal = 0.dp)
+            ) {
+                items(post.crops) { crop ->
+                    Surface(
+                        color = AccentYellow.copy(alpha = 0.08f),
+                        shape = RoundedCornerShape(18.dp)
+                    ) {
+                        Text(
+                            text = crop.replaceFirstChar { it.uppercase() },
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = TextPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        // Divider
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(8.dp)
+                .background(Color.Black.copy(alpha = 0.08f))
+        )
     }
 }
 
@@ -625,12 +628,16 @@ internal fun CommentItem(
             )
 
             Spacer(modifier = Modifier.height(8.dp))
+            val view = LocalView.current
             Row(
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 TextButton(
-                    onClick = onReplyClick,
+                    onClick = {
+                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        onReplyClick()
+                    },
                     contentPadding = PaddingValues(0.dp),
                     modifier = Modifier.height(32.dp)
                 ) {
@@ -644,7 +651,10 @@ internal fun CommentItem(
 
                 if (isTopLevel && comment.repliesCount > 0) {
                     TextButton(
-                        onClick = onViewRepliesClick,
+                        onClick = {
+                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                            onViewRepliesClick()
+                        },
                         contentPadding = PaddingValues(0.dp),
                         modifier = Modifier.height(32.dp)
                     ) {
@@ -667,7 +677,10 @@ internal fun CommentItem(
 
                 if (isOwnComment) {
                     TextButton(
-                        onClick = onDeleteClick,
+                        onClick = {
+                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                            onDeleteClick()
+                        },
                         contentPadding = PaddingValues(0.dp),
                         modifier = Modifier.height(32.dp)
                     ) {
@@ -731,7 +744,11 @@ internal fun ReplyIndicator(
                     fontWeight = FontWeight.SemiBold
                 )
             }
-            IconButton(onClick = onCancel, modifier = Modifier.size(32.dp)) {
+            val view = LocalView.current
+            IconButton(onClick = {
+                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                onCancel()
+            }, modifier = Modifier.size(32.dp)) {
                 Icon(
                     imageVector = Icons.Outlined.Close,
                     contentDescription = "Cancel",
@@ -793,13 +810,18 @@ internal fun CommentInputBar(
                         .clip(CircleShape)
                         .background(if (isListening) ErrorRed else PrimaryGreen)
                         .pointerInput(isPosting, isProcessing) {
-                            detectDragGestures(
-                                onDragStart = {
-                                    if (!isPosting && !isProcessing) onStartSpeech()
-                                },
-                                onDragEnd = { onStopSpeech() },
-                                onDrag = { _, _ -> }
-                            )
+                            awaitPointerEventScope {
+                                while (true) {
+                                    val down = awaitFirstDown(requireUnconsumed = false)
+                                    if (!isPosting && !isProcessing) {
+                                        onStartSpeech()
+                                    }
+                                    val up = waitForUpOrCancellation()
+                                    if (up != null) {
+                                        onStopSpeech()
+                                    }
+                                }
+                            }
                         },
                     contentAlignment = Alignment.Center
                 ) {
@@ -956,19 +978,26 @@ internal fun ActionButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
     tint: Color,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    enabled: Boolean = true
 ) {
+    val view = LocalView.current
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(22.dp))
-            .clickable { onClick() }
+            .clickable(enabled = enabled) { 
+                if (enabled) {
+                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    onClick()
+                }
+            }
             .padding(horizontal = 10.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
             imageVector = icon,
             contentDescription = label,
-            tint = tint,
+            tint = if (enabled) tint else tint.copy(alpha = 0.38f),
             modifier = Modifier.size(18.dp)
         )
         Spacer(modifier = Modifier.width(7.dp))
@@ -976,7 +1005,7 @@ internal fun ActionButton(
             text = label,
             fontSize = 15.sp,
             fontWeight = FontWeight.SemiBold,
-            color = tint,
+            color = if (enabled) tint else tint.copy(alpha = 0.38f),
             maxLines = 1
         )
     }

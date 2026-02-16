@@ -20,8 +20,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.view.HapticFeedbackConstants
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kissangram.model.UserRole
@@ -190,8 +192,10 @@ fun RoleSelectionScreen(
         Spacer(modifier = Modifier.height(spacing))
         
         // Next Button
+        val view = LocalView.current
         Button(
             onClick = {
+                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                 // log
                 println("RoleSelectionScreen: next button clicked with role selected=${uiState.selectedRole}")
                 viewModel.saveRole(
@@ -261,10 +265,14 @@ fun RoleCard(
     val padding = if (isLarge) 28.dp else 16.dp
     val spacing = 14.dp
     
+    val view = LocalView.current
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onRoleSelected() },
+            .clickable { 
+                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                onRoleSelected()
+            },
         shape = RoundedCornerShape(if (isLarge) 22.dp else 16.dp),
         color = Color(0xFFF8F9F1),
         border = androidx.compose.foundation.BorderStroke(
