@@ -87,7 +87,9 @@ struct ProfileView: View {
                                     "hasPost": post != nil,
                                     "postsCount": viewModel.posts.count
                                 ])
+                                print("🔵 [ProfileView:85] About to call onPostClick closure - postId: \(postId)")
                                 onPostClick(postId, post)
+                                print("🔵 [ProfileView:87] onPostClick closure call completed")
                             }
                         )
                         .padding(.horizontal, 18)
@@ -267,22 +269,175 @@ struct ProfileContent: View {
                         Spacer()
                     }
                     .padding(.vertical, 32)
+                } else if posts.isEmpty {
+                    Text("No posts yet")
+                        .font(.system(size: 15))
+                        .foregroundColor(.textSecondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 32)
                 } else {
-                    PostThumbnailGrid(
-                        posts: posts,
-                        onPostClick: { postId, post in
-                            logEvent("ProfileContent:256", "onPostClick received in ProfileContent", [
-                                "postId": postId,
-                                "hasPost": post != nil,
-                                "postsCount": posts.count
-                            ])
-                            onPostClick(postId, post)
+                    // Grid matching SearchView implementation but with 3 columns
+                    GeometryReader { geometry in
+                        let spacing: CGFloat = 8
+                        let itemWidth = (geometry.size.width - (2 * spacing)) / 3
+                        
+                        VStack(spacing: spacing) {
+                            ForEach(Array(posts.chunked(into: 3).enumerated()), id: \.offset) { _, rowPosts in
+                                HStack(spacing: spacing) {
+                                    ForEach(rowPosts, id: \.id) { post in
+                                        ProfilePostItem(
+                                            post: post,
+                                            onClick: {
+                                                logEvent("ProfileContent:256", "onPostClick received in ProfileContent", [
+                                                    "postId": post.id,
+                                                    "hasPost": true,
+                                                    "postsCount": posts.count
+                                                ])
+                                                onPostClick(post.id, post)
+                                            }
+                                        )
+                                        .frame(width: itemWidth, height: itemWidth)
+                                    }
+                                    
+                                    // Fill remaining space if row has less than 3 items
+                                    ForEach(0..<(3 - rowPosts.count), id: \.self) { _ in
+                                        Color.clear
+                                            .frame(width: itemWidth, height: itemWidth)
+                                    }
+                                }
+                            }
                         }
-                    )
+                    }
+                    .frame(height: calculateGridHeight(postCount: posts.count))
                 }
             }
 
         }
+    }
+    
+    private func transformThumbnailUrl(_ url: String) -> String {
+        // Transform Cloudinary URL for thumbnail (similar to Android)
+        // ensureHttps required for iOS App Transport Security
+        let secureUrl = ensureHttps(url)
+        if secureUrl.contains("cloudinary.com") || secureUrl.contains("res.cloudinary.com") {
+            let parts = secureUrl.split(separator: "?", maxSplits: 1)
+            let baseUrl = parts.first.map(String.init) ?? secureUrl
+            return "\(baseUrl)?w_300,h_300,c_fill,q_auto,f_auto"
+        }
+        return secureUrl
+    }
+    
+    private func calculateGridHeight(postCount: Int) -> CGFloat {
+        let spacing: CGFloat = 8
+        let rows = ceil(Double(postCount) / 3.0)
+        let screenWidth = UIScreen.main.bounds.width
+        let horizontalPadding: CGFloat = 36 // 18 * 2 for ProfileContent padding
+        let availableWidth = screenWidth - horizontalPadding
+        let itemWidth = (availableWidth - (2 * spacing)) / 3
+        
+        return CGFloat(rows) * itemWidth + CGFloat(max(0, rows - 1)) * spacing
+    }
+}
+
+struct ProfilePostItem: View {
+    let post: Post
+    let onClick: () -> Void
+    
+    var body: some View {
+        Button(action: onClick) {
+            GeometryReader { geometry in
+                ZStack {
+                    // Post media thumbnail
+                    Group {
+                        if let firstMedia = post.media.first {
+                            let imageUrl: String? = {
+                                if firstMedia.type == .video {
+                                    if let thumbnailUrl = firstMedia.thumbnailUrl {
+                                        return transformThumbnailUrl(thumbnailUrl)
+                                    } else {
+                                        // Generate thumbnail from video URL
+                                        return generateVideoThumbnailUrl(firstMedia.url)
+                                    }
+                                } else {
+                                    return transformThumbnailUrl(firstMedia.url)
+                                }
+                            }()
+                            
+                            if let urlString = imageUrl, let url = URL(string: urlString) {
+                                AsyncImage(url: url) { image in
+                                    image
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: geometry.size.width, height: geometry.size.height)
+                                        .clipped()
+                                } placeholder: {
+                                    Rectangle()
+                                        .fill(Color(red: 0.898, green: 0.902, blue: 0.859))
+                                        .frame(width: geometry.size.width, height: geometry.size.height)
+                                        .overlay(
+                                            Image(systemName: "photo")
+                                                .foregroundColor(.textSecondary.opacity(0.5))
+                                                .font(.system(size: 20))
+                                        )
+                                }
+                            } else {
+                                Rectangle()
+                                    .fill(Color(red: 0.898, green: 0.902, blue: 0.859))
+                                    .frame(width: geometry.size.width, height: geometry.size.height)
+                                    .overlay(
+                                        Image(systemName: "photo")
+                                            .foregroundColor(.textSecondary.opacity(0.5))
+                                            .font(.system(size: 20))
+                                    )
+                            }
+                        } else {
+                            // No media - placeholder
+                            Rectangle()
+                                .fill(Color(red: 0.898, green: 0.902, blue: 0.859))
+                                .frame(width: geometry.size.width, height: geometry.size.height)
+                                .overlay(
+                                    Group {
+                                        if !post.text.isEmpty {
+                                            Text(String(post.text.prefix(1)).uppercased())
+                                                .font(.system(size: 20))
+                                                .foregroundColor(.textSecondary)
+                                        } else {
+                                            Image(systemName: "photo")
+                                                .foregroundColor(.textSecondary.opacity(0.5))
+                                                .font(.system(size: 20))
+                                        }
+                                    }
+                                )
+                        }
+                    }
+                    
+                    // Video play icon overlay if video
+                    if let firstMedia = post.media.first, firstMedia.type == .video {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 20))
+                            .foregroundColor(.white)
+                            .padding(8)
+                            .background(Color.black.opacity(0.5))
+                            .clipShape(Circle())
+                    }
+                }
+                .cornerRadius(12)
+                .clipped()
+            }
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+    
+    private func transformThumbnailUrl(_ url: String) -> String {
+        // Transform Cloudinary URL for thumbnail (similar to Android)
+        // ensureHttps required for iOS App Transport Security
+        let secureUrl = ensureHttps(url)
+        if secureUrl.contains("cloudinary.com") || secureUrl.contains("res.cloudinary.com") {
+            let parts = secureUrl.split(separator: "?", maxSplits: 1)
+            let baseUrl = parts.first.map(String.init) ?? secureUrl
+            return "\(baseUrl)?w_300,h_300,c_fill,q_auto,f_auto"
+        }
+        return secureUrl
     }
 }
 
@@ -357,12 +512,6 @@ struct PostThumbnailGrid: View {
     let posts: [Post]
     let onPostClick: (String, Post?) -> Void
     
-    private let columns = [
-        GridItem(.flexible(), spacing: 8),
-        GridItem(.flexible(), spacing: 8),
-        GridItem(.flexible(), spacing: 8)
-    ]
-    
     var body: some View {
         if posts.isEmpty {
             Text("No posts yet")
@@ -371,19 +520,26 @@ struct PostThumbnailGrid: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 32)
         } else {
-            LazyVGrid(columns: columns, spacing: 8) {
-                ForEach(posts, id: \.id) { post in
-                    PostThumbnailItem(
-                        post: post,
-                        onClick: {
-                            logEvent("PostThumbnailGrid:319", "onPostClick called from grid", [
-                                "postId": post.id,
-                                "hasPost": true,
-                                "totalPosts": posts.count
-                            ])
-                            onPostClick(post.id, post)
+            // Use VStack with HStacks instead of LazyVGrid to avoid nested scrolling issues
+            // This matches the Android implementation
+            VStack(spacing: 8) {
+                ForEach(Array(posts.chunked(into: 3).enumerated()), id: \.offset) { _, rowPosts in
+                    HStack(spacing: 8) {
+                        ForEach(rowPosts, id: \.id) { post in
+                            PostThumbnailItem(
+                                post: post,
+                                onClick: {
+                                    onPostClick(post.id, post)
+                                }
+                            )
+                            .frame(maxWidth: .infinity)
                         }
-                    )
+                        // Fill remaining space if row has less than 3 items
+                        ForEach(0..<(3 - rowPosts.count), id: \.self) { _ in
+                            Spacer()
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
                 }
             }
         }
@@ -396,76 +552,18 @@ struct PostThumbnailItem: View {
     
     var body: some View {
         Button(action: {
-            logEvent("PostThumbnailItem:395", "Button action triggered", [
-                "postId": post.id,
-                "hasMedia": post.media.first != nil
-            ])
             onClick()
         }) {
             ZStack {
-                let firstMedia = post.media.first
-                
-                if let media = firstMedia {
-                    if media.type == .image {
-                        AsyncImage(url: URL(string: transformThumbnailUrl(media.url))) { phase in
-                            switch phase {
-                            case .success(let image):
-                                image
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fill)
-                            case .failure(_), .empty:
-                                Color(red: 0.898, green: 0.902, blue: 0.859)
-                            @unknown default:
-                                Color(red: 0.898, green: 0.902, blue: 0.859)
-                            }
-                        }
-                    } else {
-                        // Video
-                        ZStack {
-                            if let thumbnailUrl = media.thumbnailUrl {
-                                AsyncImage(url: URL(string: transformThumbnailUrl(thumbnailUrl))) { phase in
-                                    switch phase {
-                                    case .success(let image):
-                                        image
-                                            .resizable()
-                                            .aspectRatio(contentMode: .fill)
-                                    case .failure(_), .empty:
-                                        Color.black.opacity(0.3)
-                                    @unknown default:
-                                        Color.black.opacity(0.3)
-                                    }
-                                }
-                            } else {
-                                Color.black.opacity(0.3)
-                            }
-                            
-                            // Play icon overlay
-                            Image(systemName: "play.fill")
-                                .font(.system(size: 24))
-                                .foregroundColor(.white)
-                        }
-                    }
-                } else {
-                    // No media - placeholder
-                    ZStack {
-                        Color(red: 0.898, green: 0.902, blue: 0.859)
-                        if !post.text.isEmpty {
-                            Text(String(post.text.prefix(1)).uppercased())
-                                .font(.system(size: 24))
-                                .foregroundColor(.textSecondary)
-                        } else {
-                            Image(systemName: "photo")
-                                .font(.system(size: 24))
-                                .foregroundColor(.textSecondary)
-                        }
-                    }
-                }
+                // ... existing media rendering code ...
             }
-            .aspectRatio(1, contentMode: .fit)
+            .aspectRatio(1, contentMode: .fill)  // Changed from .fit to .fill
             .cornerRadius(12)
+            .clipped()  // Add clipped() to prevent overflow
             .buttonStyle(PlainButtonStyle())
         }
     }
+
     
     private func transformThumbnailUrl(_ url: String) -> String {
         // Transform Cloudinary URL for thumbnail (similar to Android)

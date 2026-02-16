@@ -156,8 +156,28 @@ fun PostDetailScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { /* Menu */ }) {
-                        Icon(Icons.Outlined.MoreVert, contentDescription = "More", tint = TextPrimary)
+                    val post = uiState.post
+                    val isOwnPost = post != null && currentUserId != null && post.authorId == currentUserId
+                    
+                    if (isOwnPost) {
+                        IconButton(
+                            onClick = { viewModel.showDeletePostConfirmation() },
+                            enabled = !uiState.isDeletingPost
+                        ) {
+                            if (uiState.isDeletingPost) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    color = TextPrimary,
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Icon(Icons.Outlined.Delete, contentDescription = "Delete Post", tint = ErrorRed)
+                            }
+                        }
+                    } else {
+                        IconButton(onClick = { /* Menu */ }) {
+                            Icon(Icons.Outlined.MoreVert, contentDescription = "More", tint = TextPrimary)
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -358,6 +378,16 @@ fun PostDetailScreen(
             onReasonChange = viewModel::onDeleteReasonChange,
             onConfirm = { viewModel.deleteComment() },
             onDismiss = viewModel::dismissDeleteDialog
+        )
+    }
+    
+    if (uiState.showDeletePostDialog) {
+        DeletePostDialog(
+            isDeleting = uiState.isDeletingPost,
+            onConfirm = {
+                viewModel.deletePost(onSuccess = onBackClick)
+            },
+            onDismiss = viewModel::dismissDeletePostDialog
         )
     }
 }
@@ -950,6 +980,63 @@ internal fun ActionButton(
             maxLines = 1
         )
     }
+}
+
+@Composable
+internal fun DeletePostDialog(
+    isDeleting: Boolean,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Delete Post",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = TextPrimary
+            )
+        },
+        text = {
+            Text(
+                text = "Are you sure you want to delete this post? This action cannot be undone.",
+                fontSize = 16.sp,
+                color = TextPrimary
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                enabled = !isDeleting
+            ) {
+                if (isDeleting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        color = ErrorRed,
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text(
+                        "Delete",
+                        color = ErrorRed,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 16.sp
+                    )
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                enabled = !isDeleting
+            ) {
+                Text("Cancel", color = TextSecondary, fontSize = 16.sp)
+            }
+        },
+        containerColor = Color.White,
+        shape = RoundedCornerShape(18.dp)
+    )
 }
 
 internal fun formatTimestamp(timestamp: Long): String {

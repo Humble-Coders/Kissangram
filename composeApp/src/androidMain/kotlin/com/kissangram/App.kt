@@ -415,7 +415,7 @@ private fun NavigationGraph(
                 },
                 onPostClick = { postId, post ->
                     post?.let { PostCache.put(postId, it) }
-                    navController.navigate(Screen.buildOwnPostDetailRoute(postId))
+                    navController.navigate(Screen.buildPostDetailRoute(postId))
                 },
                 reloadKey = profileReloadKey,
                 bottomNavPadding = bottomNavPadding
@@ -487,23 +487,6 @@ private fun NavigationGraph(
             val postId = backStackEntry.arguments?.getString("postId") ?: ""
             val initialPost = PostCache.get(postId)
             PostDetailScreen(
-                postId = postId,
-                initialPost = initialPost,
-                onBackClick = { navController.popBackStack() },
-                onNavigateToProfile = { userId ->
-                    navController.navigate(Screen.buildUserProfileRoute(userId))
-                }
-            )
-        }
-        
-        // Own Post Detail Screen (with delete functionality)
-        composable(
-            route = Screen.OWN_POST_DETAIL,
-            arguments = listOf(navArgument("postId") { defaultValue = "" })
-        ) { backStackEntry ->
-            val postId = backStackEntry.arguments?.getString("postId") ?: ""
-            val initialPost = PostCache.get(postId)
-            com.kissangram.ui.postdetail.OwnPostDetailScreen(
                 postId = postId,
                 initialPost = initialPost,
                 onBackClick = { navController.popBackStack() },

@@ -243,11 +243,53 @@ struct OtherUserProfileContent: View {
                         Spacer()
                     }
                     .padding(.vertical, 32)
+                } else if posts.isEmpty {
+                    Text("No posts yet")
+                        .font(.system(size: 15))
+                        .foregroundColor(.textSecondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 32)
                 } else {
-                    PostThumbnailGrid(posts: posts, onPostClick: onPostClick)
+                    // Grid matching ProfileView implementation with 3 columns
+                    GeometryReader { geometry in
+                        let spacing: CGFloat = 8
+                        let itemWidth = (geometry.size.width - (2 * spacing)) / 3
+                        
+                        VStack(spacing: spacing) {
+                            ForEach(Array(posts.chunked(into: 3).enumerated()), id: \.offset) { _, rowPosts in
+                                HStack(spacing: spacing) {
+                                    ForEach(rowPosts, id: \.id) { post in
+                                        ProfilePostItem(
+                                            post: post,
+                                            onClick: { onPostClick(post.id, post) }
+                                        )
+                                        .frame(width: itemWidth, height: itemWidth)
+                                    }
+                                    
+                                    // Fill remaining space if row has less than 3 items
+                                    ForEach(0..<(3 - rowPosts.count), id: \.self) { _ in
+                                        Color.clear
+                                            .frame(width: itemWidth, height: itemWidth)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .frame(height: calculateGridHeight(postCount: posts.count))
                 }
             }
         }
+    }
+    
+    private func calculateGridHeight(postCount: Int) -> CGFloat {
+        let spacing: CGFloat = 8
+        let rows = ceil(Double(postCount) / 3.0)
+        let screenWidth = UIScreen.main.bounds.width
+        let horizontalPadding: CGFloat = 36 // 18 * 2 for OtherUserProfileContent padding
+        let availableWidth = screenWidth - horizontalPadding
+        let itemWidth = (availableWidth - (2 * spacing)) / 3
+        
+        return CGFloat(rows) * itemWidth + CGFloat(max(0, rows - 1)) * spacing
     }
 }
 

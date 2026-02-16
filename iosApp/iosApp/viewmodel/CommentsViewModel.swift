@@ -16,6 +16,7 @@ class CommentsViewModel: ObservableObject {
     private let addCommentUseCase: AddCommentUseCase
     private let deleteCommentUseCase: DeleteCommentUseCase
     private let likePostUseCase: LikePostUseCase
+    private let deletePostUseCase: DeletePostUseCase
     
     let postId: String
     
@@ -36,6 +37,9 @@ class CommentsViewModel: ObservableObject {
     @Published var loadingRepliesFor: Set<String> = []
     @Published var isListening = false
     @Published var isProcessing = false
+    @Published var showDeletePostDialog = false
+    @Published var isDeletingPost = false
+    @Published var deletePostError: String?
     
     private var currentPage: Int32 = 0
     private let speechRepository = IOSSpeechRepository()
@@ -52,6 +56,7 @@ class CommentsViewModel: ObservableObject {
         self.addCommentUseCase = AddCommentUseCase(postRepository: postRepository)
         self.deleteCommentUseCase = DeleteCommentUseCase(postRepository: postRepository)
         self.likePostUseCase = LikePostUseCase(postRepository: postRepository)
+        self.deletePostUseCase = DeletePostUseCase(postRepository: postRepository)
         
         // Set initial post if provided
         if let initialPost = initialPost {
@@ -474,6 +479,35 @@ class CommentsViewModel: ObservableObject {
             postsBeingProcessed.remove(postId)
         }
         return true
+    }
+    
+    func showDeletePostConfirmation() {
+        showDeletePostDialog = true
+        deletePostError = nil
+    }
+    
+    func dismissDeletePostDialog() {
+        showDeletePostDialog = false
+        deletePostError = nil
+    }
+    
+    func deletePost() async {
+        guard !isDeletingPost else { return }
+        
+        Self.log.info("deletePost: deleting postId=\(self.postId)")
+        isDeletingPost = true
+        deletePostError = nil
+        
+        do {
+            try await deletePostUseCase.invoke(postId: postId)
+            Self.log.info("deletePost: post deleted successfully")
+            isDeletingPost = false
+            showDeletePostDialog = false
+        } catch {
+            Self.log.error("deletePost: failed - \(error.localizedDescription)")
+            isDeletingPost = false
+            deletePostError = error.localizedDescription
+        }
     }
 }
  

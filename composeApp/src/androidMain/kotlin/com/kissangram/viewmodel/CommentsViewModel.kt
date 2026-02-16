@@ -14,6 +14,7 @@ import com.kissangram.repository.FirestorePostRepository
 import com.kissangram.repository.FirestoreUserRepository
 import com.kissangram.usecase.AddCommentUseCase
 import com.kissangram.usecase.DeleteCommentUseCase
+import com.kissangram.usecase.DeletePostUseCase
 import com.kissangram.usecase.GetCommentsUseCase
 import com.kissangram.usecase.LikePostUseCase
 import android.util.Log
@@ -39,7 +40,10 @@ data class CommentsUiState(
     val repliesByParentId: Map<String, List<Comment>> = emptyMap(),
     val loadingRepliesFor: Set<String> = emptySet(),
     val isListening: Boolean = false,
-    val isProcessing: Boolean = false
+    val isProcessing: Boolean = false,
+    val showDeletePostDialog: Boolean = false,
+    val isDeletingPost: Boolean = false,
+    val deletePostError: String? = null
 )
 
 class CommentsViewModel(
@@ -65,6 +69,7 @@ class CommentsViewModel(
     private val addCommentUseCase = AddCommentUseCase(postRepository)
     private val deleteCommentUseCase = DeleteCommentUseCase(postRepository)
     private val likePostUseCase = LikePostUseCase(postRepository)
+    private val deletePostUseCase = DeletePostUseCase(postRepository)
     
     private val _uiState = MutableStateFlow(
         CommentsUiState(post = initialPost)
@@ -472,6 +477,41 @@ class CommentsViewModel(
             }
         }
         return true
+    }
+    
+    fun showDeletePostConfirmation() {
+        _uiState.value = _uiState.value.copy(showDeletePostDialog = true, deletePostError = null)
+    }
+    
+    fun dismissDeletePostDialog() {
+        _uiState.value = _uiState.value.copy(showDeletePostDialog = false, deletePostError = null)
+    }
+    
+    fun deletePost(onSuccess: () -> Unit) {
+        if (_uiState.value.isDeletingPost) {
+            return
+        }
+        
+        viewModelScope.launch {
+            Log.d(TAG, "deletePost: deleting postId=$postId")
+            _uiState.value = _uiState.value.copy(isDeletingPost = true, deletePostError = null)
+            
+            try {
+                deletePostUseCase(postId)
+                Log.d(TAG, "deletePost: post deleted successfully")
+                _uiState.value = _uiState.value.copy(
+                    isDeletingPost = false,
+                    showDeletePostDialog = false
+                )
+                onSuccess()
+            } catch (e: Exception) {
+                Log.e(TAG, "deletePost: failed", e)
+                _uiState.value = _uiState.value.copy(
+                    isDeletingPost = false,
+                    deletePostError = e.message ?: "Failed to delete post"
+                )
+            }
+        }
     }
     
     companion object {

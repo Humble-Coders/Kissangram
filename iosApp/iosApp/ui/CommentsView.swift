@@ -42,10 +42,24 @@ struct CommentsView: View {
                     }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: { /* Menu */ }) {
-                        Image(systemName: "ellipsis")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundColor(.textPrimary)
+                    if let post = viewModel.post, let currentUserId = currentUserId, post.authorId == currentUserId {
+                        Button(action: { viewModel.showDeletePostConfirmation() }) {
+                            if viewModel.isDeletingPost {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .textPrimary))
+                            } else {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .foregroundColor(.errorRed)
+                            }
+                        }
+                        .disabled(viewModel.isDeletingPost)
+                    } else {
+                        Button(action: { /* Menu */ }) {
+                            Image(systemName: "ellipsis")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundColor(.textPrimary)
+                        }
                     }
                 }
             }
@@ -56,6 +70,20 @@ struct CommentsView: View {
                 onReasonChange: { viewModel.onDeleteReasonChange($0) },
                 onConfirm: { Task { await viewModel.deleteComment() } },
                 onDismiss: { viewModel.dismissDeleteDialog() }
+            )
+        }
+        .sheet(isPresented: $viewModel.showDeletePostDialog) {
+            DeletePostSheet(
+                isDeleting: viewModel.isDeletingPost,
+                onConfirm: {
+                    Task {
+                        await viewModel.deletePost()
+                        if viewModel.deletePostError == nil {
+                            onBackClick()
+                        }
+                    }
+                },
+                onDismiss: { viewModel.dismissDeletePostDialog() }
             )
         }
         .onAppear {
@@ -71,6 +99,9 @@ struct CommentsView: View {
             Text(error)
         }
         .onChange(of: viewModel.error) { error in
+            showErrorAlert = error != nil
+        }
+        .onChange(of: viewModel.deletePostError) { error in
             showErrorAlert = error != nil
         }
     }
@@ -733,6 +764,47 @@ internal struct DeleteCommentSheet: View {
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+    }
+}
+
+// MARK: - Delete Post Sheet
+internal struct DeletePostSheet: View {
+    let isDeleting: Bool
+    let onConfirm: () -> Void
+    let onDismiss: () -> Void
+    
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 20) {
+                Text("Are you sure you want to delete this post? This action cannot be undone.")
+                    .font(.system(size: 16))
+                    .foregroundColor(.textPrimary)
+                    .multilineTextAlignment(.center)
+                    .padding()
+                
+                Spacer()
+            }
+            .padding()
+            .navigationTitle("Delete Post")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        onDismiss()
+                    }
+                    .disabled(isDeleting)
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Delete") {
+                        onConfirm()
+                    }
+                    .foregroundColor(.errorRed)
+                    .fontWeight(.semibold)
+                    .disabled(isDeleting)
+                }
+            }
+        }
+        .presentationDetents([.height(200)])
     }
 }
 

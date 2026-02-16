@@ -128,6 +128,9 @@ struct ContentView: View {
                             navigationStack = []
                             selectedTab = .home
                         },
+                        onPostClick: { postId, post in
+                            navigateTo(.postDetail(postId: postId, post: post))
+                        },
                         reloadKey: profileReloadKey
                     )
                     .tag(BottomNavItem.profile)
@@ -309,14 +312,7 @@ struct ContentView: View {
                     selectedTab = .home
                 },
                 onPostClick: { postId, post in
-                    print("🔵 [ContentView:307] onPostClick callback received - postId: \(postId), hasPost: \(post != nil)")
-                    logToFile("ContentView:307", "onPostClick callback received", [
-                        "postId": postId,
-                        "hasPost": post != nil
-                    ])
-                    print("🔵 [ContentView:327] About to call navigateTo with .ownPostDetail")
-                    navigateTo(.ownPostDetail(postId: postId, post: post))
-                    print("🔵 [ContentView:329] navigateTo call completed")
+                    navigateTo(.postDetail(postId: postId, post: post))
                 },
                 reloadKey: profileReloadKey
             )
@@ -346,7 +342,7 @@ struct ContentView: View {
                         navigationStack = []
                         selectedTab = .home
                     },
-                    onPostClick: { postId, post in navigateTo(.ownPostDetail(postId: postId, post: post)) },
+                    onPostClick: { postId, post in navigateTo(.postDetail(postId: postId, post: post)) },
                     reloadKey: profileReloadKey
                 )
             } else {
@@ -368,19 +364,6 @@ struct ContentView: View {
             
         case .postDetail(let postId, let post):
             CommentsView(
-                postId: postId,
-                initialPost: post,
-                onBackClick: { navigateBack() },
-                onNavigateToProfile: { userId in navigateTo(.userProfile(userId: userId)) }
-            )
-            
-        case .ownPostDetail(let postId, let post):
-            let _ = print("🔵 [ContentView:373] Rendering OwnPostDetailView - postId: \(postId), hasPost: \(post != nil)")
-            let _ = logToFile("ContentView:373", "Rendering OwnPostDetailView", [
-                "postId": postId,
-                "hasPost": post != nil
-            ])
-            OwnPostDetailView(
                 postId: postId,
                 initialPost: post,
                 onBackClick: { navigateBack() },
