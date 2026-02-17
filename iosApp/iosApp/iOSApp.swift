@@ -3,11 +3,28 @@ import FirebaseCore
 import FirebaseAuth
 import FirebaseStorage
 import UserNotifications
+import Kingfisher
 
 class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil) -> Bool {
         FirebaseApp.configure()
+        
+        // Configure Kingfisher cache for Firebase Storage (100MB disk cache, 365 days expiration)
+        // Optimized for faster image fetching with increased memory cache
+        let cache = ImageCache.default
+        cache.diskStorage.config.sizeLimit = 100 * 1024 * 1024 // 100MB
+        cache.diskStorage.config.expiration = .days(365) // 1 year cache
+        cache.memoryStorage.config.totalCostLimit = 100 * 1024 * 1024 // Increased to 100MB memory cache for faster access
+        
+        // Optimize ImageDownloader for parallel downloads
+        let downloader = ImageDownloader.default
+        downloader.sessionConfiguration.httpMaximumConnectionsPerHost = 6
+        downloader.sessionConfiguration.timeoutIntervalForRequest = 30
+        downloader.sessionConfiguration.timeoutIntervalForResource = 60
+        
+        print("✅ Kingfisher cache configured: 100MB disk, 100MB memory, 365 days expiration")
+        print("✅ ImageDownloader optimized: 6 connections per host, 30s timeout")
         
         // Set up notification center delegate FIRST
         UNUserNotificationCenter.current().delegate = self

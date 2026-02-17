@@ -8,7 +8,7 @@ import com.kissangram.repository.UserRepository
 
 /**
  * Use case for creating a new post.
- * Handles media uploads to Cloudinary and post creation in Firestore.
+ * Handles media uploads to Firebase Storage and post creation in Firestore.
  */
 class CreatePostUseCase(
     private val storageRepository: StorageRepository,
@@ -36,8 +36,8 @@ class CreatePostUseCase(
         val user = userRepository.getCurrentUser()
             ?: throw IllegalStateException("User profile not found")
         
-        // 3. Upload media items to Cloudinary
-        println("📤 CreatePostUseCase: Starting media uploads to Cloudinary")
+        // 3. Upload media items to Firebase Storage
+        println("📤 CreatePostUseCase: Starting media uploads to Firebase Storage")
         println("📤 CreatePostUseCase: Total media items: ${input.mediaItems.size}")
         input.mediaItems.forEachIndexed { index, mediaItem ->
             println("📤 CreatePostUseCase: Uploading media item $index:")
@@ -48,7 +48,7 @@ class CreatePostUseCase(
         
         val uploadedMedia = mutableListOf<PostMedia>()
         input.mediaItems.forEachIndexed { index, mediaItem ->
-            val result = storageRepository.uploadPostMediaToCloudinary(
+            val result = storageRepository.uploadPostMediaToFirebase(
                 mediaData = mediaItem.mediaData,
                 mediaType = mediaItem.type,
                 thumbnailData = mediaItem.thumbnailData
@@ -67,10 +67,10 @@ class CreatePostUseCase(
         
         // 5. Upload voice caption if exists
         val voiceCaptionUrl = input.voiceCaptionData?.let { audioData ->
-            println("📤 CreatePostUseCase: Uploading voice caption to Cloudinary")
+            println("📤 CreatePostUseCase: Uploading voice caption to Firebase Storage")
             println("   - Audio Data Size: ${audioData.size} bytes")
             println("   - Duration: ${input.voiceCaptionDurationSeconds} seconds")
-            val url = storageRepository.uploadVoiceCaptionToCloudinary(audioData)
+            val url = storageRepository.uploadVoiceCaptionToFirebase(audioData)
             println("✅ CreatePostUseCase: Voice caption uploaded successfully")
             println("   - Voice URL: $url")
             url

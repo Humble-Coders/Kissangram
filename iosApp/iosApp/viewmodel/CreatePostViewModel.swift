@@ -209,16 +209,20 @@ class CreatePostViewModel: ObservableObject {
         mediaItems.append(item)
     }
     
-    nonisolated private func filePathToKotlinByteArray(filePath: String) throws -> KotlinByteArray {
-        let url: URL
-        if filePath.hasPrefix("file://") {
-            guard let fileURL = URL(string: filePath) else {
-                throw NSError(domain: "CreatePostViewModel", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid file URI: \(filePath)"])
+    /// Convert URI string (file:// URL or file path) to URL
+    nonisolated private func uriToURL(_ uriString: String) throws -> URL {
+        if uriString.hasPrefix("file://") {
+            guard let url = URL(string: uriString) else {
+                throw NSError(domain: "CreatePostViewModel", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid file URI: \(uriString)"])
             }
-            url = fileURL
+            return url
         } else {
-            url = URL(fileURLWithPath: filePath)
+            return URL(fileURLWithPath: uriString)
         }
+    }
+    
+    nonisolated private func filePathToKotlinByteArray(filePath: String) throws -> KotlinByteArray {
+        let url = try uriToURL(filePath)
         
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw NSError(domain: "CreatePostViewModel", code: 404, userInfo: [NSLocalizedDescriptionKey: "File does not exist: \(filePath)"])
@@ -725,13 +729,60 @@ class CreatePostViewModel: ObservableObject {
                     
                     for item in mediaItems {
                         group.addTask {
-                            let mediaData = try self.filePathToKotlinByteArray(filePath: item.localUri)
-                            let thumbnailData = try item.thumbnailUri.map { try self.filePathToKotlinByteArray(filePath: $0) }
+                            // Read original media data - handle both file:// URLs and file paths
+                            let mediaURL = try self.uriToURL(item.localUri)
+                            let originalMediaData = try Data(contentsOf: mediaURL)
+                            
+                            // Compress media before upload
+                            let compressedMediaData: Data
+                            if item.type == .image {
+                                compressedMediaData = MediaCompressor.compressImage(originalMediaData)
+                            } else {
+                                compressedMediaData = MediaCompressor.compressVideo(originalMediaData)
+                            }
+                            
+                            // Generate thumbnail for videos if not already provided
+                            let thumbnailData: Data?
+                            if item.type == .video {
+                                if let thumbUri = item.thumbnailUri {
+                                    do {
+                                        let thumbURL = try self.uriToURL(thumbUri)
+                                        thumbnailData = try Data(contentsOf: thumbURL)
+                                    } catch {
+                                        thumbnailData = nil
+                                    }
+                                } else {
+                                    // Generate thumbnail from video
+                                    thumbnailData = VideoThumbnailGenerator.generateThumbnailFromURL(mediaURL)
+                                }
+                            } else {
+                                thumbnailData = nil
+                            }
+                            
+                            // Convert compressed Data to KotlinByteArray
+                            let compressedKotlinData = {
+                                let kotlinByteArray = KotlinByteArray(size: Int32(compressedMediaData.count))
+                                compressedMediaData.withUnsafeBytes { bytes in
+                                    for (index, byte) in bytes.enumerated() {
+                                        kotlinByteArray.set(index: Int32(index), value: Int8(bitPattern: byte))
+                                    }
+                                }
+                                return kotlinByteArray
+                            }()
+                            let thumbnailKotlinData = thumbnailData.map { data in
+                                let kotlinByteArray = KotlinByteArray(size: Int32(data.count))
+                                data.withUnsafeBytes { bytes in
+                                    for (index, byte) in bytes.enumerated() {
+                                        kotlinByteArray.set(index: Int32(index), value: Int8(bitPattern: byte))
+                                    }
+                                }
+                                return kotlinByteArray
+                            }
                             
                             return Shared.MediaItem(
-                                mediaData: mediaData,
+                                mediaData: compressedKotlinData,
                                 type: item.type == .image ? .image : .video,
-                                thumbnailData: thumbnailData
+                                thumbnailData: thumbnailKotlinData
                             )
                         }
                     }
@@ -743,8 +794,22 @@ class CreatePostViewModel: ObservableObject {
                     return items
                 }
                 
-                // Convert voice caption URI to ByteArray if present
-                let voiceCaptionData = try voiceCaptionUri.map { try filePathToKotlinByteArray(filePath: $0) }
+                // Convert voice caption URI to ByteArray if present and compress
+                let voiceCaptionData = try voiceCaptionUri.map { uri in
+                    // Read original audio data as Data - handle both file:// URLs and file paths
+                    let audioURL = try self.uriToURL(uri)
+                    let originalAudioData = try Data(contentsOf: audioURL)
+                    // Compress audio
+                    let compressedAudioData = MediaCompressor.compressAudio(originalAudioData)
+                    // Convert compressed Data to KotlinByteArray
+                    let kotlinByteArray = KotlinByteArray(size: Int32(compressedAudioData.count))
+                    compressedAudioData.withUnsafeBytes { bytes in
+                        for (index, byte) in bytes.enumerated() {
+                            kotlinByteArray.set(index: Int32(index), value: Int8(bitPattern: byte))
+                        }
+                    }
+                    return kotlinByteArray
+                }
                 
                 // Convert PostType
                 let kotlinPostType: Shared.PostType = postType == .normal ? .normal : .question

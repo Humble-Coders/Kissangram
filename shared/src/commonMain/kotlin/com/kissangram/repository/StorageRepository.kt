@@ -65,4 +65,26 @@ interface StorageRepository {
      */
     @Throws(Exception::class)
     suspend fun uploadVoiceCaptionToCloudinary(audioData: ByteArray): String
+    
+    /**
+     * Upload post media (image or video) to Firebase Storage.
+     * @param mediaData The media file data as ByteArray
+     * @param mediaType The type of media (IMAGE or VIDEO)
+     * @param thumbnailData Optional thumbnail data for videos as ByteArray
+     * @return MediaUploadResult containing mediaUrl and optional thumbnailUrl
+     */
+    @Throws(Exception::class)
+    suspend fun uploadPostMediaToFirebase(
+        mediaData: ByteArray,
+        mediaType: com.kissangram.model.MediaType,
+        thumbnailData: ByteArray? = null
+    ): MediaUploadResult
+    
+    /**
+     * Upload voice caption audio file to Firebase Storage.
+     * @param audioData The audio file data as ByteArray
+     * @return The Firebase Storage URL of the uploaded audio file
+     */
+    @Throws(Exception::class)
+    suspend fun uploadVoiceCaptionToFirebase(audioData: ByteArray): String
 }

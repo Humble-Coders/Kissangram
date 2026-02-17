@@ -19,9 +19,15 @@ object CloudinaryUrlTransformer {
     
     /**
      * Transform URL for feed display (optimized size)
-     * Uses: w_800,h_800,c_limit,q_auto,f_auto
+     * Uses: w_800,h_800,c_limit,q_auto,f_auto for Cloudinary
+     * Delegates to FirebaseStorageUrlTransformer for Firebase Storage URLs
      */
     fun transformForFeed(url: String): String {
+        // Check if Firebase Storage URL first
+        if (FirebaseStorageUrlTransformer.isFirebaseStorageUrl(url)) {
+            return FirebaseStorageUrlTransformer.transformForFeed(url)
+        }
+        
         if (!isCloudinaryUrl(url)) {
             return url
         }
@@ -30,9 +36,15 @@ object CloudinaryUrlTransformer {
     
     /**
      * Transform URL for thumbnail display (small size)
-     * Uses: w_300,h_300,c_fill,q_auto,f_auto
+     * Uses: w_300,h_300,c_fill,q_auto,f_auto for Cloudinary
+     * Delegates to FirebaseStorageUrlTransformer for Firebase Storage URLs
      */
-    fun transformForThumbnail(url: String): String {
+    fun transformForThumbnail(url: String, thumbnailUrl: String? = null): String {
+        // Check if Firebase Storage URL first
+        if (FirebaseStorageUrlTransformer.isFirebaseStorageUrl(url)) {
+            return FirebaseStorageUrlTransformer.transformForThumbnail(url, thumbnailUrl)
+        }
+        
         if (!isCloudinaryUrl(url)) return url
         return addTransformations(ensureHttps(url), "w_300,h_300,c_fill,q_auto,f_auto")
     }
@@ -40,10 +52,16 @@ object CloudinaryUrlTransformer {
     /**
      * Generate thumbnail URL from a video URL.
      * For Cloudinary videos, adds thumbnail transformations to extract a frame.
+     * For Firebase Storage videos, delegates to FirebaseStorageUrlTransformer.
      * Format: /video/upload/w_300,h_300,c_fill/so_0.3/v123/folder/file.jpg
      * The .jpg extension at the end tells Cloudinary to render the frame as an image.
      */
     fun generateVideoThumbnailUrl(videoUrl: String): String {
+        // Check if Firebase Storage URL first
+        if (FirebaseStorageUrlTransformer.isFirebaseStorageUrl(videoUrl)) {
+            return FirebaseStorageUrlTransformer.generateVideoThumbnailUrl(videoUrl)
+        }
+        
         if (!isCloudinaryUrl(videoUrl)) {
             return videoUrl
         }
@@ -76,6 +94,11 @@ object CloudinaryUrlTransformer {
      * Get original URL without transformations
      */
     fun getOriginal(url: String): String {
+        // Check if Firebase Storage URL first
+        if (FirebaseStorageUrlTransformer.isFirebaseStorageUrl(url)) {
+            return FirebaseStorageUrlTransformer.getOriginal(url)
+        }
+        
         if (!isCloudinaryUrl(url)) return url
         // Remove any existing transformations and ensure HTTPS
         val baseUrl = ensureHttps(url).split("?")[0]

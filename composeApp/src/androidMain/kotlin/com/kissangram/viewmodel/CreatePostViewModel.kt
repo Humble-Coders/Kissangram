@@ -13,6 +13,8 @@ import androidx.lifecycle.viewModelScope
 import com.kissangram.model.CreatePostInput
 import com.kissangram.model.CreatePostLocation
 import com.kissangram.model.MediaItem
+import com.kissangram.util.MediaCompressor
+import com.kissangram.util.VideoThumbnailGenerator
 import com.kissangram.model.MediaType
 import com.kissangram.model.PostType
 import com.kissangram.model.PostVisibility
@@ -869,21 +871,54 @@ class CreatePostViewModel(
                     return@forEachIndexed
                 }
                 
-                val mediaData = uriToByteArray(uriString)
-                if (mediaData.isEmpty()) {
+                val originalMediaData = uriToByteArray(uriString)
+                if (originalMediaData.isEmpty()) {
                     Log.w(TAG, "buildPostInput: Skipping media item $index - empty ByteArray")
                     return@forEachIndexed
                 }
                 
+                // Compress media before upload
+                val compressedMediaData = when (type) {
+                    MediaType.IMAGE -> {
+                        Log.d(TAG, "buildPostInput: Compressing image (${originalMediaData.size} bytes)")
+                        MediaCompressor.compressImage(originalMediaData)
+                    }
+                    MediaType.VIDEO -> {
+                        Log.d(TAG, "buildPostInput: Compressing video (${originalMediaData.size} bytes)")
+                        MediaCompressor.compressVideo(originalMediaData, getApplication())
+                    }
+                }
+                
+                Log.d(TAG, "buildPostInput: Media compressed: ${originalMediaData.size} -> ${compressedMediaData.size} bytes")
+                
+                // Generate thumbnail for videos
+                val thumbnailData = if (type == MediaType.VIDEO) {
+                    try {
+                        Log.d(TAG, "buildPostInput: Generating thumbnail for video")
+                        // Save video to temp file for thumbnail generation
+                        val app = getApplication<Application>()
+                        val tempFile = java.io.File(app.cacheDir, "temp_video_${System.currentTimeMillis()}.mp4")
+                        tempFile.outputStream().use { it.write(compressedMediaData) }
+                        val thumbnail = VideoThumbnailGenerator.generateThumbnailFromPath(tempFile.absolutePath)
+                        tempFile.delete()
+                        thumbnail
+                    } catch (e: Exception) {
+                        Log.w(TAG, "buildPostInput: Failed to generate thumbnail, continuing without thumbnail", e)
+                        null
+                    }
+                } else {
+                    null
+                }
+                
                 mediaItemsWithData.add(
                     MediaItem(
-                        mediaData = mediaData,
+                        mediaData = compressedMediaData,
                         type = type,
-                        thumbnailData = null
+                        thumbnailData = thumbnailData
                     )
                 )
             } catch (e: Exception) {
-                Log.e(TAG, "buildPostInput: Failed to convert URI to ByteArray for media item $index: $uriString", e)
+                Log.e(TAG, "buildPostInput: Failed to process media item $index: $uriString", e)
                 // Continue to next item
             }
         }
@@ -893,19 +928,22 @@ class CreatePostViewModel(
             throw IllegalArgumentException("No valid media items found. Please add media again.")
         }
         
-        // Convert voice caption URI to ByteArray if present
+        // Convert voice caption URI to ByteArray if present and compress
         val voiceCaptionData = state.voiceCaptionUri?.takeIf { it.isNotBlank() }?.let { uriString ->
             try {
-                val audioData = uriToByteArray(uriString)
-                if (audioData.isEmpty()) {
+                val originalAudioData = uriToByteArray(uriString)
+                if (originalAudioData.isEmpty()) {
                     Log.w(TAG, "buildPostInput: Voice caption URI resulted in empty ByteArray: $uriString")
                     null
                 } else {
-                    Log.d(TAG, "buildPostInput: Successfully converted voice caption to ByteArray (${audioData.size} bytes) from: $uriString")
-                    audioData
+                    // Compress audio before upload
+                    Log.d(TAG, "buildPostInput: Compressing voice caption (${originalAudioData.size} bytes)")
+                    val compressedAudioData = MediaCompressor.compressAudio(originalAudioData)
+                    Log.d(TAG, "buildPostInput: Voice caption compressed: ${originalAudioData.size} -> ${compressedAudioData.size} bytes")
+                    compressedAudioData
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "buildPostInput: Failed to convert voice caption URI to ByteArray: $uriString", e)
+                Log.e(TAG, "buildPostInput: Failed to convert/compress voice caption URI: $uriString", e)
                 null
             }
         }

@@ -13,11 +13,20 @@ struct MediaItemView: View {
     
     private var imageUrl: String {
         var url = ensureHttps(media.url)
+        
+        // Check if Firebase Storage URL (no transformations needed)
+        if url.contains("firebasestorage.googleapis.com") || url.contains("firebase.storage") {
+            return url // Firebase Storage URLs are used as-is
+        }
+        
+        // Check if Cloudinary URL (apply transformations)
         if url.contains("cloudinary.com") || url.contains("res.cloudinary.com") {
             let parts = url.split(separator: "?", maxSplits: 1)
             let baseUrl = parts.first.map(String.init) ?? url
             return "\(baseUrl)?w_800,h_800,c_limit,q_auto,f_auto"
         }
+        
+        // Default: return URL as-is
         return url
     }
     
@@ -25,14 +34,23 @@ struct MediaItemView: View {
         Group {
             if media.type == .image {
                 if let url = URL(string: imageUrl) {
+                    let placeholderUrl = media.thumbnailUrl.flatMap { URL(string: $0) }
                     if showFullImage {
-                        CachedImageView(url: url)
+                        CachedImageView(
+                            url: url,
+                            placeholderUrl: placeholderUrl,
+                            priority: isVisible ? .high : .normal
+                        )
                             .frame(maxWidth: .infinity)
                             .aspectRatio(contentMode: .fit)
                             .contentShape(Rectangle())
                             .onTapGesture { onTap() }
                     } else {
-                        CachedImageView(url: url)
+                        CachedImageView(
+                            url: url,
+                            placeholderUrl: placeholderUrl,
+                            priority: isVisible ? .high : .normal
+                        )
                             .frame(maxWidth: .infinity)
                             .frame(height: 440) // Fixed height for consistent feed display
                             .clipped()
@@ -49,7 +67,8 @@ struct MediaItemView: View {
                     FeedVideoPlayer(
                         media: media,
                         onTap: onTap,
-                        showFullImage: true
+                        showFullImage: true,
+                        upcomingVideoUrls: [] // Can be extended to pass upcoming videos from parent
                     )
                     .frame(maxWidth: .infinity)
                     .aspectRatio(contentMode: .fit)
@@ -58,7 +77,8 @@ struct MediaItemView: View {
                     FeedVideoPlayer(
                         media: media,
                         onTap: onTap,
-                        showFullImage: false
+                        showFullImage: false,
+                        upcomingVideoUrls: [] // Can be extended to pass upcoming videos from parent
                     )
                     .frame(maxWidth: .infinity)
                     .frame(height: 440) // Fixed height matching images

@@ -65,4 +65,54 @@ final class VideoPlayerCache {
     func pausePlayer(_ player: AVPlayer) {
         player.pause()
     }
+    
+    /// Preload videos in batch for smooth playback.
+    /// Preloads up to 2 videos.
+    /// - Parameter urls: List of video URLs to preload (will preload first 2)
+    func preloadVideos(urls: [URL]) {
+        let urlsToPreload = Array(urls.prefix(2))
+        
+        lock.lock()
+        for url in urlsToPreload {
+            let key = url.absoluteString
+            
+            // Skip if already in cache
+            if cache[key] != nil {
+                continue
+            }
+            
+            // Evict if at capacity before preloading
+            if cache.count >= maxCapacity, let oldest = accessOrder.last {
+                if let old = cache.removeValue(forKey: oldest) {
+                    old.player.pause()
+                    old.player.replaceCurrentItem(with: nil)
+                }
+                accessOrder.removeAll { $0 == oldest }
+            }
+            
+            // Create and preload player
+            let newPlayer = AVPlayer(url: url)
+            newPlayer.actionAtItemEnd = .none
+            newPlayer.isMuted = true // Preload muted
+            // Preload by setting current item (triggers buffering)
+            cache[key] = CachedPlayer(player: newPlayer, lastAccess: Date())
+            accessOrder.insert(key, at: 0)
+        }
+        lock.unlock()
+    }
+    
+    /// Clear preload cache to free memory.
+    func clearPreloadCache() {
+        lock.lock()
+        // Clear all players that are not currently playing
+        let keysToRemove = cache.filter { $0.value.player.rate == 0 }.map { $0.key }
+        for key in keysToRemove {
+            if let player = cache.removeValue(forKey: key) {
+                player.player.pause()
+                player.player.replaceCurrentItem(with: nil)
+            }
+            accessOrder.removeAll { $0 == key }
+        }
+        lock.unlock()
+    }
 }

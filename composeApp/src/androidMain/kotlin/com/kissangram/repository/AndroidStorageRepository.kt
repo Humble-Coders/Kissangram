@@ -11,6 +11,8 @@ import com.google.firebase.FirebaseApp
 import com.google.firebase.storage.FirebaseStorage
 import com.kissangram.model.MediaType
 import com.kissangram.model.MediaUploadResult
+import com.kissangram.util.MediaCompressor
+import com.kissangram.util.VideoThumbnailGenerator
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.tasks.await
 import java.io.File
@@ -49,50 +51,58 @@ class AndroidStorageRepository(
     }
     
     override suspend fun uploadProfileImage(userId: String, imageData: ByteArray): String {
-        Log.d(TAG, "uploadProfileImage: Starting Cloudinary upload for user $userId, size=${imageData.size} bytes")
+        Log.d(TAG, "uploadProfileImage: Starting Firebase Storage upload for user $userId, size=${imageData.size} bytes")
         
         return try {
-            // Write ByteArray to temporary file for Cloudinary upload
-            val tempFile = File(context.cacheDir, "profile_${UUID.randomUUID()}.tmp")
-            tempFile.outputStream().use { it.write(imageData) }
+            // Compress image before upload (max 1MB, 800x800px)
+            val compressedImageData = MediaCompressor.compressImage(imageData)
             
-            suspendCancellableCoroutine<String> { continuation ->
-                val requestId = MediaManager.get().upload(tempFile.absolutePath)
-                    .option("resource_type", "image")
-                    .option("folder", FOLDER_PROFILE_IMAGES)
-                    .option("public_id", "profile_${userId}_${System.currentTimeMillis()}")
-                    .callback(object : UploadCallback {
-                        override fun onStart(requestId: String) {
-                            Log.d(TAG, "uploadProfileImage: Upload started")
-                        }
-                        override fun onProgress(requestId: String, bytes: Long, totalBytes: Long) {}
-                        override fun onSuccess(requestId: String, resultData: Map<*, *>?) {
-                            val url = (resultData?.get("secure_url") as? String
-                                ?: resultData?.get("url") as? String)
-                                ?.let { ensureHttps(it) }
-                                ?: throw IllegalStateException("No URL in upload result")
-                            Log.d(TAG, "uploadProfileImage: SUCCESS - URL: $url")
-                            continuation.resume(url)
-                        }
-                        override fun onError(requestId: String, error: ErrorInfo) {
-                            Log.e(TAG, "uploadProfileImage: FAILED - ${error.description}")
-                            continuation.resumeWithException(
-                                Exception("Cloudinary upload failed: ${error.description}")
-                            )
-                        }
-                        override fun onReschedule(requestId: String, error: ErrorInfo) {}
-                    })
-                    .dispatch()
-                
-                continuation.invokeOnCancellation {
-                    MediaManager.get().cancelRequest(requestId)
+            // Further compress if still too large (target: 1MB for profile images)
+            var finalImageData = compressedImageData
+            if (compressedImageData.size > 1024 * 1024) { // 1MB
+                // Re-compress with lower quality if still too large
+                val bitmap = android.graphics.BitmapFactory.decodeByteArray(compressedImageData, 0, compressedImageData.size)
+                if (bitmap != null) {
+                    val outputStream = java.io.ByteArrayOutputStream()
+                    var quality = 75
+                    bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, quality, outputStream)
+                    while (outputStream.size() > 1024 * 1024 && quality > 50) {
+                        outputStream.reset()
+                        quality -= 10
+                        bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, quality, outputStream)
+                    }
+                    finalImageData = outputStream.toByteArray()
+                    bitmap.recycle()
                 }
-            }.also {
-                tempFile.delete()
             }
+            
+            Log.d(TAG, "uploadProfileImage: Image compressed: ${imageData.size} -> ${finalImageData.size} bytes")
+            
+            // Create reference: profile_images/{userId}/profile_{timestamp}.jpg
+            val timestamp = System.currentTimeMillis()
+            val fileName = "profile_$timestamp.jpg"
+            val storageRef = storage.reference
+                .child(FOLDER_PROFILE_IMAGES)
+                .child(userId)
+                .child(fileName)
+            
+            // Create metadata with cache control
+            val metadata = com.google.firebase.storage.StorageMetadata.Builder()
+                .setContentType("image/jpeg")
+                .setCacheControl("public, max-age=31536000") // 1 year cache
+                .build()
+            
+            // Upload with metadata
+            val uploadTask = storageRef.putBytes(finalImageData, metadata)
+            uploadTask.await()
+            
+            // Get the download URL
+            val downloadUrl = storageRef.downloadUrl.await().toString()
+            Log.d(TAG, "uploadProfileImage: SUCCESS - URL: $downloadUrl")
+            downloadUrl
         } catch (e: Exception) {
             Log.e(TAG, "uploadProfileImage: FAILED", e)
-            throw Exception("Failed to upload profile image to Cloudinary: ${e.message}", e)
+            throw Exception("Failed to upload profile image to Firebase Storage: ${e.message}", e)
         }
     }
     
@@ -394,6 +404,144 @@ class AndroidStorageRepository(
         } catch (e: Exception) {
             Log.e(TAG, "uploadVoiceCaptionToCloudinary: FAILED", e)
             throw Exception("Failed to upload voice caption to Cloudinary: ${e.message}", e)
+        }
+    }
+    
+    override suspend fun uploadPostMediaToFirebase(
+        mediaData: ByteArray,
+        mediaType: MediaType,
+        thumbnailData: ByteArray?
+    ): MediaUploadResult {
+        Log.d(TAG, "📤 AndroidStorageRepository: Starting Firebase Storage upload")
+        Log.d(TAG, "   - Media Data Size: ${mediaData.size} bytes")
+        Log.d(TAG, "   - Media Type: $mediaType")
+        Log.d(TAG, "   - Thumbnail Data Size: ${thumbnailData?.size ?: 0} bytes")
+        
+        return try {
+            // Compress media before upload
+            val compressedMediaData = when (mediaType) {
+                MediaType.IMAGE -> MediaCompressor.compressImage(mediaData)
+                MediaType.VIDEO -> MediaCompressor.compressVideo(mediaData, context)
+            }
+            
+            Log.d(TAG, "📤 AndroidStorageRepository: Media compressed: ${mediaData.size} -> ${compressedMediaData.size} bytes")
+            
+            // Generate thumbnail for videos if not provided
+            val finalThumbnailData = if (mediaType == MediaType.VIDEO && thumbnailData == null) {
+                Log.d(TAG, "📤 AndroidStorageRepository: Generating thumbnail for video")
+                // Save compressed video to temp file for thumbnail generation
+                val tempVideoFile = File(context.cacheDir, "temp_video_${UUID.randomUUID()}.mp4")
+                tempVideoFile.outputStream().use { it.write(compressedMediaData) }
+                val thumbnail = VideoThumbnailGenerator.generateThumbnailFromPath(tempVideoFile.absolutePath)
+                tempVideoFile.delete()
+                thumbnail
+            } else {
+                thumbnailData
+            }
+            
+            // Determine file extension and content type
+            val (extension, contentType) = when (mediaType) {
+                MediaType.IMAGE -> "jpg" to "image/jpeg"
+                MediaType.VIDEO -> "mp4" to "video/mp4"
+            }
+            
+            // Generate unique file name
+            val uuid = UUID.randomUUID().toString().take(8)
+            val fileName = "media_${System.currentTimeMillis()}_$uuid.$extension"
+            val storageRef = storage.reference
+                .child(FOLDER_POSTS)
+                .child(fileName)
+            
+            // Create metadata with cache control
+            val metadata = com.google.firebase.storage.StorageMetadata.Builder()
+                .setContentType(contentType)
+                .setCacheControl("public, max-age=31536000") // 1 year cache
+                .build()
+            
+            // Upload media
+            val uploadTask = storageRef.putBytes(compressedMediaData, metadata)
+            uploadTask.await()
+            
+            // Get download URL
+            val mediaUrl = storageRef.downloadUrl.await().toString()
+            Log.d(TAG, "✅ AndroidStorageRepository: Media uploaded successfully")
+            Log.d(TAG, "   - Media URL: $mediaUrl")
+            
+            // Upload thumbnail if available
+            val thumbnailUrl = if (finalThumbnailData != null && mediaType == MediaType.VIDEO) {
+                try {
+                    val thumbUuid = UUID.randomUUID().toString().take(8)
+                    val thumbFileName = "thumb_${System.currentTimeMillis()}_$thumbUuid.jpg"
+                    val thumbStorageRef = storage.reference
+                        .child(FOLDER_POSTS)
+                        .child("thumbnails")
+                        .child(thumbFileName)
+                    
+                    val thumbMetadata = com.google.firebase.storage.StorageMetadata.Builder()
+                        .setContentType("image/jpeg")
+                        .setCacheControl("public, max-age=31536000") // 1 year cache
+                        .build()
+                    
+                    thumbStorageRef.putBytes(finalThumbnailData, thumbMetadata).await()
+                    val thumbUrl = thumbStorageRef.downloadUrl.await().toString()
+                    Log.d(TAG, "✅ AndroidStorageRepository: Thumbnail uploaded successfully")
+                    Log.d(TAG, "   - Thumbnail URL: $thumbUrl")
+                    thumbUrl
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to upload thumbnail, continuing without thumbnail", e)
+                    null
+                }
+            } else {
+                null
+            }
+            
+            Log.d(TAG, "✅ AndroidStorageRepository: Firebase Storage upload completed")
+            Log.d(TAG, "   - Media URL: $mediaUrl")
+            Log.d(TAG, "   - Thumbnail URL: ${thumbnailUrl ?: "none"}")
+            
+            MediaUploadResult(mediaUrl = mediaUrl, thumbnailUrl = thumbnailUrl)
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ AndroidStorageRepository: Firebase Storage upload FAILED", e)
+            throw Exception("Failed to upload post media to Firebase Storage: ${e.message}", e)
+        }
+    }
+    
+    override suspend fun uploadVoiceCaptionToFirebase(audioData: ByteArray): String {
+        Log.d(TAG, "📤 AndroidStorageRepository: Starting voice caption upload to Firebase Storage")
+        Log.d(TAG, "   - Audio Data Size: ${audioData.size} bytes")
+        
+        return try {
+            // Compress audio before upload
+            val compressedAudioData = MediaCompressor.compressAudio(audioData)
+            Log.d(TAG, "📤 AndroidStorageRepository: Audio compressed: ${audioData.size} -> ${compressedAudioData.size} bytes")
+            
+            // Generate unique file name
+            val uuid = UUID.randomUUID().toString().take(8)
+            val fileName = "voice_${System.currentTimeMillis()}_$uuid.m4a"
+            val storageRef = storage.reference
+                .child(FOLDER_POSTS)
+                .child("voice_captions")
+                .child(fileName)
+            
+            // Create metadata with cache control
+            val metadata = com.google.firebase.storage.StorageMetadata.Builder()
+                .setContentType("audio/mp4")
+                .setCacheControl("public, max-age=31536000") // 1 year cache
+                .build()
+            
+            // Upload audio
+            val uploadTask = storageRef.putBytes(compressedAudioData, metadata)
+            uploadTask.await()
+            
+            // Get download URL
+            val downloadUrl = storageRef.downloadUrl.await().toString()
+            Log.d(TAG, "✅ AndroidStorageRepository: Voice caption uploaded to Firebase Storage successfully")
+            Log.d(TAG, "   - Voice URL: $downloadUrl")
+            
+            downloadUrl
+        } catch (e: Exception) {
+            Log.e(TAG, "uploadVoiceCaptionToFirebase: FAILED", e)
+            throw Exception("Failed to upload voice caption to Firebase Storage: ${e.message}", e)
         }
     }
     

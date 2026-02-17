@@ -29,8 +29,7 @@ kotlin {
             implementation(libs.datastore.preferences)
             implementation(("com.google.firebase:firebase-bom:34.9.0"))
             // Image loading
-            implementation("io.coil-kt:coil-compose:2.5.0")
-            
+
             // Note: Using LazyRow for carousel instead of foundation-pager for better compatibility
             
             // Swipe to refresh
@@ -56,6 +55,7 @@ kotlin {
             
             // Lottie for animations
             implementation("com.airbnb.android:lottie-compose:6.7.1")
+            implementation("io.coil-kt:coil-compose:2.7.0")
 
 
         }

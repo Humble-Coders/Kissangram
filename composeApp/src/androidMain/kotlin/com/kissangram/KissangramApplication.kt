@@ -8,6 +8,7 @@ import coil.disk.DiskCache
 import coil.memory.MemoryCache
 import com.cloudinary.android.MediaManager
 import com.google.firebase.FirebaseApp
+import com.kissangram.util.ImagePrefetchManager
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -24,23 +25,32 @@ class KissangramApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         
-        // Configure Coil with memory + disk cache for feed images—no reload when scrolling back
+        // Configure Coil with optimized memory + disk cache
+        // Enhanced cache for Firebase Storage URLs (100MB disk cache, 35% memory cache)
+        // Coil uses OkHttp internally with optimized settings for parallel downloads
         Coil.setImageLoader(
             ImageLoader.Builder(this)
                 .memoryCache {
                     MemoryCache.Builder(this)
-                        .maxSizePercent(0.25)
+                        .maxSizePercent(0.35) // Increased from 0.25 to 0.35 for faster access
                         .build()
                 }
                 .diskCache {
                     DiskCache.Builder()
                         .directory(cacheDir.resolve("image_cache"))
-                        .maxSizePercent(0.02)
+                        .maxSizeBytes(100 * 1024 * 1024) // 100MB for Firebase Storage caching
                         .build()
                 }
                 .crossfade(true)
                 .build()
         )
+        
+        Log.d(TAG, "Coil ImageLoader configured: 35% memory cache, 100MB disk cache")
+        
+        // Initialize ImagePrefetchManager for faster image loading
+        val imageLoader = Coil.imageLoader(this)
+        ImagePrefetchManager.initialize(this, imageLoader)
+        Log.d(TAG, "ImagePrefetchManager initialized")
         
         // Initialize Cloudinary
         initCloudinary()

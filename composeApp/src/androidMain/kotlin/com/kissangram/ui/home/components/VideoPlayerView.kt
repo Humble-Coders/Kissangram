@@ -35,6 +35,7 @@ import com.kissangram.util.ExoPlayerCache
 /**
  * Video player component for feed videos
  * Paused by default, user can tap play button to start
+ * Supports batch preloading of next videos for smooth playback
  */
 @OptIn(UnstableApi::class)
 @Composable
@@ -44,7 +45,8 @@ fun VideoPlayerView(
     isVisible: Boolean = true,
     autoPlay: Boolean = false,
     showFullImage: Boolean = false,
-    onTap: () -> Unit = {}
+    onTap: () -> Unit = {},
+    upcomingVideoUrls: List<String> = emptyList() // URLs of next videos to preload
 ) {
     val context = LocalContext.current
     var isPlaying by remember { mutableStateOf(false) }
@@ -53,6 +55,16 @@ fun VideoPlayerView(
     
     val exoPlayer = remember(media.url) {
         ExoPlayerCache.getPlayer(context, media.url)
+    }
+    
+    // Preload next videos when current video starts playing
+    LaunchedEffect(isPlaying, upcomingVideoUrls) {
+        if (isPlaying && upcomingVideoUrls.isNotEmpty()) {
+            // Preload next 2 videos in background
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                ExoPlayerCache.preloadVideos(context, upcomingVideoUrls)
+            }
+        }
     }
     
     // Handle auto-play when visible

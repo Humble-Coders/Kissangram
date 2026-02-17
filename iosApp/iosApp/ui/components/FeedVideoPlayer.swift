@@ -12,16 +12,18 @@ struct FeedVideoPlayer: View {
     let onTap: () -> Void
     let player: AVPlayer
     var showFullImage: Bool = false
+    var upcomingVideoUrls: [URL] = [] // URLs of next videos to preload
     
     @State private var loopObserver: NSObjectProtocol?
     @State private var isPlaying = false
     @State private var isMuted = true
     @State private var showThumbnail = true
     
-    init(media: PostMedia, onTap: @escaping () -> Void, showFullImage: Bool = false) {
+    init(media: PostMedia, onTap: @escaping () -> Void, showFullImage: Bool = false, upcomingVideoUrls: [URL] = []) {
         self.media = media
         self.onTap = onTap
         self.showFullImage = showFullImage
+        self.upcomingVideoUrls = upcomingVideoUrls
         let url = URL(string: ensureHttps(media.url)) ?? URL(fileURLWithPath: "")
         self.player = VideoPlayerCache.shared.player(for: url)
     }
@@ -110,6 +112,11 @@ struct FeedVideoPlayer: View {
         player.play()
         isPlaying = true
         showThumbnail = false
+        
+        // Preload next videos when current video starts playing
+        if !upcomingVideoUrls.isEmpty {
+            VideoPlayerCache.shared.preloadVideos(urls: upcomingVideoUrls)
+        }
     }
     
     private func pausePlayer() {

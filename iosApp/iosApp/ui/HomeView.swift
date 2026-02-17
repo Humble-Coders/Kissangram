@@ -3,6 +3,7 @@ import os.log
 import Shared
 import AVFoundation
 import AVKit
+import Kingfisher
 
 // MARK: - Colors
 extension Color {
@@ -151,6 +152,9 @@ struct HomeView: View {
                                         hasRestoredScroll = true
                                     }
                                 }
+                                
+                                // Prefetch images for upcoming posts
+                                prefetchUpcomingImages()
                             }
                             .onChange(of: viewModel.savedScrollPostId) { savedPostId in
                                 // Also restore when savedScrollPostId changes (e.g., when navigating back)
@@ -167,6 +171,10 @@ struct HomeView: View {
                                         hasRestoredScroll = true
                                     }
                                 }
+                            }
+                            .onChange(of: visibilityTracker.visibleIndices) { _ in
+                                // Prefetch images when visible indices change (user scrolling)
+                                prefetchUpcomingImages()
                             }
                             .onAppear {
                                 // Try to restore scroll position if we have a saved state and posts are already loaded
@@ -997,4 +1005,44 @@ struct EndOfFeedSection: View {
     HomeView()
         .preferredColorScheme(.dark)
         .previewDevice("iPhone 15 Pro")
+}
+
+// MARK: - Image Prefetching Extension
+extension HomeView {
+    /// Prefetch images for upcoming posts to ensure instant loading
+    private func prefetchUpcomingImages() {
+        guard !viewModel.posts.isEmpty else { return }
+        
+        // Get current visible post indices
+        let visibleIndices = visibilityTracker.visibleIndices
+        let currentIndex = visibleIndices.max() ?? 0
+        
+        // Prefetch images for next 5 posts
+        let startIndex = max(0, currentIndex)
+        let endIndex = min(viewModel.posts.count, startIndex + 5)
+        
+        let prefetchUrls = viewModel.posts[startIndex..<endIndex]
+            .flatMap { post in
+                post.media.compactMap { media -> URL? in
+                    let urlString: String
+                    if media.type == .image {
+                        urlString = media.url
+                    } else {
+                        // For videos, prefer thumbnail URL
+                        urlString = media.thumbnailUrl ?? media.url
+                    }
+                    
+                    // Only prefetch Firebase Storage URLs
+                    if Shared.FirebaseStorageUrlTransformer.shared.isFirebaseStorageUrl(url: urlString) {
+                        return URL(string: urlString)
+                    }
+                    return nil
+                }
+            }
+        
+        if !prefetchUrls.isEmpty {
+            ImagePrefetcher(urls: prefetchUrls).start()
+            homeViewLog.debug("Prefetched \(prefetchUrls.count) images for posts \(startIndex)-\(endIndex)")
+        }
+    }
 }

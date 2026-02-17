@@ -8,7 +8,7 @@ import com.kissangram.repository.UserRepository
 
 /**
  * Use case for creating a new story.
- * Handles media uploads to Cloudinary and story creation in Firestore.
+ * Handles media uploads to Firebase Storage and story creation in Firestore.
  */
 class CreateStoryUseCase(
     private val storageRepository: StorageRepository,
@@ -36,8 +36,8 @@ class CreateStoryUseCase(
         val user = userRepository.getCurrentUser()
             ?: throw IllegalStateException("User profile not found")
         
-        // 3. Upload media to Cloudinary
-        println("📤 CreateStoryUseCase: Starting media upload to Cloudinary")
+        // 3. Upload media to Firebase Storage
+        println("📤 CreateStoryUseCase: Starting media upload to Firebase Storage")
         val mediaData = input.mediaData
             ?: throw IllegalArgumentException("Story must have media")
         val mediaType = input.mediaType
@@ -48,7 +48,7 @@ class CreateStoryUseCase(
         println("   - Type: $mediaType")
         println("   - Thumbnail Data Size: ${input.thumbnailData?.size ?: 0} bytes")
         
-        val uploadResult = storageRepository.uploadPostMediaToCloudinary(
+        val uploadResult = storageRepository.uploadPostMediaToFirebase(
             mediaData = mediaData,
             mediaType = mediaType,
             thumbnailData = input.thumbnailData
@@ -60,7 +60,7 @@ class CreateStoryUseCase(
         
         // Validate upload result
         if (uploadResult.mediaUrl.isBlank()) {
-            throw Exception("Media upload failed: empty media URL returned from Cloudinary")
+            throw Exception("Media upload failed: empty media URL returned from Firebase Storage")
         }
         
         // 4. Build location data (per FIRESTORE_SCHEMA.md: location: { name: "..." })

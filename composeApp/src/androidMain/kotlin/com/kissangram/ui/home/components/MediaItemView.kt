@@ -10,11 +10,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.kissangram.model.MediaType
 import com.kissangram.model.PostMedia
 import com.kissangram.util.CloudinaryUrlTransformer
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
+
 
 /**
  * Component that displays either an image or video based on media type
@@ -30,7 +33,7 @@ fun MediaItemView(
 ) {
     var imageLoadError by remember { mutableStateOf<String?>(null) }
     var useOriginalUrl by remember { mutableStateOf(false) }
-    
+
     when (media.type) {
         MediaType.IMAGE -> {
             val imageUrl = remember(media.url, useOriginalUrl) {
@@ -44,7 +47,7 @@ fun MediaItemView(
                     }
                 }
             }
-            
+
             if (showFullImage) {
                 // Full-size image - let it determine its own height based on aspect ratio
                 Box(
@@ -54,14 +57,17 @@ fun MediaItemView(
                     contentAlignment = Alignment.Center
                 ) {
                     AsyncImage(
-                        model = imageUrl,
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(imageUrl)
+                            .placeholderMemoryCacheKey(media.thumbnailUrl) // Use thumbnail as placeholder for progressive loading
+                            .build(),
                         contentDescription = null,
                         modifier = Modifier.fillMaxWidth(),
                         contentScale = ContentScale.Fit, // Fit to show full image
                         onError = { error ->
                             val errorMsg = error.result.throwable?.message ?: "Unknown error"
                             imageLoadError = errorMsg
-                            
+
                             // Try original URL if transformed URL failed
                             if (!useOriginalUrl && imageUrl != media.url) {
                                 useOriginalUrl = true
@@ -71,7 +77,7 @@ fun MediaItemView(
                             imageLoadError = null
                         }
                     )
-                    
+
                     // Show error message if loading failed
                     if (imageLoadError != null && useOriginalUrl) {
                         Box(
@@ -109,14 +115,17 @@ fun MediaItemView(
                     contentAlignment = Alignment.Center
                 ) {
                     AsyncImage(
-                        model = imageUrl,
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(imageUrl)
+                            .placeholderMemoryCacheKey(media.thumbnailUrl) // Use thumbnail as placeholder for progressive loading
+                            .build(),
                         contentDescription = null,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop, // Crop for feed
                         onError = { error ->
                             val errorMsg = error.result.throwable?.message ?: "Unknown error"
                             imageLoadError = errorMsg
-                            
+
                             // Try original URL if transformed URL failed
                             if (!useOriginalUrl && imageUrl != media.url) {
                                 useOriginalUrl = true
@@ -126,7 +135,7 @@ fun MediaItemView(
                             imageLoadError = null
                         }
                     )
-                    
+
                     // Show error message if loading failed
                     if (imageLoadError != null && useOriginalUrl) {
                         Box(
@@ -163,7 +172,8 @@ fun MediaItemView(
                 isVisible = isVisible,
                 autoPlay = autoPlay,
                 showFullImage = showFullImage,
-                onTap = onTap
+                onTap = onTap,
+                upcomingVideoUrls = emptyList() // Can be extended to pass upcoming videos from parent
             )
         }
     }

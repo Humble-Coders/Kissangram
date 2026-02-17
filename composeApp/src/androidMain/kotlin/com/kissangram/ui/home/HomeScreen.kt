@@ -20,6 +20,8 @@ import android.util.Log
 import com.kissangram.ui.home.components.*
 import com.kissangram.viewmodel.HomeViewModel
 import com.kissangram.model.Post
+import com.kissangram.util.ImagePrefetchManager
+import com.kissangram.util.FirebaseStorageUrlTransformer
 import com.google.accompanist.swiperefresh.SwipeRefresh
 import com.google.accompanist.swiperefresh.rememberSwipeRefreshState
 import kotlinx.coroutines.launch
@@ -115,6 +117,33 @@ fun HomeScreen(
 
     LaunchedEffect(uiState.posts.size, uiState.isLoading, uiState.error) {
         Log.d("HomeScreen", "uiState: posts=${uiState.posts.size} isLoading=${uiState.isLoading} error=${uiState.error}")
+    }
+    
+    // Prefetch images for upcoming posts to ensure instant loading
+    LaunchedEffect(uiState.posts.size, listState.firstVisibleItemIndex) {
+        if (uiState.posts.isNotEmpty()) {
+            val currentIndex = listState.firstVisibleItemIndex
+            // Prefetch images for next 5 posts (posts start from index 1 after stories)
+            val startIndex = maxOf(0, currentIndex - 1) // Start from current visible post
+            val endIndex = minOf(uiState.posts.size, startIndex + 5)
+            
+            val prefetchUrls = uiState.posts
+                .slice(startIndex until endIndex)
+                .flatMap { post -> 
+                    post.media.mapNotNull { media ->
+                        when (media.type) {
+                            com.kissangram.model.MediaType.IMAGE -> media.url
+                            com.kissangram.model.MediaType.VIDEO -> media.thumbnailUrl ?: media.url
+                        }
+                    }
+                }
+                .filter { FirebaseStorageUrlTransformer.isFirebaseStorageUrl(it) }
+            
+            if (prefetchUrls.isNotEmpty()) {
+                ImagePrefetchManager.prefetch(prefetchUrls)
+                Log.d("HomeScreen", "Prefetched ${prefetchUrls.size} images for posts $startIndex-$endIndex")
+            }
+        }
     }
     
     // Dev: Upload locations state

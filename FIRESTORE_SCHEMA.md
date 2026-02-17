@@ -1553,4 +1553,123 @@ firestore.collection("hashtags")
 
 ---
 
-*Last updated: February 2026 (Added onPostDelete Cloud Function for post deletion with feed cleanup)*
+---
+
+## Firebase Storage
+
+### Storage Structure
+
+```
+ROOT STORAGE BUCKET
+│
+├── posts/
+│   ├── media_{timestamp}_{uuid}.{ext}          # Post media files (images/videos)
+│   ├── thumbnails/
+│   │   └── thumb_{timestamp}_{uuid}.jpg        # Video thumbnails
+│   └── voice_captions/
+│       └── voice_{timestamp}_{uuid}.m4a        # Voice caption audio files
+│
+├── profile_images/
+│   └── {userId}/
+│       └── profile_{timestamp}.jpg              # User profile images
+│
+└── verification_docs/
+    └── {userId}/
+        └── doc_{timestamp}.{ext}                # Expert verification documents
+```
+
+### Storage Security Rules
+
+```javascript
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+    
+    // Profile Images
+    match /profile_images/{userId}/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && isOwner(userId);
+      // Limit file size: 5MB max
+      allow create: if request.resource.size < 5 * 1024 * 1024;
+    }
+    
+    // Post Media
+    match /posts/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+      // Limit file sizes: images max 5MB, videos max 100MB
+      allow create: if request.resource.size < 100 * 1024 * 1024;
+    }
+    
+    // Video Thumbnails
+    match /posts/thumbnails/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+      // Limit file size: 2MB max for thumbnails
+      allow create: if request.resource.size < 2 * 1024 * 1024;
+    }
+    
+    // Voice Captions
+    match /posts/voice_captions/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+      // Limit file size: 10MB max for audio
+      allow create: if request.resource.size < 10 * 1024 * 1024;
+    }
+    
+    // Verification Documents
+    match /verification_docs/{userId}/{fileName} {
+      allow read: if isAuthenticated() && isOwner(userId);
+      allow write: if isAuthenticated() && isOwner(userId);
+      // Limit file size: 10MB max
+      allow create: if request.resource.size < 10 * 1024 * 1024;
+    }
+  }
+}
+```
+
+### Cache Headers
+
+All Firebase Storage files are uploaded with cache-control metadata:
+- **Images**: `public, max-age=31536000` (1 year)
+- **Videos**: `public, max-age=31536000` (1 year)
+- **Thumbnails**: `public, max-age=31536000` (1 year)
+- **Audio**: `public, max-age=31536000` (1 year)
+
+This ensures optimal caching on client devices and CDN edge servers.
+
+### Compression Strategy
+
+**Images:**
+- Max dimensions: 1920x1920px (maintains aspect ratio)
+- Max file size: 2MB (compressed iteratively if needed)
+- Quality: 85% JPEG compression
+
+**Videos:**
+- Max resolution: 1080p
+- Max bitrate: 5Mbps
+- Max file size: 50MB
+- Thumbnails: 300x300px JPEG at 80% quality
+
+**Audio (Voice Captions):**
+- Max bitrate: 128kbps
+- Max file size: 10MB
+- Format: M4A (AAC codec)
+
+**Profile Images:**
+- Max dimensions: 800x800px
+- Max file size: 1MB
+- Quality: 75-85% JPEG compression
+
+---
+
+*Last updated: February 2026 (Added Firebase Storage migration with compression, caching, and security rules)*

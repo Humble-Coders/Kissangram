@@ -101,10 +101,10 @@ class CreateStoryViewModel: ObservableObject {
         visibility: StoryVisibility
     ) async throws -> Shared.CreateStoryInput {
         
-        // Read media data - use original file data without recompression
-        let mediaData: Data
+        // Read original media data
+        let originalMediaData: Data
         do {
-            mediaData = try Data(contentsOf: mediaUrl)
+            originalMediaData = try Data(contentsOf: mediaUrl)
         } catch {
             throw NSError(
                 domain: "CreateStoryViewModel",
@@ -113,22 +113,27 @@ class CreateStoryViewModel: ObservableObject {
             )
         }
         
+        // Compress media before upload
+        let compressedMediaData: Data
+        if mediaType == Shared.MediaType.image {
+            compressedMediaData = MediaCompressor.compressImage(originalMediaData)
+        } else {
+            compressedMediaData = MediaCompressor.compressVideo(originalMediaData)
+        }
+        
         // Generate thumbnail based on media type
         var thumbnailData: Data? = nil
         
         if mediaType == Shared.MediaType.image {
-            // For images, thumbnail is the same as the image (no recompression)
-            thumbnailData = mediaData
+            // For images, use compressed image as thumbnail
+            thumbnailData = compressedMediaData
         } else {
-            // For videos, generate thumbnail at 0.3 seconds
-            thumbnailData = try await generateVideoThumbnail(
-                videoUrl: mediaUrl,
-                at: CMTime(seconds: 0.3, preferredTimescale: 600)
-            )
+            // For videos, generate thumbnail using VideoThumbnailGenerator
+            thumbnailData = VideoThumbnailGenerator.generateThumbnailFromURL(mediaUrl)
         }
         
-        // Convert Data to KotlinByteArray
-        let kotlinMediaData = dataToKotlinByteArray(mediaData)
+        // Convert compressed Data to KotlinByteArray
+        let kotlinMediaData = dataToKotlinByteArray(compressedMediaData)
         let kotlinThumbnailData = thumbnailData.map { dataToKotlinByteArray($0) }
         
         // Text overlays and location are already Shared types, use them directly

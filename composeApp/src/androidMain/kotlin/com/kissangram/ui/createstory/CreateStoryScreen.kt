@@ -67,6 +67,8 @@ import coil.compose.AsyncImage
 import com.kissangram.model.CreateStoryInput
 import com.kissangram.model.CreateStoryLocation
 import com.kissangram.model.MediaType
+import com.kissangram.util.MediaCompressor
+import com.kissangram.util.VideoThumbnailGenerator
 import com.kissangram.repository.AndroidLocationRepository
 import com.kissangram.ui.components.FilterableDropdownField
 import com.kissangram.model.PostVisibility
@@ -678,11 +680,25 @@ fun CreateStoryScreen(
                                     scope.launch {
                                         try {
                                             isLoading = true  // Show loader immediately
-                                            val mediaData = uriToByteArray(context, uri)
+                                            val originalMediaData = uriToByteArray(context, uri)
+                                            // Compress media before upload
+                                            val compressedMediaData = when (mediaType) {
+                                                MediaType.IMAGE -> MediaCompressor.compressImage(originalMediaData)
+                                                MediaType.VIDEO -> MediaCompressor.compressVideo(originalMediaData, context)
+                                                null -> throw IllegalStateException("Media type is null")
+                                            }
+                                            // Generate thumbnail for videos
+                                            val thumbnailData = if (mediaType == MediaType.VIDEO) {
+                                                val tempFile = java.io.File(context.cacheDir, "temp_story_video_${System.currentTimeMillis()}.mp4")
+                                                tempFile.outputStream().use { it.write(compressedMediaData) }
+                                                val thumbnail = VideoThumbnailGenerator.generateThumbnailFromPath(tempFile.absolutePath)
+                                                tempFile.delete()
+                                                thumbnail
+                                            } else null
                                             val input = CreateStoryInput(
-                                                mediaData = mediaData,
+                                                mediaData = compressedMediaData,
                                                 mediaType = mediaType,
-                                                thumbnailData = null,
+                                                thumbnailData = thumbnailData,
                                                 textOverlays = textOverlays,
                                                 location = location,
                                                 visibility = visibility
@@ -704,11 +720,25 @@ fun CreateStoryScreen(
                                     scope.launch {
                                         try {
                                             isLoading = true  // Show loader immediately
-                                            val mediaData = uriToByteArray(context, uri)
+                                            val originalMediaData = uriToByteArray(context, uri)
+                                            // Compress media before upload
+                                            val compressedMediaData = when (mediaType) {
+                                                MediaType.IMAGE -> MediaCompressor.compressImage(originalMediaData)
+                                                MediaType.VIDEO -> MediaCompressor.compressVideo(originalMediaData, context)
+                                                null -> throw IllegalStateException("Media type is null")
+                                            }
+                                            // Generate thumbnail for videos
+                                            val thumbnailData = if (mediaType == MediaType.VIDEO) {
+                                                val tempFile = java.io.File(context.cacheDir, "temp_story_video_${System.currentTimeMillis()}.mp4")
+                                                tempFile.outputStream().use { it.write(compressedMediaData) }
+                                                val thumbnail = VideoThumbnailGenerator.generateThumbnailFromPath(tempFile.absolutePath)
+                                                tempFile.delete()
+                                                thumbnail
+                                            } else null
                                             val input = CreateStoryInput(
-                                                mediaData = mediaData,
+                                                mediaData = compressedMediaData,
                                                 mediaType = mediaType,
-                                                thumbnailData = null,
+                                                thumbnailData = thumbnailData,
                                                 textOverlays = textOverlays,
                                                 location = location,
                                                 visibility = visibility
