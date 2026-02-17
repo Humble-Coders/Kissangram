@@ -11,6 +11,8 @@ final class FirestoreFeedRepository: FeedRepository {
     private let firestore = Firestore.firestore(database: "kissangram")
     private let authRepository: AuthRepository
     private var lastDocumentSnapshot: DocumentSnapshot?
+    private var lastPublicPostsSnapshot: DocumentSnapshot?
+    private var isFallbackMode = false
     private var cachedPosts: [Post]?
 
     init(authRepository: AuthRepository) {
@@ -34,47 +36,133 @@ final class FirestoreFeedRepository: FeedRepository {
             return cached
         }
 
-        let feedRef = firestore.collection("users").document(currentUserId).collection("feed")
-        var query: Query = feedRef.order(by: "createdAt", descending: true).limit(to: Int(pageSize))
-
-        if page > 0 {
-            guard let lastSnap = lastDocumentSnapshot else {
-                Self.log.warning("getHomeFeed: page>0 but no cursor, returning empty")
-                return []
-            }
-            query = query.start(afterDocument: lastSnap)
-            Self.log.debug("getHomeFeed: using startAfter for page \(page)")
-        } else {
+        if forceRefresh {
             lastDocumentSnapshot = nil
+            lastPublicPostsSnapshot = nil
+            isFallbackMode = false
         }
 
-        Self.log.debug("getHomeFeed: executing query users/\(uidPrefix).../feed orderBy createdAt desc limit \(pageSize)")
-        let snapshot = try await query.getDocuments()
+        let postsCollection = firestore.collection("posts")
+
+        // When not in fallback mode, try feed first
+        if !isFallbackMode {
+            let feedRef = firestore.collection("users").document(currentUserId).collection("feed")
+            var feedQuery: Query = feedRef.order(by: "createdAt", descending: true).limit(to: Int(pageSize))
+
+            if page > 0 {
+                guard let lastSnap = lastDocumentSnapshot else {
+                    Self.log.warning("getHomeFeed: page>0 but no cursor, returning empty")
+                    return []
+                }
+                feedQuery = feedQuery.start(afterDocument: lastSnap)
+                Self.log.debug("getHomeFeed: using startAfter for page \(page)")
+            } else {
+                lastDocumentSnapshot = nil
+            }
+
+            Self.log.debug("getHomeFeed: executing query users/\(uidPrefix).../feed orderBy createdAt desc limit \(pageSize)")
+            let snapshot = try await feedQuery.getDocuments()
+            let rawCount = snapshot.documents.count
+            Self.log.debug("getHomeFeed: snapshot.documents.count=\(rawCount)")
+
+            let postsWithIds = snapshot.documents.compactMap { doc -> Post? in
+                let post = toPost(from: doc, isLikedByMe: false)
+                if post == nil { Self.log.warning("getHomeFeed: toPost returned nil for doc \(doc.documentID)") }
+                return post
+            }
+
+            // If feed has content, use it
+            if !postsWithIds.isEmpty {
+                let likedPostIds = try await batchCheckLikes(postIds: postsWithIds.map { $0.id }, userId: currentUserId)
+                let likesCountByPostId = try await batchFetchLikesCount(postIds: postsWithIds.map { $0.id })
+                let posts = postsWithIds.map { post in
+                    let freshLikesCount = likesCountByPostId[post.id] ?? post.likesCount
+                    return Post(
+                        id: post.id,
+                        authorId: post.authorId,
+                        authorName: post.authorName,
+                        authorUsername: post.authorUsername,
+                        authorProfileImageUrl: post.authorProfileImageUrl,
+                        authorRole: post.authorRole,
+                        authorVerificationStatus: post.authorVerificationStatus,
+                        type: post.type,
+                        text: post.text,
+                        media: post.media,
+                        voiceCaption: post.voiceCaption,
+                        crops: post.crops,
+                        hashtags: post.hashtags,
+                        location: post.location,
+                        question: post.question,
+                        likesCount: freshLikesCount,
+                        commentsCount: post.commentsCount,
+                        savesCount: post.savesCount,
+                        isLikedByMe: likedPostIds.contains(post.id),
+                        isSavedByMe: post.isSavedByMe,
+                        createdAt: post.createdAt,
+                        updatedAt: post.updatedAt
+                    )
+                }
+                Self.log.debug("getHomeFeed: parsed list.count=\(posts.count) raw=\(rawCount)")
+                if let last = snapshot.documents.last {
+                    lastDocumentSnapshot = last
+                }
+                if page == 0 {
+                    cachedPosts = posts
+                }
+                return posts
+            }
+
+            // Feed empty on page 0: fall back to public posts
+            if page == 0 {
+                isFallbackMode = true
+                lastPublicPostsSnapshot = nil
+                Self.log.debug("getHomeFeed: feed empty, falling back to public posts")
+            } else {
+                Self.log.warning("getHomeFeed: feed empty on page>0; returning empty")
+                return []
+            }
+        }
+
+        // Fallback mode: fetch paginated public posts from posts collection
+        var publicQuery: Query = postsCollection
+            .whereField("visibility", isEqualTo: "public")
+            .whereField("isActive", isEqualTo: true)
+            .order(by: "createdAt", descending: true)
+            .limit(to: Int(pageSize))
+
+        if page > 0 {
+            guard let lastSnap = lastPublicPostsSnapshot else {
+                Self.log.warning("getHomeFeed: fallback page>0 but no cursor, returning empty")
+                return []
+            }
+            publicQuery = publicQuery.start(afterDocument: lastSnap)
+            Self.log.debug("getHomeFeed: fallback using startAfter for page \(page)")
+        } else {
+            lastPublicPostsSnapshot = nil
+        }
+
+        Self.log.debug("getHomeFeed: fallback query posts visibility=public isActive=true orderBy createdAt desc limit \(pageSize)")
+        let snapshot = try await publicQuery.getDocuments()
         let rawCount = snapshot.documents.count
-        Self.log.debug("getHomeFeed: snapshot.documents.count=\(rawCount)")
-        
-        // First, parse all posts to get their IDs
+        Self.log.debug("getHomeFeed: fallback snapshot.documents.count=\(rawCount)")
+
         let postsWithIds = snapshot.documents.compactMap { doc -> Post? in
-            let post = toPost(from: doc, isLikedByMe: false) // Temporary, will update after checking likes
+            let post = toPost(from: doc, isLikedByMe: false)
             if post == nil { Self.log.warning("getHomeFeed: toPost returned nil for doc \(doc.documentID)") }
             return post
         }
-        
-        // Batch check which posts are liked by current user
+
         let likedPostIds = if !postsWithIds.isEmpty {
             try await batchCheckLikes(postIds: postsWithIds.map { $0.id }, userId: currentUserId)
         } else {
             Set<String>()
         }
-        
-        // Batch-fetch likesCount from posts collection (source of truth; feed copies are stale)
         let likesCountByPostId = if !postsWithIds.isEmpty {
             try await batchFetchLikesCount(postIds: postsWithIds.map { $0.id })
         } else {
             [String: Int32]()
         }
-        
-        // Update posts with correct isLikedByMe and likesCount from posts collection
+
         let posts = postsWithIds.map { post in
             let freshLikesCount = likesCountByPostId[post.id] ?? post.likesCount
             return Post(
@@ -102,10 +190,10 @@ final class FirestoreFeedRepository: FeedRepository {
                 updatedAt: post.updatedAt
             )
         }
-        
-        Self.log.debug("getHomeFeed: parsed list.count=\(posts.count) raw=\(rawCount), liked=\(likedPostIds.count)")
+
+        Self.log.debug("getHomeFeed: fallback parsed list.count=\(posts.count) raw=\(rawCount)")
         if let last = snapshot.documents.last {
-            lastDocumentSnapshot = last
+            lastPublicPostsSnapshot = last
         }
         if page == 0 {
             cachedPosts = posts

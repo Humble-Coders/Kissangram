@@ -360,6 +360,9 @@ Populated by the `onPostCreate` Cloud Function (fan-out). Each document is a cop
   commentsCount: 0,
   savesCount: 0,
   
+  // Visibility (who can see this post)
+  visibility: "public",  // "public" | "followers"
+  
   // Metadata
   createdAt: Timestamp,
   updatedAt: Timestamp,
@@ -893,6 +896,10 @@ Fields: authorId (Ascending), createdAt (Descending), isActive (Ascending)
 // Posts by crop
 Collection: posts
 Fields: crops (Arrays), createdAt (Descending), isActive (Ascending)
+
+// Public posts (feed fallback when user feed is empty)
+Collection: posts
+Fields: visibility (Ascending), isActive (Ascending), createdAt (Descending)
 
 // Questions by expertise
 Collection: posts

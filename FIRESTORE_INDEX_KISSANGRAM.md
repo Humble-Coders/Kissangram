@@ -105,3 +105,24 @@ https://console.firebase.google.com/v1/r/project/kissangram-19531/firestore/inde
 4. Collection ID: `users`
 5. Add fields: `isActive` (Ascending), `followersCount` (Descending)
 6. Create.
+
+---
+
+## Public Posts Fallback Index (Home Feed)
+
+Required when the user's feed is empty — the app falls back to fetching paginated public posts from the `posts` collection.
+
+- **Collection**: `posts`
+- **Query scope**: Collection
+- **Fields**:
+  - `visibility` — Ascending
+  - `isActive` — Ascending
+  - `createdAt` — Descending
+
+**Firebase Console:**
+1. Open Firebase Console → Firestore Database.
+2. Select the **kissangram** database.
+3. Indexes → Composite → Create index.
+4. Collection ID: `posts`
+5. Add fields: `visibility` (Ascending), `isActive` (Ascending), `createdAt` (Descending)
+6. Create.

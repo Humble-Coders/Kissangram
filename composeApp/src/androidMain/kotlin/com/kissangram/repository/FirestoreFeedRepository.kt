@@ -24,6 +24,8 @@ class FirestoreFeedRepository(
 ) : FeedRepository {
 
     private var lastDocumentSnapshot: DocumentSnapshot? = null
+    private var lastPublicPostsSnapshot: DocumentSnapshot? = null
+    private var isFallbackMode: Boolean = false
     private var cachedPosts: List<Post>? = null
 
     override suspend fun getHomeFeed(page: Int, pageSize: Int, forceRefresh: Boolean): List<Post> {
@@ -43,53 +45,120 @@ class FirestoreFeedRepository(
             return cachedPosts!!
         }
 
+        if (forceRefresh) {
+            lastDocumentSnapshot = null
+            lastPublicPostsSnapshot = null
+            isFallbackMode = false
+        }
+
         return try {
-            var query: Query = firestore
-                .collection("users")
-                .document(currentUserId)
-                .collection("feed")
+            val postsCollection = firestore.collection("posts")
+
+            // When not in fallback mode, try feed first
+            if (!isFallbackMode) {
+                var feedQuery: Query = firestore
+                    .collection("users")
+                    .document(currentUserId)
+                    .collection("feed")
+                    .orderBy("createdAt", Query.Direction.DESCENDING)
+                    .limit(pageSize.toLong())
+
+                if (page > 0) {
+                    val lastSnap = lastDocumentSnapshot
+                    if (lastSnap == null) {
+                        Log.w(TAG, "getHomeFeed: page > 0 but no cursor; returning empty")
+                        return emptyList()
+                    }
+                    feedQuery = feedQuery.startAfter(lastSnap)
+                    Log.d(TAG, "getHomeFeed: using startAfter for page $page")
+                } else {
+                    lastDocumentSnapshot = null
+                }
+
+                Log.d(TAG, "getHomeFeed: executing query users/$currentUserId/feed orderBy createdAt desc limit $pageSize")
+                val snapshot = feedQuery.get().await()
+                val rawCount = snapshot.documents.size
+                Log.d(TAG, "getHomeFeed: snapshot.documents.size=$rawCount")
+
+                val postsWithIds = snapshot.documents.mapNotNull { doc ->
+                    val post = doc.toPost(isLikedByMe = false)
+                    if (post == null) Log.w(TAG, "getHomeFeed: toPost() returned null for doc ${doc.id}")
+                    post
+                }
+
+                // If feed has content, use it
+                if (postsWithIds.isNotEmpty()) {
+                    val likedPostIds = batchCheckLikes(postsWithIds.map { it.id }, currentUserId)
+                    val likesCountByPostId = batchFetchLikesCount(postsWithIds.map { it.id })
+                    val list = postsWithIds.map { post ->
+                        val freshLikesCount = likesCountByPostId[post.id] ?: post.likesCount
+                        post.copy(
+                            isLikedByMe = likedPostIds.contains(post.id),
+                            likesCount = freshLikesCount
+                        )
+                    }
+                    Log.d(TAG, "getHomeFeed: parsed list.size=${list.size} (raw=$rawCount)")
+                    if (snapshot.documents.isNotEmpty()) {
+                        lastDocumentSnapshot = snapshot.documents.last()
+                    }
+                    if (page == 0) {
+                        cachedPosts = list
+                    }
+                    return list
+                }
+
+                // Feed empty on page 0: fall back to public posts
+                if (page == 0) {
+                    isFallbackMode = true
+                    lastPublicPostsSnapshot = null
+                    Log.d(TAG, "getHomeFeed: feed empty, falling back to public posts")
+                } else {
+                    Log.w(TAG, "getHomeFeed: feed empty on page>0; returning empty")
+                    return emptyList()
+                }
+            }
+
+            // Fallback mode: fetch paginated public posts from posts collection
+            var publicQuery: Query = postsCollection
+                .whereEqualTo("visibility", "public")
+                .whereEqualTo("isActive", true)
                 .orderBy("createdAt", Query.Direction.DESCENDING)
                 .limit(pageSize.toLong())
 
             if (page > 0) {
-                val lastSnap = lastDocumentSnapshot
+                val lastSnap = lastPublicPostsSnapshot
                 if (lastSnap == null) {
-                    Log.w(TAG, "getHomeFeed: page > 0 but no cursor; returning empty")
+                    Log.w(TAG, "getHomeFeed: fallback page > 0 but no cursor; returning empty")
                     return emptyList()
                 }
-                query = query.startAfter(lastSnap)
-                Log.d(TAG, "getHomeFeed: using startAfter for page $page")
+                publicQuery = publicQuery.startAfter(lastSnap)
+                Log.d(TAG, "getHomeFeed: fallback using startAfter for page $page")
             } else {
-                lastDocumentSnapshot = null
+                lastPublicPostsSnapshot = null
             }
 
-            Log.d(TAG, "getHomeFeed: executing query users/$currentUserId/feed orderBy createdAt desc limit $pageSize")
-            val snapshot = query.get().await()
+            Log.d(TAG, "getHomeFeed: fallback query posts visibility=public isActive=true orderBy createdAt desc limit $pageSize")
+            val snapshot = publicQuery.get().await()
             val rawCount = snapshot.documents.size
-            Log.d(TAG, "getHomeFeed: snapshot.documents.size=$rawCount")
-            
-            // First, parse all posts to get their IDs
+            Log.d(TAG, "getHomeFeed: fallback snapshot.documents.size=$rawCount")
+
             val postsWithIds = snapshot.documents.mapNotNull { doc ->
-                val post = doc.toPost(isLikedByMe = false) // Temporary, will update after checking likes
-                if (post == null) Log.w(TAG, "getHomeFeed: toPost() returned null for doc ${doc.id}")
+                val post = doc.toPost(isLikedByMe = false)
+                if (post == null) Log.w(TAG, "getHomeFeed: toPost returned null for doc ${doc.id}")
                 post
             }
-            
-            // Batch check which posts are liked by current user
+
             val likedPostIds = if (postsWithIds.isNotEmpty()) {
                 batchCheckLikes(postsWithIds.map { it.id }, currentUserId)
             } else {
                 emptySet()
             }
-            
-            // Batch-fetch likesCount from posts collection (source of truth; feed copies are stale)
             val likesCountByPostId = if (postsWithIds.isNotEmpty()) {
                 batchFetchLikesCount(postsWithIds.map { it.id })
             } else {
                 emptyMap()
             }
-            
-            // Update posts with correct isLikedByMe and likesCount from posts collection
+
             val list = postsWithIds.map { post ->
                 val freshLikesCount = likesCountByPostId[post.id] ?: post.likesCount
                 post.copy(
@@ -97,10 +166,10 @@ class FirestoreFeedRepository(
                     likesCount = freshLikesCount
                 )
             }
-            
-            Log.d(TAG, "getHomeFeed: parsed list.size=${list.size} (raw=$rawCount), liked=${likedPostIds.size}")
+
+            Log.d(TAG, "getHomeFeed: fallback parsed list.size=${list.size} (raw=$rawCount)")
             if (snapshot.documents.isNotEmpty()) {
-                lastDocumentSnapshot = snapshot.documents.last()
+                lastPublicPostsSnapshot = snapshot.documents.last()
             }
             if (page == 0) {
                 cachedPosts = list
