@@ -6,19 +6,18 @@ private let expertGreen = Color(red: 0.455, green: 0.765, blue: 0.396)
 
 struct OtherUserProfileView: View {
     let userId: String
-    var onBackClick: () -> Void = {}
     var onPostClick: (String, Post?) -> Void = { _, _ in }
     var onFollowersClick: () -> Void = {}
     var onFollowingClick: () -> Void = {}
     
+    @Environment(\.dismiss) private var dismiss
     @StateObject private var viewModel = OtherUserProfileViewModel()
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                profileBackground
+        ZStack {
+            profileBackground
 
-                if viewModel.isLoading {
+            if viewModel.isLoading {
                     Spacer()
                     ProgressView()
                         .progressViewStyle(CircularProgressViewStyle(tint: .primaryGreen))
@@ -66,16 +65,16 @@ struct OtherUserProfileView: View {
             }
             .navigationTitle("Profile")
             .navigationBarTitleDisplayMode(.inline)
+            .navigationBarBackButtonHidden(true)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button(action: onBackClick) {
+                    Button(action: { dismiss() }) {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 20, weight: .semibold))
                             .foregroundColor(.textPrimary)
                     }
                 }
             }
-        }
         .task {
             viewModel.loadUserProfile(userId: userId)
         }

@@ -449,7 +449,7 @@ class CommentsViewModel(
         }
         
         val newLikedState = !currentPost.isLikedByMe
-        val newLikesCount = if (newLikedState) currentPost.likesCount + 1 else currentPost.likesCount - 1
+        val newLikesCount = if (newLikedState) currentPost.likesCount + 1 else maxOf(0, currentPost.likesCount - 1)
         
         // Mark as being processed
         postsBeingProcessed.add(postId)

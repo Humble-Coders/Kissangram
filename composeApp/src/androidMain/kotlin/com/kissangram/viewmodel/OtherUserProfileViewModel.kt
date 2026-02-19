@@ -90,9 +90,14 @@ class OtherUserProfileViewModel(
     }
 
     /**
-     * Toggle follow/unfollow status
+     * Toggle follow/unfollow status.
+     * Keeps the loader visible (and button disabled) until the cloud function
+     * completes, preventing rapid clicks from firing multiple API calls.
      */
     fun toggleFollow() {
+        // Guard: ignore clicks while a follow/unfollow is already in flight
+        if (_uiState.value.isFollowLoading) return
+
         val userId = _uiState.value.user?.id ?: return
         val isCurrentlyFollowing = _uiState.value.isFollowing
 
@@ -100,7 +105,8 @@ class OtherUserProfileViewModel(
             _uiState.value = _uiState.value.copy(isFollowLoading = true, error = null)
 
             try {
-                // Optimistic update
+                // Optimistic UI update — keeps isFollowLoading = true so the
+                // button stays disabled while the cloud function runs.
                 val currentUser = _uiState.value.user
                 val newFollowingState = !isCurrentlyFollowing
                 val newFollowersCount = if (newFollowingState) {
@@ -111,18 +117,18 @@ class OtherUserProfileViewModel(
 
                 _uiState.value = _uiState.value.copy(
                     isFollowing = newFollowingState,
-                    user = currentUser?.copy(followersCount = newFollowersCount),
-                    isFollowLoading = false
+                    user = currentUser?.copy(followersCount = newFollowersCount)
                 )
 
-                // Perform actual follow/unfollow
+                // Perform actual follow/unfollow (cloud function)
                 followUserUseCase(userId, isCurrentlyFollowing)
 
-                // Reload user to get updated counts
+                // Reload user to get the authoritative counts from Firestore
                 val updatedUser = userRepository.getUser(userId)
                 _uiState.value = _uiState.value.copy(
                     user = updatedUser,
-                    isFollowing = followRepository.isFollowing(userId)
+                    isFollowing = followRepository.isFollowing(userId),
+                    isFollowLoading = false
                 )
             } catch (e: Exception) {
                 // Rollback optimistic update on error

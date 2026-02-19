@@ -4,6 +4,10 @@ import Shared
 /**
  * Component that displays either an image or video based on media type.
  * Uses Kingfisher for image caching—no reload when scrolling back.
+ *
+ * Uses GeometryReader to get the real available width so that images/videos
+ * with extreme aspect ratios (panoramas, tall portraits) never push the
+ * layout wider than the screen.
  */
 struct MediaItemView: View {
     let media: PostMedia
@@ -36,54 +40,68 @@ struct MediaItemView: View {
                 if let url = URL(string: imageUrl) {
                     let placeholderUrl = media.thumbnailUrl.flatMap { URL(string: $0) }
                     if showFullImage {
+                        // Full-image mode: use .fit so the whole image is visible,
+                        // constrained to the available width.
                         CachedImageView(
                             url: url,
+                            contentMode: .fit,
                             placeholderUrl: placeholderUrl,
                             priority: isVisible ? .high : .normal
                         )
                             .frame(maxWidth: .infinity)
-                            .aspectRatio(contentMode: .fit)
                             .contentShape(Rectangle())
                             .onTapGesture { onTap() }
                     } else {
-                        CachedImageView(
-                            url: url,
-                            placeholderUrl: placeholderUrl,
-                            priority: isVisible ? .high : .normal
-                        )
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 440) // Fixed height for consistent feed display
-                            .clipped()
-                            .contentShape(Rectangle())
-                            .onTapGesture { onTap() }
+                        // Feed mode: fixed 440pt height, clipped to the real
+                        // available width so wide/tall images can't overflow.
+                        GeometryReader { geometry in
+                            CachedImageView(
+                                url: url,
+                                placeholderUrl: placeholderUrl,
+                                priority: isVisible ? .high : .normal
+                            )
+                                .frame(width: geometry.size.width, height: 440)
+                                .clipped()
+                                .contentShape(Rectangle())
+                                .onTapGesture { onTap() }
+                        }
+                        .frame(height: 440)
                     }
                 } else {
                     Color.gray.opacity(0.3)
                         .frame(maxWidth: .infinity)
-                        .frame(height: showFullImage ? nil : 440) // Fixed height only for feed
+                        .frame(height: showFullImage ? nil : 440)
                 }
             } else {
                 if showFullImage {
+                    // Square container — the AVPlayerLayer uses .resizeAspect
+                    // so the full video is always visible (letterboxed or
+                    // pillarboxed depending on aspect ratio).
                     FeedVideoPlayer(
                         media: media,
                         onTap: onTap,
                         showFullImage: true,
-                        upcomingVideoUrls: [] // Can be extended to pass upcoming videos from parent
+                        upcomingVideoUrls: []
                     )
+                    .aspectRatio(1, contentMode: .fit)
                     .frame(maxWidth: .infinity)
-                    .aspectRatio(contentMode: .fit)
-                    .compositingGroup()
-                } else {
-                    FeedVideoPlayer(
-                        media: media,
-                        onTap: onTap,
-                        showFullImage: false,
-                        upcomingVideoUrls: [] // Can be extended to pass upcoming videos from parent
-                    )
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 440) // Fixed height matching images
                     .clipped()
                     .compositingGroup()
+                } else {
+                    // Feed mode: explicit width via GeometryReader so the video
+                    // player can't push the layout wider than the screen.
+                    GeometryReader { geometry in
+                        FeedVideoPlayer(
+                            media: media,
+                            onTap: onTap,
+                            showFullImage: false,
+                            upcomingVideoUrls: []
+                        )
+                        .frame(width: geometry.size.width, height: 440)
+                        .clipped()
+                        .compositingGroup()
+                    }
+                    .frame(height: 440)
                 }
             }
         }

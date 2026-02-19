@@ -34,8 +34,6 @@ class HomeViewModel: ObservableObject {
     // Track posts currently being processed to prevent race conditions
     private var postsBeingProcessed = Set<String>()
     
-    // Scroll state persistence
-    @Published var savedScrollPostId: String? = nil
 
     init() {
         self.authRepository = IOSAuthRepository(preferencesRepository: prefs)
@@ -111,8 +109,6 @@ class HomeViewModel: ObservableObject {
             self.currentUserId = userId
             self.currentPage = 0
             self.isRefreshing = false
-            // Clear scroll state on refresh
-            clearScrollState()
         } catch {
             Self.log.error("refreshFeed: error=\(error.localizedDescription)")
             self.isRefreshing = false
@@ -163,7 +159,7 @@ class HomeViewModel: ObservableObject {
         
         let post = posts[index]
         let newLikedState = !post.isLikedByMe
-        let newLikesCount = newLikedState ? post.likesCount + 1 : post.likesCount - 1
+        let newLikesCount = newLikedState ? post.likesCount + 1 : max(0, post.likesCount - 1)
         
         // Mark as being processed
         postsBeingProcessed.insert(postId)
@@ -206,8 +202,10 @@ class HomeViewModel: ObservableObject {
                 try await likePostUseCase.invoke(postId: postId, isCurrentlyLiked: post.isLikedByMe)
             } catch {
                 Self.log.error("onLikePost: failed for postId=\(postId), error=\(error.localizedDescription)")
-                // Revert on failure
-                self.posts[index] = post
+                // Revert ONLY the affected post by re-finding it by ID (not stale index)
+                if let currentIndex = self.posts.firstIndex(where: { $0.id == postId }) {
+                    self.posts[currentIndex] = post
+                }
             }
         }
         
@@ -268,8 +266,10 @@ class HomeViewModel: ObservableObject {
                 try await savePostUseCase.invoke(postId: postId, isCurrentlySaved: post.isSavedByMe)
             } catch {
                 Self.log.error("onSavePost: failed for postId=\(postId), error=\(error.localizedDescription)")
-                // Revert on failure
-                self.posts[index] = post
+                // Revert ONLY the affected post by re-finding it by ID (not stale index)
+                if let currentIndex = self.posts.firstIndex(where: { $0.id == postId }) {
+                    self.posts[currentIndex] = post
+                }
             }
         }
     }
@@ -301,11 +301,4 @@ class HomeViewModel: ObservableObject {
         }
     }
     
-    func saveScrollState(postId: String?) {
-        savedScrollPostId = postId
-    }
-    
-    func clearScrollState() {
-        savedScrollPostId = nil
-    }
 }

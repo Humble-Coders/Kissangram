@@ -9,26 +9,41 @@ extension ContentView {
     // EditProfileView is in the same module, so it's accessible
 }
 
+// MARK: - Identifiable wrapper for story fullScreenCover
+struct StoryPresentation: Identifiable {
+    let id: String // userId
+}
+
 struct ContentView: View {
+    // Auth state
     @State private var currentScreen: Screen = .languageSelection
-    @State private var navigationStack: [Screen] = []
-    @State private var selectedTab: BottomNavItem = .home
+    @State private var authStack: [Screen] = [] // Only for auth flow
     @State private var hasCheckedSession = false
-    @State private var profileReloadKey: Int = 0 // Key to trigger ProfileView reload after save
-    @State private var homeRefreshTrigger: Int = 0 // Key to trigger HomeView refresh when switching tabs
-    @State private var previousTab: BottomNavItem? = nil // Track previous tab to detect tab switches
+    
+    // Tab state
+    @State private var selectedTab: BottomNavItem = .home
+    @State private var previousTab: BottomNavItem? = nil
+    @State private var homeRefreshTrigger: Int = 0
+    @State private var profileReloadKey: Int = 0
+    
+    // Per-tab NavigationStack paths
+    @State private var homePath = NavigationPath()
+    @State private var searchPath = NavigationPath()
+    @State private var profilePath = NavigationPath()
+    
+    // Side-channel for passing Post objects (Post is not Hashable)
+    @State private var postCache: [String: Post] = [:]
+    
+    // Full-screen cover state (Story & CreateStory)
+    @State private var activeStory: StoryPresentation? = nil
+    @State private var showCreateStory = false
     
     private let prefs = IOSPreferencesRepository()
     
-    private var showBottomNav: Bool {
-        switch currentScreen {
-        case .home, .search, .createPost, .reels, .profile:
-            return true
-        case .editProfile, .createStory, .story:
-            return false // Don't show bottom nav on edit profile, create story, and story viewer
-        default:
-            return false
-        }
+    /// Whether the user has completed auth and should see the main app
+    private var isAuthenticated: Bool {
+        if case .home = currentScreen { return true }
+        return false
     }
     
     init() {
@@ -69,172 +84,287 @@ struct ContentView: View {
                                 if completed && hasUser {
                                     currentScreen = .home
                                     selectedTab = .home
-                                    navigationStack = []
                                 }
                             }
                         }
                     }
-            } else if showBottomNav {
+            } else if isAuthenticated {
+                // MARK: - Main App (TabView always alive)
                 TabView(selection: $selectedTab) {
-                    // Home Tab
-                    HomeView(
-                        onNavigateToNotifications: { navigateTo(.notifications) },
-                        onNavigateToMessages: { navigateTo(.messages) },
-                        onNavigateToProfile: { userId in navigateTo(.userProfile(userId: userId)) },
-                        onNavigateToStory: { userId in navigateTo(.story(userId: userId)) },
-                        onNavigateToCreateStory: { navigateTo(.createStory) },
-                        onNavigateToPostDetail: { postId, post in navigateTo(.postDetail(postId: postId, post: post)) },
-                        refreshTrigger: homeRefreshTrigger
-                    )
+                    // ── Home Tab ──
+                    NavigationStack(path: $homePath) {
+                        HomeView(
+                            onNavigateToNotifications: { /* Disabled - not implemented */ },
+                            onNavigateToMessages: { /* Disabled - not implemented */ },
+                            onNavigateToProfile: { userId in
+                                homePath.append(AppDestination.userProfile(userId: userId))
+                            },
+                            onNavigateToStory: { userId in
+                                activeStory = StoryPresentation(id: userId)
+                            },
+                            onNavigateToCreateStory: {
+                                showCreateStory = true
+                            },
+                            onNavigateToPostDetail: { postId, post in
+                                if let post = post { postCache[postId] = post }
+                                homePath.append(AppDestination.postDetail(postId: postId))
+                            },
+                            refreshTrigger: homeRefreshTrigger
+                        )
+                        .navigationDestination(for: AppDestination.self) { dest in
+                            destinationView(for: dest, path: $homePath)
+                        }
+                    }
+                    .fullScreenCover(item: $activeStory) { story in
+                        StoryView(
+                            userId: story.id,
+                            onBackClick: { activeStory = nil }
+                        )
+                    }
+                    .fullScreenCover(isPresented: $showCreateStory) {
+                        CreateStoryViewContent(
+                            onBackClick: { showCreateStory = false },
+                            onStoryCreated: { showCreateStory = false }
+                        )
+                    }
                     .tag(BottomNavItem.home)
                     .tabItem {
                         Label("Home", systemImage: "house.fill")
                     }
                     
-                    // Search Tab
-                    SearchView(
-                        onUserClick: { userId in navigateTo(.userProfile(userId: userId)) },
-                        onPostClick: { postId, post in navigateTo(.postDetail(postId: postId, post: post)) },
-                        onFollowClick: { _ in }
-                    )
+                    // ── Search Tab ──
+                    NavigationStack(path: $searchPath) {
+                        SearchView(
+                            onUserClick: { userId in
+                                searchPath.append(AppDestination.userProfile(userId: userId))
+                            },
+                            onPostClick: { postId, post in
+                                if let post = post { postCache[postId] = post }
+                                searchPath.append(AppDestination.postDetail(postId: postId))
+                            },
+                            onFollowClick: { _ in }
+                        )
+                        .navigationDestination(for: AppDestination.self) { dest in
+                            destinationView(for: dest, path: $searchPath)
+                        }
+                    }
                     .tag(BottomNavItem.search)
                     .tabItem {
                         Label("Search", systemImage: "magnifyingglass")
                     }
                     
-                    // Create Post Tab
-                    CreatePostView(
-                        onBackClick: { navigateBack() },
-                        onPostClick: { postInput in
-                            // TODO: Handle post creation with postInput
-                            navigateTo(.home)
-                        }
-                    )
+                    // ── Create Post Tab ──
+                    NavigationStack {
+                        CreatePostView(
+                            onBackClick: { selectedTab = .home },
+                            onPostClick: { postInput in
+                                // TODO: Handle post creation with postInput
+                                selectedTab = .home
+                            }
+                        )
+                    }
                     .tag(BottomNavItem.post)
                     .tabItem {
                         Label("Post", systemImage: "plus.circle.fill")
                     }
                     
-                    // Reels Tab
+                    // ── Reels Tab ──
                     PlaceholderView(title: "Reels")
                         .tag(BottomNavItem.reels)
                         .tabItem {
                             Label("Reels", systemImage: "play.circle.fill")
                         }
                     
-                    // Profile Tab
-                    ProfileView(
-                        onBackClick: { navigateTo(.home); selectedTab = .home },
-                        onEditProfile: { navigateTo(.editProfile) },
-                        onSignOut: {
-                            currentScreen = .languageSelection
-                            navigationStack = []
-                            selectedTab = .home
-                        },
-                        onPostClick: { postId, post in
-                            navigateTo(.postDetail(postId: postId, post: post))
-                        },
-                        reloadKey: profileReloadKey
-                    )
+                    // ── Profile Tab ──
+                    NavigationStack(path: $profilePath) {
+                        ProfileView(
+                            onBackClick: { selectedTab = .home },
+                            onEditProfile: {
+                                profilePath.append(AppDestination.editProfile)
+                            },
+                            onSignOut: {
+                                // Reset everything and go to auth
+                                homePath = NavigationPath()
+                                searchPath = NavigationPath()
+                                profilePath = NavigationPath()
+                                postCache = [:]
+                                currentScreen = .languageSelection
+                                selectedTab = .home
+                            },
+                            onPostClick: { postId, post in
+                                if let post = post { postCache[postId] = post }
+                                profilePath.append(AppDestination.postDetail(postId: postId))
+                            },
+                            onFollowersClick: {
+                                if let currentUserId = Auth.auth().currentUser?.uid {
+                                    profilePath.append(AppDestination.followersList(userId: currentUserId))
+                                }
+                            },
+                            onFollowingClick: {
+                                if let currentUserId = Auth.auth().currentUser?.uid {
+                                    profilePath.append(AppDestination.followingList(userId: currentUserId))
+                                }
+                            },
+                            reloadKey: profileReloadKey
+                        )
+                        .navigationDestination(for: AppDestination.self) { dest in
+                            destinationView(for: dest, path: $profilePath)
+                        }
+                    }
                     .tag(BottomNavItem.profile)
                     .tabItem {
                         Label("Profile", systemImage: "person.fill")
                     }
                 }
                 .onChange(of: selectedTab) { newValue in
-                    // Clear navigation stack when using bottom nav
-                    navigationStack = []
-                    
                     // If switching to home tab from another bottom bar tab, refresh the feed
-                    // This preserves state when returning from post details (which doesn't change selectedTab)
                     if newValue == .home, let prevTab = previousTab, prevTab != .home {
-                        // Switching to home from another bottom bar tab (search, profile, etc.)
-                        // Trigger refresh
                         homeRefreshTrigger += 1
                     }
-                    
                     previousTab = newValue
-                    switch newValue {
-                    case .home: currentScreen = .home
-                    case .search: currentScreen = .search
-                    case .post: currentScreen = .createPost
-                    case .reels: currentScreen = .reels
-                    case .profile: currentScreen = .profile
-                    }
                 }
             } else {
+                // MARK: - Auth Flow (unchanged)
                 ZStack {
-                    // Only ignore safe areas for fullscreen screens like CreateStory and Story
-                    if case .createStory = currentScreen {
-                        Color.appBackground.ignoresSafeArea()
-                    } else if case .story = currentScreen {
-                        Color.appBackground.ignoresSafeArea()
-                    } else {
-                        Color.appBackground
-                    }
-                    
-                    // Show either auth flow, edit profile, create story, user profile, or detail screens (which don't have bottom nav)
-                    if case .editProfile = currentScreen {
-                        mainAppContent
-                    } else if case .createStory = currentScreen {
-                        mainAppContent
-                    } else if case .story = currentScreen {
-                        mainAppContent
-                    } else if case .userProfile = currentScreen {
-                        mainAppContent
-                    } else if case .postDetail = currentScreen {
-                        mainAppContent
-                    } else if case .notifications = currentScreen {
-                        mainAppContent
-                    } else if case .messages = currentScreen {
-                        mainAppContent
-                    } else if case .followersList = currentScreen {
-                        mainAppContent
-                    } else if case .followingList = currentScreen {
-                        mainAppContent
-                    } else {
-                        authFlowContent
-                    }
+                    Color.appBackground
+                    authFlowContent
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .animation(.easeInOut(duration: 0.2), value: hasCheckedSession)
-        .animation(.easeInOut(duration: 0.2), value: showBottomNav)
+        .animation(.easeInOut(duration: 0.2), value: isAuthenticated)
     }
     
+    // MARK: - Shared Destination Builder
+    /// Builds the view for a given AppDestination, wiring navigation callbacks to the correct path.
+    @ViewBuilder
+    private func destinationView(for dest: AppDestination, path: Binding<NavigationPath>) -> some View {
+        switch dest {
+        case .postDetail(let postId):
+            CommentsView(
+                postId: postId,
+                initialPost: postCache[postId],
+                onNavigateToProfile: { userId in
+                    path.wrappedValue.append(AppDestination.userProfile(userId: userId))
+                }
+            )
+            
+        case .userProfile(let userId):
+            let currentUserId = Auth.auth().currentUser?.uid
+            if currentUserId == userId {
+                // Viewing own profile
+                ProfileView(
+                    onBackClick: { /* dismiss handled by NavigationStack */ },
+                    onEditProfile: {
+                        path.wrappedValue.append(AppDestination.editProfile)
+                    },
+                    onSignOut: {
+                        homePath = NavigationPath()
+                        searchPath = NavigationPath()
+                        profilePath = NavigationPath()
+                        postCache = [:]
+                        currentScreen = .languageSelection
+                        selectedTab = .home
+                    },
+                    onPostClick: { postId, post in
+                        if let post = post { postCache[postId] = post }
+                        path.wrappedValue.append(AppDestination.postDetail(postId: postId))
+                    },
+                    onFollowersClick: {
+                        path.wrappedValue.append(AppDestination.followersList(userId: userId))
+                    },
+                    onFollowingClick: {
+                        path.wrappedValue.append(AppDestination.followingList(userId: userId))
+                    },
+                    reloadKey: profileReloadKey
+                )
+            } else {
+                // Viewing another user's profile
+                OtherUserProfileView(
+                    userId: userId,
+                    onPostClick: { postId, post in
+                        if let post = post { postCache[postId] = post }
+                        path.wrappedValue.append(AppDestination.postDetail(postId: postId))
+                    },
+                    onFollowersClick: {
+                        path.wrappedValue.append(AppDestination.followersList(userId: userId))
+                    },
+                    onFollowingClick: {
+                        path.wrappedValue.append(AppDestination.followingList(userId: userId))
+                    }
+                )
+            }
+            
+        case .editProfile:
+            EditProfileView(
+                onSaveClick: {
+                    profileReloadKey += 1
+                },
+                onNavigateToExpertDocument: {
+                    path.wrappedValue.append(AppDestination.expertDocumentUpload)
+                }
+            )
+            
+        case .expertDocumentUpload:
+            ExpertDocumentUploadView(
+                onComplete: {
+                    // Pop back (dismiss handles it via NavigationStack)
+                },
+                onSkip: {
+                    // Pop back
+                }
+            )
+            
+        case .followersList(let userId):
+            FollowersListView(
+                userId: userId,
+                type: .followers,
+                onUserClick: { targetUserId in
+                    path.wrappedValue.append(AppDestination.userProfile(userId: targetUserId))
+                }
+            )
+            
+        case .followingList(let userId):
+            FollowersListView(
+                userId: userId,
+                type: .following,
+                onUserClick: { targetUserId in
+                    path.wrappedValue.append(AppDestination.userProfile(userId: targetUserId))
+                }
+            )
+        }
+    }
+    
+    // MARK: - Auth Flow (unchanged)
     @ViewBuilder
     private var authFlowContent: some View {
         switch currentScreen {
         case .languageSelection:
             LanguageSelectionView { languageCode in
-                navigateTo(.phoneNumber(languageCode: languageCode))
+                authNavigateTo(.phoneNumber(languageCode: languageCode))
             }
             
         case .phoneNumber:
             PhoneNumberView(
-                onBackClick: {
-                    navigateBack()
-                },
+                onBackClick: { authNavigateBack() },
                 onOtpSent: { phoneNumber in
-                    navigateTo(.otp(phoneNumber: phoneNumber))
+                    authNavigateTo(.otp(phoneNumber: phoneNumber))
                 }
             )
             
         case .otp(let phoneNumber):
             OtpView(
                 phoneNumber: phoneNumber,
-                onBackClick: {
-                    navigateBack()
-                },
+                onBackClick: { authNavigateBack() },
                 onExistingUser: { userName in
-                    navigateTo(.welcomeBack(userName: userName))
+                    authNavigateTo(.welcomeBack(userName: userName))
                 },
                 onNewUser: {
-                    navigateTo(.name)
+                    authNavigateTo(.name)
                 },
                 onResendOtp: {
-                    navigateBack()
+                    authNavigateBack()
                 }
             )
             
@@ -242,16 +372,16 @@ struct ContentView: View {
             WelcomeBackView(
                 userName: userName,
                 onContinue: {
-                    navigateTo(.home)
+                    currentScreen = .home
+                    authStack = []
                     selectedTab = .home
-                    navigationStack = []
                 }
             )
             
         case .name:
             NameView(
                 onNameSaved: {
-                    navigateTo(.roleSelection)
+                    authNavigateTo(.roleSelection)
                 }
             )
             
@@ -259,9 +389,11 @@ struct ContentView: View {
             RoleSelectionView(
                 onRoleSelected: { selectedRole in
                     if selectedRole == .expert {
-                        navigateTo(.expertDocumentUpload)
+                        authNavigateTo(.expertDocumentUpload)
                     } else {
-                        navigateTo(.home)
+                        currentScreen = .home
+                        authStack = []
+                        selectedTab = .home
                     }
                 }
             )
@@ -269,169 +401,15 @@ struct ContentView: View {
         case .expertDocumentUpload:
             ExpertDocumentUploadView(
                 onComplete: {
-                    navigateTo(.home)
-                },
-                onSkip: {
-                    navigateTo(.home)
-                }
-            )
-            
-        default:
-            EmptyView()
-        }
-    }
-    
-    @ViewBuilder
-    private var mainAppContent: some View {
-        switch currentScreen {
-        case .home:
-            HomeView(
-                onNavigateToNotifications: { navigateTo(.notifications) },
-                onNavigateToMessages: { navigateTo(.messages) },
-                onNavigateToProfile: { userId in navigateTo(.userProfile(userId: userId)) },
-                onNavigateToStory: { userId in navigateTo(.story(userId: userId)) },
-                onNavigateToCreateStory: { navigateTo(.createStory) },
-                onNavigateToPostDetail: { postId, post in navigateTo(.postDetail(postId: postId, post: post)) },
-                refreshTrigger: homeRefreshTrigger
-            )
-            
-        case .search:
-            SearchView(
-                onUserClick: { userId in navigateTo(.userProfile(userId: userId)) },
-                onPostClick: { postId, post in navigateTo(.postDetail(postId: postId, post: post)) },
-                onFollowClick: { _ in }
-            )
-            
-        case .createPost:
-            CreatePostView(
-                onBackClick: { navigateBack() },
-                onPostClick: { postInput in
-                    // TODO: Handle post creation with postInput
-                    navigateTo(.home)
-                }
-            )
-            
-        case .createStory:
-            CreateStoryViewContent(
-                onBackClick: { navigateBack() },
-                onStoryCreated: { navigateTo(.home) }
-            )
-            
-        case .reels:
-            PlaceholderView(title: "Reels")
-            
-        case .profile:
-            ProfileView(
-                onBackClick: { navigateTo(.home); selectedTab = .home },
-                onEditProfile: { navigateTo(.editProfile) },
-                onSignOut: {
-                    currentScreen = .languageSelection
-                    navigationStack = []
+                    currentScreen = .home
+                    authStack = []
                     selectedTab = .home
                 },
-                onPostClick: { postId, post in
-                    navigateTo(.postDetail(postId: postId, post: post))
-                },
-                onFollowersClick: {
-                    // Get userId dynamically when button is tapped
-                    if let currentUserId = Auth.auth().currentUser?.uid {
-                        print("🔵 [ContentView] Navigating to followers list for userId: \(currentUserId)")
-                        navigateTo(.followersList(userId: currentUserId))
-                    } else {
-                        print("🔴 [ContentView] Cannot navigate: currentUserId is nil")
-                    }
-                },
-                onFollowingClick: {
-                    // Get userId dynamically when button is tapped
-                    if let currentUserId = Auth.auth().currentUser?.uid {
-                        print("🔵 [ContentView] Navigating to following list for userId: \(currentUserId)")
-                        navigateTo(.followingList(userId: currentUserId))
-                    } else {
-                        print("🔴 [ContentView] Cannot navigate: currentUserId is nil")
-                    }
-                },
-                reloadKey: profileReloadKey
-            )
-            
-        case .editProfile:
-            EditProfileView(
-                onBackClick: { navigateBack() },
-                onSaveClick: {
-                    // Increment reload key to trigger ProfileView reload
-                    profileReloadKey += 1
-                    navigateBack()
-                },
-                onNavigateToExpertDocument: { navigateTo(.expertDocumentUpload) }
-            )
-            
-        case .userProfile(let userId):
-            // Check if viewing own profile or another user's profile
-            let currentUserId = Auth.auth().currentUser?.uid
-            
-            if currentUserId == userId {
-                // Viewing own profile - show ProfileView
-                ProfileView(
-                    onBackClick: { navigateBack() },
-                    onEditProfile: { navigateTo(.editProfile) },
-                    onSignOut: {
-                        currentScreen = .languageSelection
-                        navigationStack = []
-                        selectedTab = .home
-                    },
-                    onPostClick: { postId, post in navigateTo(.postDetail(postId: postId, post: post)) },
-                    onFollowersClick: {
-                        navigateTo(.followersList(userId: userId))
-                    },
-                    onFollowingClick: {
-                        navigateTo(.followingList(userId: userId))
-                    },
-                    reloadKey: profileReloadKey
-                )
-            } else {
-                // Viewing another user's profile - show OtherUserProfileView
-                OtherUserProfileView(
-                    userId: userId,
-                    onBackClick: { navigateBack() },
-                    onPostClick: { postId, post in navigateTo(.postDetail(postId: postId, post: post)) },
-                    onFollowersClick: {
-                        navigateTo(.followersList(userId: userId))
-                    },
-                    onFollowingClick: {
-                        navigateTo(.followingList(userId: userId))
-                    }
-                )
-            }
-            
-        case .story(let userId):
-            StoryView(
-                userId: userId,
-                onBackClick: { 
-                    navigateBack()
+                onSkip: {
+                    currentScreen = .home
+                    authStack = []
+                    selectedTab = .home
                 }
-            )
-            
-        case .postDetail(let postId, let post):
-            CommentsView(
-                postId: postId,
-                initialPost: post,
-                onBackClick: { navigateBack() },
-                onNavigateToProfile: { userId in navigateTo(.userProfile(userId: userId)) }
-            )
-            
-        case .followersList(let userId):
-            FollowersListView(
-                userId: userId,
-                type: .followers,
-                onBackClick: { navigateBack() },
-                onUserClick: { targetUserId in navigateTo(.userProfile(userId: targetUserId)) }
-            )
-            
-        case .followingList(let userId):
-            FollowersListView(
-                userId: userId,
-                type: .following,
-                onBackClick: { navigateBack() },
-                onUserClick: { targetUserId in navigateTo(.userProfile(userId: targetUserId)) }
             )
             
         default:
@@ -439,106 +417,15 @@ struct ContentView: View {
         }
     }
     
-    private func logToFile(_ location: String, _ message: String, _ data: [String: Any] = [:]) {
-        let logData: [String: Any] = [
-            "location": location,
-            "message": message,
-            "data": data,
-            "timestamp": Int(Date().timeIntervalSince1970 * 1000)
-        ]
-        
-        if let jsonData = try? JSONSerialization.data(withJSONObject: logData),
-           let jsonString = String(data: jsonData, encoding: .utf8) {
-            let logLine = jsonString + "\n"
-            let logPath = "/Users/rishibhardwaj/AndroidStudioProjects/Kissangram/.cursor/debug.log"
-            
-            let directory = (logPath as NSString).deletingLastPathComponent
-            try? FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true, attributes: nil)
-            
-            if let logFile = FileHandle(forWritingAtPath: logPath) {
-                logFile.seekToEndOfFile()
-                logFile.write(logLine.data(using: .utf8) ?? Data())
-                logFile.closeFile()
-            } else {
-                try? logLine.write(toFile: logPath, atomically: true, encoding: .utf8)
-            }
-        }
-    }
-    
-    private func navigateTo(_ screen: Screen) {
-        print("🔵 [ContentView:navigateTo] Navigating to screen: \(screen)")
-        logToFile("ContentView:navigateTo", "Navigating to screen", [
-            "screen": "\(screen)",
-            "currentScreen": "\(currentScreen)",
-            "navigationStackCount": navigationStack.count
-        ])
-        
-        // Check if we're navigating away from post details
-        let wasPostDetail = if case .postDetail = currentScreen { true } else { false }
-        
-        navigationStack.append(currentScreen)
+    // MARK: - Auth Navigation Helpers
+    private func authNavigateTo(_ screen: Screen) {
+        authStack.append(currentScreen)
         currentScreen = screen
-        print("🔵 [ContentView:navigateTo] currentScreen updated to: \(currentScreen)")
-        
-        // Update selected tab when navigating to main screens
-        switch screen {
-        case .home: 
-            selectedTab = .home
-            // Only refresh if switching from another bottom bar tab, not from post details
-            if !wasPostDetail, let prevTab = previousTab, prevTab != .home {
-                homeRefreshTrigger += 1
-            }
-            previousTab = .home
-        case .search: 
-            selectedTab = .search
-            previousTab = .search
-        case .createPost: 
-            selectedTab = .post
-            previousTab = .post
-        case .reels: 
-            selectedTab = .reels
-            previousTab = .reels
-        case .profile: 
-            selectedTab = .profile
-            previousTab = .profile
-        default: break
-        }
-        print("🔵 [ContentView:navigateTo] Navigation completed")
     }
     
-    private func navigateBack() {
-        if let previousScreen = navigationStack.popLast() {
-            // When returning from post details, preserve state (don't refresh)
-            // The refresh only happens when switching tabs via selectedTab onChange
-            let wasPostDetail = if case .postDetail = currentScreen { true } else { false }
-            
-            currentScreen = previousScreen
-            
-            // Update selected tab based on the previous screen
-            switch previousScreen {
-            case .home: 
-                selectedTab = .home
-                // Don't trigger refresh when returning from post details - preserve state
-                // Refresh only happens when switching tabs (handled in onChange(of: selectedTab))
-            case .search: selectedTab = .search
-            case .createPost: selectedTab = .post
-            case .reels: selectedTab = .reels
-            case .profile: selectedTab = .profile
-            default: break
-            }
-            
-            // Only update previousTab if not returning from post details
-            // This ensures tab switches trigger refresh, but back navigation preserves state
-            if !wasPostDetail {
-                previousTab = selectedTab
-            }
-        } else {
-            // If stack is empty and we're on a main screen, navigate to home
-            if case .createPost = currentScreen {
-                currentScreen = .home
-                selectedTab = .home
-                previousTab = .home
-            }
+    private func authNavigateBack() {
+        if let prev = authStack.popLast() {
+            currentScreen = prev
         }
     }
 }

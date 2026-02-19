@@ -38,6 +38,11 @@ import androidx.compose.ui.platform.LocalView
 import android.view.HapticFeedbackConstants
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.DisposableEffect
 import coil.compose.AsyncImage
 import com.kissangram.model.*
@@ -388,6 +393,7 @@ fun PostTextContent(
     
     // Playback state
     var isPlaying by remember { mutableStateOf(false) }
+    var isPreparing by remember { mutableStateOf(false) } // True while audio is loading
     var playbackProgress by remember { mutableStateOf(0) }
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
 
@@ -416,6 +422,7 @@ fun PostTextContent(
 
         mediaPlayer = null
         isPlaying = false
+        isPreparing = false
         playbackProgress = 0
     }
 
@@ -463,6 +470,7 @@ fun PostTextContent(
 
             mediaPlayer = null
             isPlaying = false
+            isPreparing = false
             playbackProgress = 0
         }
     }
@@ -473,6 +481,9 @@ fun PostTextContent(
         if (caption == null) {
             return@onPlayClick
         }
+
+        // Ignore taps while audio is being prepared
+        if (isPreparing) return@onPlayClick
 
         if (isPlaying) {
             // Stop playback
@@ -488,11 +499,15 @@ fun PostTextContent(
                 // Stop any existing playback
                 stopPlayback()
 
+                // Show loading indicator while audio loads
+                isPreparing = true
+
                 val player = MediaPlayer().apply {
                     // Handle remote URLs (http/https) and local file paths
                     setDataSource(url)
 
                     setOnPreparedListener {
+                        isPreparing = false
                         start()
                         isPlaying = true
                         playbackProgress = 0
@@ -529,22 +544,52 @@ fun PostTextContent(
         // Left icon/button - show play button if voiceCaption exists, otherwise text icon
         if (voiceCaption != null) {
             // Voice caption play button
+            // Determine button color based on state
+            val buttonColor = when {
+                isPreparing -> PrimaryGreen.copy(alpha = 0.6f)
+                isPlaying -> Color(0xFFFF6B6B)
+                else -> PrimaryGreen
+            }
+
+            // Pulse animation while preparing, so the user sees the tap registered
+            val pulseAlpha = if (isPreparing) {
+                val infiniteTransition = rememberInfiniteTransition(label = "voicePulse")
+                infiniteTransition.animateFloat(
+                    initialValue = 0.5f,
+                    targetValue = 1f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(durationMillis = 600),
+                        repeatMode = RepeatMode.Reverse
+                    ),
+                    label = "pulseAlpha"
+                ).value
+            } else {
+                1f
+            }
+
             Box(
                 modifier = Modifier
                     .size(40.dp)
-                    .background(
-                        color = if (isPlaying) Color(0xFFFF6B6B) else PrimaryGreen,
-                        shape = CircleShape
-                    )
+                    .clip(CircleShape)  // Clip BEFORE clickable → only the circle is tappable
+                    .background(color = buttonColor.copy(alpha = buttonColor.alpha * pulseAlpha))
                     .clickable { onPlayClick() },
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = if (isPlaying) Icons.Default.Stop else Icons.AutoMirrored.Filled.VolumeUp,
-                    contentDescription = if (isPlaying) "Stop" else "Play",
-                    tint = Color.White,
-                    modifier = Modifier.size(18.dp)
-                )
+                if (isPreparing) {
+                    // Small spinner so the user knows audio is loading
+                    CircularProgressIndicator(
+                        color = Color.White,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(18.dp)
+                    )
+                } else {
+                    Icon(
+                        imageVector = if (isPlaying) Icons.Default.Stop else Icons.AutoMirrored.Filled.VolumeUp,
+                        contentDescription = if (isPlaying) "Stop" else "Play voice caption",
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             }
         } else {
             // Text icon (when no voice caption)

@@ -6,22 +6,20 @@ private let followersListBackground = Color(red: 0.984, green: 0.973, blue: 0.94
 struct FollowersListView: View {
     let userId: String
     let type: FollowersListType
-    var onBackClick: () -> Void = {}
     var onUserClick: (String) -> Void = { _ in }
     
+    @Environment(\.dismiss) private var dismiss
     @StateObject private var viewModel: FollowersListViewModel
     
-    init(userId: String, type: FollowersListType, onBackClick: @escaping () -> Void = {}, onUserClick: @escaping (String) -> Void = { _ in }) {
+    init(userId: String, type: FollowersListType, onUserClick: @escaping (String) -> Void = { _ in }) {
         self.userId = userId
         self.type = type
-        self.onBackClick = onBackClick
         self.onUserClick = onUserClick
         _viewModel = StateObject(wrappedValue: FollowersListViewModel(userId: userId, type: type))
     }
     
     var body: some View {
-        NavigationStack {
-            ZStack {
+        ZStack {
                 followersListBackground
                 
                 VStack(spacing: 0) {
@@ -97,16 +95,16 @@ struct FollowersListView: View {
             }
             .navigationTitle(type == .followers ? "Followers" : "Following")
             .navigationBarTitleDisplayMode(.inline)
+            .navigationBarBackButtonHidden(true)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button(action: onBackClick) {
+                    Button(action: { dismiss() }) {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 20, weight: .semibold))
                             .foregroundColor(.textPrimary)
                     }
                 }
             }
-        }
     }
 }
 

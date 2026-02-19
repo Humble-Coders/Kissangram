@@ -186,7 +186,7 @@ class HomeViewModel(
         if (postIndex != -1) {
             val post = currentPosts[postIndex]
             val newLikedState = !post.isLikedByMe
-            val newLikesCount = if (newLikedState) post.likesCount + 1 else post.likesCount - 1
+            val newLikesCount = if (newLikedState) post.likesCount + 1 else maxOf(0, post.likesCount - 1)
             
             // Mark as being processed
             postsBeingProcessed.add(postId)
@@ -207,9 +207,13 @@ class HomeViewModel(
                     likePostUseCase(postId, post.isLikedByMe)
                 } catch (e: Exception) {
                     Log.e(TAG, "onLikePost: failed for postId=$postId", e)
-                    // Revert on failure
-                    val revertedPosts = currentPosts.toMutableList()
-                    _uiState.value = _uiState.value.copy(posts = revertedPosts)
+                    // Revert ONLY the affected post in the current list (not a stale snapshot)
+                    val latestPosts = _uiState.value.posts.toMutableList()
+                    val idx = latestPosts.indexOfFirst { it.id == postId }
+                    if (idx != -1) {
+                        latestPosts[idx] = post
+                        _uiState.value = _uiState.value.copy(posts = latestPosts)
+                    }
                 } finally {
                     // Always remove from processing set
                     postsBeingProcessed.remove(postId)
@@ -251,9 +255,13 @@ class HomeViewModel(
                     savePostUseCase(postId, post.isSavedByMe)
                 } catch (e: Exception) {
                     Log.e(TAG, "onSavePost: failed for postId=$postId", e)
-                    // Revert on failure
-                    val revertedPosts = currentPosts.toMutableList()
-                    _uiState.value = _uiState.value.copy(posts = revertedPosts)
+                    // Revert ONLY the affected post in the current list (not a stale snapshot)
+                    val latestPosts = _uiState.value.posts.toMutableList()
+                    val idx = latestPosts.indexOfFirst { it.id == postId }
+                    if (idx != -1) {
+                        latestPosts[idx] = post
+                        _uiState.value = _uiState.value.copy(posts = latestPosts)
+                    }
                 } finally {
                     // Always remove from processing set
                     postsBeingProcessed.remove(saveKey)

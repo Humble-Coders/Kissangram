@@ -432,7 +432,7 @@ class CommentsViewModel: ObservableObject {
         }
         
         let newLikedState = !currentPost.isLikedByMe
-        let newLikesCount = newLikedState ? currentPost.likesCount + 1 : currentPost.likesCount - 1
+        let newLikesCount = newLikedState ? currentPost.likesCount + 1 : max(0, currentPost.likesCount - 1)
         
         // Mark as being processed
         postsBeingProcessed.insert(postId)

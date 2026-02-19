@@ -16,6 +16,7 @@ private let disabledInputBackground = Color(red: 0.898, green: 0.902, blue: 0.85
 
 struct EditProfileView: View {
     @StateObject private var viewModel = EditProfileViewModel()
+    @Environment(\.dismiss) private var dismiss
     
     @State private var showStatePicker = false
     @State private var showDistrictPicker = false
@@ -36,7 +37,6 @@ struct EditProfileView: View {
     // Unsaved changes confirmation dialog
     @State private var showUnsavedChangesDialog = false
     
-    var onBackClick: () -> Void = {}
     var onSaveClick: () -> Void = {}
     var onNavigateToExpertDocument: () -> Void = {}
     
@@ -60,6 +60,7 @@ struct EditProfileView: View {
                 // Delay the navigation back
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                     onSaveClick()
+                    dismiss()
                 }
             },
             onError: { error in
@@ -75,14 +76,13 @@ struct EditProfileView: View {
         if viewModel.hasUnsavedChanges() {
             showUnsavedChangesDialog = true
         } else {
-            onBackClick()
+            dismiss()
         }
     }
     
     var body: some View {
-        NavigationStack {
-            ZStack {
-                editProfileBackground
+        ZStack {
+            editProfileBackground
                 
                 VStack(spacing: 0) {
                     if viewModel.isLoadingUser {
@@ -211,6 +211,7 @@ struct EditProfileView: View {
             }
             .navigationTitle("Edit Profile")
             .navigationBarTitleDisplayMode(.inline)
+            .navigationBarBackButtonHidden(true)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: { handleBackClick() }) {
@@ -245,7 +246,6 @@ struct EditProfileView: View {
                     }
                 }
             }
-        }
         .alert(isPresented: $showAlert) {
             Alert(
                 title: Text(isAlertSuccess ? "Success" : "Error"),
@@ -255,7 +255,7 @@ struct EditProfileView: View {
         }
         .alert("Discard Changes?", isPresented: $showUnsavedChangesDialog) {
             Button("Discard", role: .destructive) {
-                onBackClick()
+                dismiss()
             }
             Button("Cancel", role: .cancel) {
                 // Do nothing, stay on screen

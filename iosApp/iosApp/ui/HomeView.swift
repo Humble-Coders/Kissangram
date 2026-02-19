@@ -21,7 +21,6 @@ private let homeViewLog = Logger(subsystem: "com.kissangram", category: "HomeVie
 struct HomeView: View {
     @StateObject private var viewModel = HomeViewModel()
     @StateObject private var visibilityTracker = DebouncedVisibilityTracker(batchIntervalMs: 80)
-    @State private var hasRestoredScroll = false // Track if we've already restored scroll position
     
     var onNavigateToNotifications: () -> Void = {}
     var onNavigateToMessages: () -> Void = {}
@@ -34,9 +33,8 @@ struct HomeView: View {
     var refreshTrigger: Int = 0
     
     var body: some View {
-        NavigationStack {
-            ZStack {
-                Color.appBackground
+        ZStack {
+            Color.appBackground
                 
                 VStack(spacing: 0) {
                     if viewModel.isLoading && viewModel.posts.isEmpty {
@@ -95,16 +93,12 @@ struct HomeView: View {
                                             isFollowingAuthor: viewModel.authorIdToIsFollowing[post.authorId] == true,
                                             onLikeClick: { viewModel.onLikePost(post.id) },
                                             onCommentClick: { 
-                                                // Save scroll state before navigating
-                                                viewModel.saveScrollState(postId: post.id)
                                                 onNavigateToPostDetail(post.id, post) 
                                             },
                                             onShareClick: {},
                                             onSaveClick: { viewModel.onSavePost(post.id) },
                                             onAuthorClick: { onNavigateToProfile(post.authorId) },
                                             onPostClick: { 
-                                                // Save scroll state before navigating
-                                                viewModel.saveScrollState(postId: post.id)
                                                 onNavigateToPostDetail(post.id, post) 
                                             },
                                             onFollowClick: { viewModel.onFollow(authorId: post.authorId) },
@@ -137,66 +131,12 @@ struct HomeView: View {
                             }
                             .scrollContentBackground(.hidden)
                             .onChange(of: viewModel.posts.count) { _ in
-                                // Restore scroll position when posts are loaded
-                                if let savedPostId = viewModel.savedScrollPostId,
-                                   !hasRestoredScroll,
-                                   !viewModel.posts.isEmpty,
-                                   viewModel.posts.contains(where: { $0.id == savedPostId }) {
-                                    // Use a longer delay to ensure the view is fully rendered
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                        withAnimation(.easeInOut(duration: 0.3)) {
-                                            proxy.scrollTo(savedPostId, anchor: .top)
-                                        }
-                                        // Clear saved state after restoring
-                                        viewModel.clearScrollState()
-                                        hasRestoredScroll = true
-                                    }
-                                }
-                                
                                 // Prefetch images for upcoming posts
                                 prefetchUpcomingImages()
-                            }
-                            .onChange(of: viewModel.savedScrollPostId) { savedPostId in
-                                // Also restore when savedScrollPostId changes (e.g., when navigating back)
-                                if let savedPostId = savedPostId,
-                                   !hasRestoredScroll,
-                                   !viewModel.posts.isEmpty,
-                                   viewModel.posts.contains(where: { $0.id == savedPostId }) {
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                        withAnimation(.easeInOut(duration: 0.3)) {
-                                            proxy.scrollTo(savedPostId, anchor: .top)
-                                        }
-                                        // Clear saved state after restoring
-                                        viewModel.clearScrollState()
-                                        hasRestoredScroll = true
-                                    }
-                                }
                             }
                             .onChange(of: visibilityTracker.visibleIndices) { _ in
                                 // Prefetch images when visible indices change (user scrolling)
                                 prefetchUpcomingImages()
-                            }
-                            .onAppear {
-                                // Try to restore scroll position if we have a saved state and posts are already loaded
-                                if let savedPostId = viewModel.savedScrollPostId,
-                                   !hasRestoredScroll,
-                                   !viewModel.posts.isEmpty,
-                                   viewModel.posts.contains(where: { $0.id == savedPostId }) {
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                        withAnimation(.easeInOut(duration: 0.3)) {
-                                            proxy.scrollTo(savedPostId, anchor: .top)
-                                        }
-                                        viewModel.clearScrollState()
-                                        hasRestoredScroll = true
-                                    }
-                                } else if viewModel.savedScrollPostId == nil {
-                                    // Reset restoration flag if no saved state
-                                    hasRestoredScroll = false
-                                }
-                            }
-                            .onDisappear {
-                                // Reset restoration flag when navigating away
-                                hasRestoredScroll = false
                             }
                         }
                     }
@@ -219,10 +159,6 @@ struct HomeView: View {
                 }
                 .onChange(of: viewModel.isLoading) { _ in
                     homeViewLog.debug("HomeView uiState: posts=\(viewModel.posts.count) isLoading=\(viewModel.isLoading) error=\(viewModel.error ?? "nil")")
-                    // Reset restoration flag when refreshing/loading
-                    if viewModel.isLoading {
-                        hasRestoredScroll = false
-                    }
                 }
                 .onChange(of: viewModel.error) { _ in
                     homeViewLog.debug("HomeView uiState: posts=\(viewModel.posts.count) isLoading=\(viewModel.isLoading) error=\(viewModel.error ?? "nil")")
@@ -257,7 +193,6 @@ struct HomeView: View {
             }
         }
     }
-}
     
     // MARK: - Icon Button With Badge
     struct IconButtonWithBadge: View {

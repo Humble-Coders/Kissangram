@@ -1,6 +1,7 @@
 import Foundation
 import Shared
 
+// MARK: - Auth Flow Screens (managed by manual stack, unchanged)
 enum Screen {
     // Auth Flow
     case languageSelection
@@ -11,22 +12,16 @@ enum Screen {
     case roleSelection
     case expertDocumentUpload
     
-    // Main App
+    // Main App (used to track auth → main app transition)
     case home
-    case search
-    case createPost
-    case createStory
-    case reels
-    case profile
-    
-    // Detail Screens
-    case postDetail(postId: String, post: Post?)
-    case ownPostDetail(postId: String, post: Post?)
+}
+
+// MARK: - In-App Navigation Destinations (Hashable, used with NavigationStack)
+enum AppDestination: Hashable {
+    case postDetail(postId: String)
     case userProfile(userId: String)
-    case story(userId: String)
+    case editProfile
+    case expertDocumentUpload
     case followersList(userId: String)
     case followingList(userId: String)
-    case notifications
-    case messages
-    case editProfile
 }

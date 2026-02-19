@@ -100,24 +100,22 @@ struct CreatePostView: View {
     }
     
     var body: some View {
-        NavigationStack {
-            ZStack {
-                Color.appBackground
-                
-                VStack(spacing: 0) {
-                    contentScrollView
-                    bottomPostButton
-                }
+        ZStack {
+            Color.appBackground
+            
+            VStack(spacing: 0) {
+                contentScrollView
+                bottomPostButton
             }
-            .navigationTitle("Create Post")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(action: onBackClick) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 20, weight: .semibold))
-                            .foregroundColor(.textPrimary)
-                    }
+        }
+        .navigationTitle("Create Post")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button(action: onBackClick) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(.textPrimary)
                 }
             }
         }

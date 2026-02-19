@@ -9,57 +9,55 @@ private let commentsViewLog = Logger(subsystem: "com.kissangram", category: "Com
 struct CommentsView: View {
     let postId: String
     let initialPost: Post?
-    let onBackClick: () -> Void
     let onNavigateToProfile: (String) -> Void
     
+    @Environment(\.dismiss) private var dismiss
     @StateObject private var viewModel: CommentsViewModel
     @State private var currentUserId: String?
     @State private var showErrorAlert = false
     
-    init(postId: String, initialPost: Post? = nil, onBackClick: @escaping () -> Void, onNavigateToProfile: @escaping (String) -> Void) {
+    init(postId: String, initialPost: Post? = nil, onNavigateToProfile: @escaping (String) -> Void) {
         self.postId = postId
         self.initialPost = initialPost
-        self.onBackClick = onBackClick
         self.onNavigateToProfile = onNavigateToProfile
         _viewModel = StateObject(wrappedValue: CommentsViewModel(postId: postId, initialPost: initialPost))
     }
     
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                commentsScrollView
-                inputBar
+        VStack(spacing: 0) {
+            commentsScrollView
+            inputBar
+        }
+        .background(Color.appBackground)
+        .navigationTitle("Post")
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(true)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button(action: { dismiss() }) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(.textPrimary)
+                }
             }
-            .background(Color.appBackground)
-            .navigationTitle("Post")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(action: onBackClick) {
-                        Image(systemName: "chevron.left")
+            ToolbarItem(placement: .navigationBarTrailing) {
+                if let post = viewModel.post, let currentUserId = currentUserId, post.authorId == currentUserId {
+                    Button(action: { viewModel.showDeletePostConfirmation() }) {
+                        if viewModel.isDeletingPost {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .textPrimary))
+                        } else {
+                            Image(systemName: "trash")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundColor(.errorRed)
+                        }
+                    }
+                    .disabled(viewModel.isDeletingPost)
+                } else {
+                    Button(action: { /* Menu */ }) {
+                        Image(systemName: "ellipsis")
                             .font(.system(size: 18, weight: .semibold))
                             .foregroundColor(.textPrimary)
-                    }
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    if let post = viewModel.post, let currentUserId = currentUserId, post.authorId == currentUserId {
-                        Button(action: { viewModel.showDeletePostConfirmation() }) {
-                            if viewModel.isDeletingPost {
-                                ProgressView()
-                                    .progressViewStyle(CircularProgressViewStyle(tint: .textPrimary))
-                            } else {
-                                Image(systemName: "trash")
-                                    .font(.system(size: 18, weight: .semibold))
-                                    .foregroundColor(.errorRed)
-                            }
-                        }
-                        .disabled(viewModel.isDeletingPost)
-                    } else {
-                        Button(action: { /* Menu */ }) {
-                            Image(systemName: "ellipsis")
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundColor(.textPrimary)
-                        }
                     }
                 }
             }
@@ -79,7 +77,7 @@ struct CommentsView: View {
                     Task {
                         await viewModel.deletePost()
                         if viewModel.deletePostError == nil {
-                            onBackClick()
+                            dismiss()
                         }
                     }
                 },

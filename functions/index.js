@@ -631,11 +631,82 @@ exports.onCommentUpdate = onDocumentUpdated(
   }
 );
 
+// ─── Storage cleanup helpers ───────────────────────────────────────────────
+
+/**
+ * Extract the Firebase Storage file path from a download URL.
+ * Download URLs look like:
+ *   https://firebasestorage.googleapis.com/v0/b/BUCKET/o/ENCODED_PATH?alt=media&token=TOKEN
+ * Returns the decoded path (e.g. "posts/media_123_abc.jpg"), or null if the
+ * URL is not a Firebase Storage URL (e.g. Cloudinary).
+ */
+function extractStoragePathFromUrl(url) {
+  if (!url || typeof url !== "string") return null;
+  try {
+    const match = url.match(/firebasestorage\.googleapis\.com\/v0\/b\/[^/]+\/o\/([^?]+)/);
+    if (match && match[1]) {
+      return decodeURIComponent(match[1]);
+    }
+  } catch (e) {
+    console.warn("extractStoragePathFromUrl: failed to parse URL", url, e);
+  }
+  return null;
+}
+
+/**
+ * Delete a single file from Firebase Storage given its download URL.
+ * Silently skips non-Firebase-Storage URLs (e.g. Cloudinary) and
+ * already-deleted files (404).
+ */
+async function deleteStorageFileByUrl(bucket, url) {
+  const path = extractStoragePathFromUrl(url);
+  if (!path) return; // Not a Firebase Storage URL — nothing to do
+
+  try {
+    await bucket.file(path).delete();
+    console.log("deleteStorageFileByUrl: deleted", path);
+  } catch (err) {
+    if (err.code === 404) {
+      console.warn("deleteStorageFileByUrl: file not found (already deleted?)", path);
+    } else {
+      console.error("deleteStorageFileByUrl: failed to delete", path, err);
+    }
+  }
+}
+
+/**
+ * Delete every document inside a subcollection (e.g. posts/{id}/likes).
+ * Uses batched deletes (max 500 per batch).
+ * @returns {number} Number of documents deleted.
+ */
+async function deleteSubcollection(docRef, subcollectionName) {
+  const snap = await docRef.collection(subcollectionName).get();
+  if (snap.empty) return 0;
+
+  let deleted = 0;
+  for (let i = 0; i < snap.docs.length; i += BATCH_SIZE) {
+    const chunk = snap.docs.slice(i, i + BATCH_SIZE);
+    const batch = db.batch();
+    for (const doc of chunk) {
+      batch.delete(doc.ref);
+    }
+    await batch.commit();
+    deleted += chunk.length;
+  }
+  return deleted;
+}
+
+// ─── Post soft-delete handler ──────────────────────────────────────────────
+
 /**
  * When a post is updated, check if it was soft-deleted (isActive = false).
  * This handles the soft delete approach where we set isActive = false instead of deleting.
- * When detected, removes the post from all follower feeds, deletes the post document,
- * and decrements the author's postsCount.
+ * When detected:
+ *   1. Removes the post from all follower feeds
+ *   2. Decrements the author's postsCount
+ *   3. Deletes all media files from Firebase Storage (images, videos, thumbnails, voice captions)
+ *   4. Deletes subcollections (likes, comments)
+ *   5. Hard-deletes the post document
  */
 exports.onPostDelete = onDocumentUpdated(
   {
@@ -699,13 +770,45 @@ exports.onPostDelete = onDocumentUpdated(
           postsCount: admin.firestore.FieldValue.increment(-1),
         });
 
-        // 4. Hard delete the post document
+        // 4. Delete media files from Firebase Storage
+        const bucket = admin.storage().bucket();
+        let storageFilesDeleted = 0;
+
+        // 4a. Delete post media (images/videos) and their thumbnails
+        const mediaArray = afterData.media || [];
+        for (const mediaItem of mediaArray) {
+          if (mediaItem.url) {
+            await deleteStorageFileByUrl(bucket, mediaItem.url);
+            storageFilesDeleted++;
+          }
+          if (mediaItem.thumbnailUrl) {
+            await deleteStorageFileByUrl(bucket, mediaItem.thumbnailUrl);
+            storageFilesDeleted++;
+          }
+        }
+
+        // 4b. Delete voice caption audio file
+        const voiceCaption = afterData.voiceCaption;
+        if (voiceCaption && voiceCaption.url) {
+          await deleteStorageFileByUrl(bucket, voiceCaption.url);
+          storageFilesDeleted++;
+        }
+
+        // 5. Delete subcollections (likes, comments)
+        const postRef = db.collection("posts").doc(postId);
+        const likesDeleted = await deleteSubcollection(postRef, "likes");
+        const commentsDeleted = await deleteSubcollection(postRef, "comments");
+
+        // 6. Hard delete the post document
         await db.collection("posts").doc(postId).delete();
 
         console.log("onPostDelete: post deleted successfully", {
           postId,
           authorId,
           feedCount: recipientIds.length,
+          storageFilesDeleted,
+          likesDeleted,
+          commentsDeleted,
         });
         return null;
       } catch (err) {

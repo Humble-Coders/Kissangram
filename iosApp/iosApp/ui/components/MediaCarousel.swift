@@ -30,17 +30,36 @@ struct MediaCarousel: View {
         if media.isEmpty {
             EmptyView()
         } else if media.count == 1 {
-            // Single media item - no carousel needed, show full size
-            MediaItemView(
-                media: media[0],
-                isVisible: isVisible,
-                onTap: onMediaClick,
-                showFullImage: showFullImage
-            )
+            if showFullImage {
+                // Full-image mode: no GeometryReader — let the image self-size
+                // via its natural aspect ratio (Kingfisher .fit does this).
+                // The parent ScrollView accommodates whatever height is needed.
+                MediaItemView(
+                    media: media[0],
+                    isVisible: isVisible,
+                    onTap: onMediaClick,
+                    showFullImage: true
+                )
+            } else {
+                // Feed mode: wrap in GeometryReader for an explicit width
+                // so images with extreme aspect ratios can't overflow.
+                GeometryReader { geometry in
+                    MediaItemView(
+                        media: media[0],
+                        isVisible: isVisible,
+                        onTap: onMediaClick,
+                        showFullImage: false
+                    )
+                    .frame(width: geometry.size.width)
+                }
+                .frame(height: 440)
+            }
         } else {
             // Multiple media items - show carousel with TabView
             GeometryReader { geometry in
-                let carouselHeight = showFullImage ? geometry.size.width * 2 : 440
+                // showFullImage: square container so every aspect ratio is
+                // fully visible (landscape letterboxed, portrait pillarboxed).
+                let carouselHeight: CGFloat = showFullImage ? geometry.size.width : 440
                 
                 ZStack(alignment: .bottom) {
                     TabView(selection: $currentPage) {
@@ -72,7 +91,7 @@ struct MediaCarousel: View {
                     }
                 }
             }
-            .frame(height: showFullImage ? UIScreen.main.bounds.width * 2 : 440) // Use screen width for calculation when showFullImage is true
+            .frame(height: showFullImage ? UIScreen.main.bounds.width : 440)
         }
     }
 }

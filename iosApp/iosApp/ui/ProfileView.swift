@@ -51,11 +51,10 @@ struct ProfileView: View {
     var reloadKey: Int = 0 // Key that changes to trigger reload after save
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                profileBackground
+        ZStack {
+            profileBackground
 
-                if viewModel.isLoading {
+            if viewModel.isLoading {
                     Spacer()
                     ProgressView()
                         .progressViewStyle(CircularProgressViewStyle(tint: .primaryGreen))
@@ -138,7 +137,6 @@ struct ProfileView: View {
                     }
                 }
             }
-        }
         .task(id: reloadKey) {
             // Load when reloadKey changes (first display or after save)
             // This is similar to LaunchedEffect(reloadKey) in Android
